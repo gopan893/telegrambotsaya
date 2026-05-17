@@ -44,6 +44,56 @@ async function chatAI(pesan) {
     }
 }
 
+let shortMemory = [];
+
+// Setelah setiap percakapan, simpan
+shortMemory.push({ 
+    q: userQuestion, 
+    a: answer, 
+    timestamp: Date.now() 
+});
+
+// Hanya simpan 10 percakapan terakhir
+if (shortMemory.length > 10) shortMemory.shift();
+
+{
+    id: "conv_001",
+    text: "User: Apa tips investasi aman? AI: Rekomendasi reksadana pasar uang...",
+    embedding: [0.123, -0.456, 0.789, ...], // 384 angka
+    timestamp: 1716000000000,
+    userRating: "👍",   // atau "👎"
+    category: "investasi",
+    wasMistake: false
+}
+
+const similarMistakes = await chromaDB.query({
+    queryEmbedding: getEmbedding(userQuestion),
+    where: { wasMistake: true, userRating: "👎" },
+    nResults: 3
+});
+// similarMistakes berisi teks percakapan yang mirip dan pernah dinilai buruk
+
+await axios.post(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+    chat_id: chatId,
+    text: answer,
+    reply_markup: {
+        inline_keyboard: [[
+            { text: "👍 Membantu", callback_data: "feedback_positive" },
+            { text: "👎 Tidak membantu", callback_data: "feedback_negative" }
+        ]]
+    }
+});
+
+if (update.callback_query) {
+    const data = update.callback_query.data;
+    const messageId = update.callback_query.message.message_id;
+    if (data === "feedback_negative") {
+        // Cari percakapan terkait dengan messageId, tandai sebagai kesalahan
+        await reflectOnMistake(lastQuestion, lastAnswer, "User bilang tidak membantu");
+    }
+}
+
+
 // ==================== FUNGSI GENERATE GAMBAR (POLLINATIONS) ====================
 async function generateImage(prompt) {
     try {
