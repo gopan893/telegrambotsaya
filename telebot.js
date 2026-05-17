@@ -56,6 +56,24 @@ async function generateImage(prompt) {
     }
 }
 
+async function generateImage(prompt, retryCount = 0) {
+    try {
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
+        await axios.head(url, { timeout: 10000 });
+        return url;
+    } catch (error) {
+        console.error(`❌ Gambar error (percobaan ${retryCount + 1}):`, error.message);
+        
+        // Coba ulang hingga 3 kali dengan jeda
+        if (retryCount < 3) {
+            console.log(`🔄 Mengulang dalam ${(retryCount + 1) * 2} detik...`);
+            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+            return generateImage(prompt, retryCount + 1);
+        }
+        return null;
+    }
+}
+
 // ==================== FUNGSI TEXT-TO-SPEECH (POLLINATIONS) ====================
 async function textToSpeech(text) {
     if (!POLLINATIONS_API_KEY) {
