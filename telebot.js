@@ -1,135 +1,112 @@
 const express = require('express');
-const fs = require('fs');
 const axios = require('axios');
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const Redis = require('ioredis');
 
 // ==================== KONFIGURASI ====================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;      // Untuk self-improvement
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO_NAME = process.env.REPO_NAME || "gopan893/telegrambotsaya";
+const REDIS_URL = process.env.REDIS_URL;
 const PORT = process.env.PORT || 3000;
 const MAX_RALPH_ITERATIONS = 3;
-const SELF_IMPROVE_INTERVAL = 50; // Setiap 50 percakapan, cek dan perbaiki diri
+const SELF_IMPROVE_INTERVAL = 50;
 
 if (!TELEGRAM_TOKEN || !GROQ_API_KEY) {
     console.error("❌ ERROR: TELEGRAM_TOKEN atau GROQ_API_KEY tidak ditemukan!");
     process.exit(1);
 }
-
-// ==================== FILE MEMORI ====================
-const MEMORY_FILE = 'memory.json';
-const LESSONS_FILE = 'lessons.json';
-const SUCCESS_FILE = 'success_strategies.json';
-const USER_MEMORY_FILE = 'user_memory.json';
-const STATS_FILE = 'stats.json';
-
-let shortMemory = [];
-let lessons = { rules: [], ralphLogs: [] };
-let successStrategies = { strategies: [] };
-let userMemory = {};
-let stats = { conversationCount: 0, lastSelfImprove: Date.now() };
-
-try {
-    if (fs.existsSync(MEMORY_FILE)) shortMemory = JSON.parse(fs.readFileSync(MEMORY_FILE));
-    if (fs.existsSync(LESSONS_FILE)) lessons = JSON.parse(fs.readFileSync(LESSONS_FILE));
-    if (fs.existsSync(SUCCESS_FILE)) successStrategies = JSON.parse(fs.readFileSync(SUCCESS_FILE));
-    if (fs.existsSync(USER_MEMORY_FILE)) userMemory = JSON.parse(fs.readFileSync(USER_MEMORY_FILE));
-    if (fs.existsSync(STATS_FILE)) stats = JSON.parse(fs.readFileSync(STATS_FILE));
-    console.log(`📂 Memori dimuat: ${shortMemory.length} percakapan, ${lessons.rules.length} aturan, ${successStrategies.strategies.length} strategi, ${Object.keys(userMemory).length} user`);
-} catch(e) { console.log("📂 File memori baru dibuat"); }
-
-function saveMemory() { fs.writeFileSync(MEMORY_FILE, JSON.stringify(shortMemory.slice(-500))); }
-function saveLessons() { fs.writeFileSync(LESSONS_FILE, JSON.stringify(lessons)); }
-function saveSuccessStrategies() { fs.writeFileSync(SUCCESS_FILE, JSON.stringify(successStrategies)); }
-function saveUserMemory() { fs.writeFileSync(USER_MEMORY_FILE, JSON.stringify(userMemory)); }
-function saveStats() { fs.writeFileSync(STATS_FILE, JSON.stringify(stats)); }
-
-// ==================== SELF-IMPROVEMENT CORE ====================
-async function analyzeAndImproveCode() {
-    console.log("🧠 Memulai self-improvement cycle...");
-    
-    try {
-        const currentCode = fs.readFileSync(__filename, 'utf8');
-        
-        const analysisPrompt = `Analisis kode Node.js bot Telegram berikut. Identifikasi 3 kelemahan terbesar (performance, logic error, missing feature, atau bug potensial). Lalu berikan kode yang sudah diperbaiki.
-
-Kode saat ini (${currentCode.length} karakter):
-${currentCode.slice(0, 6000)}
-
-Output format JSON:
-{
-    "weaknesses": ["kelemahan1", "kelemahan2", "kelemahan3"],
-    "fixedCode": "kode lengkap yang sudah diperbaiki (hanya bagian yang berubah, bukan seluruhnya)",
-    "explanation": "penjelasan singkat perbaikan"
-}`;
-
-        const response = await axios.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-                model: "llama-3.3-70b-versatile",
-                messages: [{ role: "user", content: analysisPrompt }],
-                temperature: 0.3,
-                max_tokens: 4000
-            },
-            { headers: { "Authorization": `Bearer ${GROQ_API_KEY}` } }
-        );
-        
-        const content = response.data.choices[0].message.content;
-        const analysis = JSON.parse(content);
-        
-        console.log("📊 Kelemahan teridentifikasi:", analysis.weaknesses);
-        
-        if (analysis.fixedCode && analysis.fixedCode !== currentCode && GITHUB_TOKEN) {
-            // Push ke GitHub
-            const getFile = await axios.get(
-                `https://api.github.com/repos/${REPO_NAME}/contents/telebot.js`,
-                { headers: { "Authorization": `token ${GITHUB_TOKEN}` } }
-            );
-            
-            await axios.put(
-                `https://api.github.com/repos/${REPO_NAME}/contents/telebot.js`,
-                {
-                    message: `Self-improvement: ${analysis.weaknesses.join(", ")}`,
-                    content: Buffer.from(analysis.fixedCode).toString('base64'),
-                    sha: getFile.data.sha
-                },
-                { headers: { "Authorization": `token ${GITHUB_TOKEN}` } }
-            );
-            
-            console.log("✅ Self-improvement: Kode berhasil di-push ke GitHub");
-            stats.lastSelfImprove = Date.now();
-            saveStats();
-            
-            // Kirim notifikasi ke owner Telegram (opsional)
-            if (TELEGRAM_TOKEN && process.env.OWNER_CHAT_ID) {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-                    chat_id: process.env.OWNER_CHAT_ID,
-                    text: `🤖 *Self-Improvement Completed*\n\nPerbaikan: ${analysis.weaknesses.join("\n")}\n\n${analysis.explanation || ""}`,
-                    parse_mode: "Markdown"
-                });
-            }
-        } else {
-            console.log("✅ Tidak ada perbaikan yang diperlukan atau GITHUB_TOKEN tidak diset");
-        }
-    } catch (error) {
-        console.error("❌ Self-improvement error:", error.message);
-    }
+if (!REDIS_URL) {
+    console.error("❌ ERROR: REDIS_URL tidak ditemukan! Gunakan Upstash Redis.");
+    process.exit(1);
 }
 
-// ==================== DETEKSI SUASANA HATI ====================
-async function detectMood(message) {
-    const moodPrompt = `Tentukan suasana hati dari pesan ini: "${message}"
-Output hanya satu kata: SEDIH, MARAH, SENANG, BERCANDA, SERIUS, atau NETRAL.`;
+// ==================== KONEKSI REDIS ====================
+const redis = new Redis(REDIS_URL, {
+    maxRetriesPerRequest: 3,
+    retryStrategy: (times) => Math.min(times * 100, 3000)
+});
+redis.on('connect', () => console.log("✅ Redis terhubung"));
+redis.on('error', (err) => console.error("❌ Redis error:", err));
+
+// ==================== IN-MEMORY CACHE UNTUK DATA SEMENTARA (TIDAK DISIMPAN LAMA) ====================
+let stats = { conversationCount: 0, lastSelfImprove: Date.now() };
+let lessons = { rules: [], ralphLogs: [] };
+let successStrategies = { strategies: [] };
+
+// Fungsi untuk load data dari Redis saat startup
+async function loadRedisData() {
     try {
-        const mood = await askGroq(moodPrompt, "Anda adalah pendeteksi suasana hati. Output hanya satu kata.");
-        return mood.trim().toUpperCase();
-    } catch (error) {
-        return "NETRAL";
+        const statsRaw = await redis.get('stats');
+        if (statsRaw) stats = JSON.parse(statsRaw);
+        const lessonsRaw = await redis.get('lessons');
+        if (lessonsRaw) lessons = JSON.parse(lessonsRaw);
+        const successRaw = await redis.get('successStrategies');
+        if (successRaw) successStrategies = JSON.parse(successRaw);
+        console.log(`📂 Data dimuat: ${stats.conversationCount} percakapan, ${lessons.rules.length} aturan, ${successStrategies.strategies.length} strategi`);
+    } catch(e) { console.log("📂 Gagal load dari Redis, mulai baru"); }
+}
+
+// Fungsi simpan ke Redis
+async function saveStats() { await redis.set('stats', JSON.stringify(stats)); }
+async function saveLessons() { await redis.set('lessons', JSON.stringify(lessons)); }
+async function saveSuccessStrategies() { await redis.set('successStrategies', JSON.stringify(successStrategies)); }
+
+// ==================== FUNGSI MEMORI PER USER (Redis Hash) ====================
+async function getUserMemory(userId) {
+    const key = `user:${userId}`;
+    let mem = await redis.hgetall(key);
+    if (!mem || Object.keys(mem).length === 0) {
+        mem = {
+            preferences: '{}',
+            lastTopics: '[]',
+            interactionCount: '0',
+            firstSeen: Date.now().toString(),
+            moodHistory: '[]'
+        };
+        await redis.hmset(key, mem);
     }
+    return {
+        preferences: JSON.parse(mem.preferences),
+        lastTopics: JSON.parse(mem.lastTopics),
+        interactionCount: parseInt(mem.interactionCount),
+        firstSeen: parseInt(mem.firstSeen),
+        moodHistory: JSON.parse(mem.moodHistory)
+    };
+}
+
+async function updateUserMemory(userId, question, answer, mood) {
+    const key = `user:${userId}`;
+    let mem = await getUserMemory(userId);
+    mem.interactionCount++;
+    mem.lastTopics.unshift(question.slice(0, 100));
+    if (mem.lastTopics.length > 10) mem.lastTopics.pop();
+    mem.moodHistory.unshift({ mood, timestamp: Date.now() });
+    if (mem.moodHistory.length > 20) mem.moodHistory.pop();
+    await redis.hmset(key, {
+        preferences: JSON.stringify(mem.preferences),
+        lastTopics: JSON.stringify(mem.lastTopics),
+        interactionCount: mem.interactionCount,
+        firstSeen: mem.firstSeen,
+        moodHistory: JSON.stringify(mem.moodHistory)
+    });
+    return mem;
+}
+
+async function saveShortMemory(userId, question, answer, mood) {
+    const key = `short:${userId}`;
+    await redis.lpush(key, JSON.stringify({ q: question, a: answer, mood, ts: Date.now() }));
+    await redis.ltrim(key, 0, 99); // simpan 100 pesan terakhir per user
+}
+
+async function loadShortMemory(userId) {
+    const key = `short:${userId}`;
+    const items = await redis.lrange(key, 0, 99);
+    return items.map(item => JSON.parse(item));
 }
 
 // ==================== FUNGSI AI (GROQ) ====================
@@ -140,7 +117,7 @@ async function askGroq(prompt, systemMsg) {
             {
                 model: "llama-3.3-70b-versatile",
                 messages: [
-                    { role: "system", content: systemMsg || "Kamu asisten yang membantu." },
+                    { role: "system", content: systemMsg || "Kamu teman ngobrol asyik, natural, pake 'aku/kamu'." },
                     { role: "user", content: prompt }
                 ],
                 temperature: 0.8,
@@ -158,87 +135,76 @@ async function askGroq(prompt, systemMsg) {
     }
 }
 
-// ==================== SAGE REFLECTION: CHECKER AGENT ====================
+// ==================== DETEKSI SUASANA ====================
+async function detectMood(message) {
+    const moodPrompt = `Tentukan suasana hati dari pesan ini: "${message}" Output hanya satu kata: SEDIH, MARAH, SENANG, BERCANDA, SERIUS, atau NETRAL.`;
+    try {
+        const mood = await askGroq(moodPrompt, "Output hanya satu kata.");
+        return mood.trim().toUpperCase();
+    } catch (error) {
+        return "NETRAL";
+    }
+}
+
+// ==================== SAGE CHECKER AGENT ====================
 async function checkerAgent(question, draftAnswer) {
-    const checkPrompt = `Anda adalah Checker Agent. Evaluasi jawaban ini:
-Pertanyaan: "${question}"
-Jawaban draft: "${draftAnswer}"
-
-Kriteria:
-- Apakah menjawab pertanyaan? (Ya/Tidak)
-- Apakah informatif? (Ya/Tidak)
-- Apakah aman? (Ya/Tidak)
-
+    const checkPrompt = `Evaluasi jawaban ini: Pertanyaan: "${question}" Jawaban: "${draftAnswer}"
+Kriteria: relevan, informatif, aman.
 Output format:
 VALID: Ya/Tidak
-SARAN: [saran perbaikan jika tidak valid]`;
-
-    const result = await askGroq(checkPrompt, "Anda adalah Checker Agent yang kritis.");
-    const isValid = result.includes("VALID: Ya") && !result.includes("VALID: Tidak");
+SARAN: saran perbaikan jika tidak valid`;
+    const result = await askGroq(checkPrompt, "Anda Checker Agent.");
+    const isValid = result.includes("VALID: Ya");
     const suggestion = result.match(/SARAN: (.*)/)?.[1] || "";
     return { isValid, suggestion };
 }
 
 async function autoValidateAnswer(question, answer) {
-    const validationPrompt = `Apakah jawaban ini BAIK atau BURUK? Pertanyaan: "${question}" Jawaban: "${answer}"
-Output hanya BAIK atau BURUK.`;
-    const result = await askGroq(validationPrompt, "Anda validator AI.");
-    return result.trim().toUpperCase() === "BAIK";
+    const res = await askGroq(`Apakah jawaban ini BAIK atau BURUK? Pertanyaan: "${question}" Jawaban: "${answer}" Output hanya BAIK atau BURUK.`, "Validator.");
+    return res.trim().toUpperCase() === "BAIK";
 }
 
 async function extractLesson(question, badAnswer) {
-    const lessonPrompt = `Ekstrak satu pelajaran (maks 30 kata) dari jawaban buruk: "${badAnswer}" untuk pertanyaan: "${question}"
-Output hanya pelajarannya.`;
-    return await askGroq(lessonPrompt, "Anda ekstraktor pelajaran.");
+    return await askGroq(`Ekstrak satu pelajaran (maks 30 kata) dari jawaban buruk ini: "${badAnswer}" untuk pertanyaan: "${question}" Output hanya pelajarannya.`, "Ekstraktor.");
 }
 
 async function extractSuccessStrategy(question, goodAnswer) {
-    const strategyPrompt = `Ekstrak pola sukses (maks 30 kata) dari jawaban baik: "${goodAnswer}" untuk pertanyaan: "${question}"
-Output hanya polanya.`;
-    return await askGroq(strategyPrompt, "Anda ekstraktor pola sukses.");
+    return await askGroq(`Ekstrak pola sukses (maks 30 kata) dari jawaban baik: "${goodAnswer}" untuk pertanyaan: "${question}" Output hanya polanya.`, "Ekstraktor.");
 }
 
 async function chatAIWithRalphAndChecker(question, userId, iteration = 1, previousLesson = "") {
-    const relevantStrategies = successStrategies.strategies
-        .filter(s => s.keywords?.some(k => question.toLowerCase().includes(k)))
-        .slice(-2)
-        .map(s => s.strategy)
-        .join("\n");
-    
+    const relevantStrategies = successStrategies.strategies.slice(-2).map(s => s.strategy).join("\n");
     let prompt = question;
     if (previousLesson) prompt = `${question}\n\n⚠️ JANGAN: ${previousLesson}`;
     if (relevantStrategies) prompt = `${prompt}\n\n✅ POLA SUKSES: ${relevantStrategies}`;
     
     const draftAnswer = await askGroq(prompt);
     const { isValid, suggestion } = await checkerAgent(question, draftAnswer);
-    
-    if (isValid || iteration >= MAX_RALPH_ITERATIONS) {
-        return { answer: draftAnswer, iteration };
-    }
+    if (isValid || iteration >= MAX_RALPH_ITERATIONS) return { answer: draftAnswer, iteration };
     
     const lesson = await extractLesson(question, draftAnswer);
     lessons.rules.push({ rule: lesson, source: "ralph", userId, timestamp: Date.now() });
-    saveLessons();
+    await saveLessons();
     
     const improvedAnswer = await askGroq(`${question}\n\n⚠️ SARAN: ${suggestion}`);
     return { answer: improvedAnswer, iteration: iteration + 1 };
 }
 
 // ==================== SYSTEM PROMPT DINAMIS ====================
-function getDynamicSystemPrompt(mood, userHistory = "") {
-    const basePersona = "Kamu teman ngobrol asyik, natural, pake 'aku/kamu', gak pake 'saya/anda'. Bisa serius atau bercanda sesuai suasana.";
-    const moodAdjustments = {
-        "SEDIH": "Tanggapi dengan empati, lembut, jangan bercanda.",
-        "MARAH": "Tetap tenang, akui perasaannya.",
-        "SENANG": "Ikut senang, bisa bercanda.",
-        "BERCANDA": "Balas dengan candaan.",
-        "SERIUS": "Jawab informatif tapi santai.",
-        "NETRAL": "Campur santai dan informatif."
+function getDynamicSystemPrompt(mood, userHistory) {
+    const base = "Kamu teman ngobrol asyik, natural, pake 'aku/kamu', gak pake 'saya/anda'. Bisa serius atau bercanda sesuai suasana.";
+    const moodGuide = {
+        SEDIH: "Tanggapi dengan empati, lembut.",
+        MARAH: "Tetap tenang, akui perasaannya.",
+        SENANG: "Ikut senang, bisa bercanda.",
+        BERCANDA: "Balas dengan candaan.",
+        SERIUS: "Jawab informatif tapi santai.",
+        NETRAL: "Campur santai dan informatif."
     };
-    return `${basePersona}\nSUASANA: ${mood}\nPANDUAN: ${moodAdjustments[mood] || moodAdjustments["NETRAL"]}\nRIWAYAT: ${userHistory || "Belum ada"}`;
+    return `${base}\nSUASANA: ${mood}\nPANDUAN: ${moodGuide[mood] || moodGuide.NETRAL}\nRIWAYAT: ${userHistory || "Belum ada"}`;
 }
 
-// ==================== FUNGSI GAMBAR & TTS ====================
+// ==================== GAMBAR & SUARA ====================
 async function generateImage(prompt, retry = 0) {
     try {
         const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
@@ -276,24 +242,31 @@ async function textToSpeech(text) {
     }
 }
 
-// ==================== LIGHTAGENT MEM0 ====================
-async function getUserMemory(userId) {
-    if (!userMemory[userId]) {
-        userMemory[userId] = { preferences: {}, lastTopics: [], interactionCount: 0, firstSeen: Date.now(), moodHistory: [] };
-        saveUserMemory();
-    }
-    return userMemory[userId];
-}
-
-async function updateUserMemory(userId, question, answer, mood) {
-    const mem = await getUserMemory(userId);
-    mem.interactionCount++;
-    mem.lastTopics.unshift(question.slice(0, 100));
-    if (mem.lastTopics.length > 10) mem.lastTopics.pop();
-    mem.moodHistory.unshift({ mood, timestamp: Date.now() });
-    if (mem.moodHistory.length > 20) mem.moodHistory.pop();
-    saveUserMemory();
-    return mem;
+// ==================== SELF-IMPROVEMENT ====================
+async function analyzeAndImproveCode() {
+    if (!GITHUB_TOKEN) return;
+    console.log("🧠 Self-improvement cycle...");
+    try {
+        const currentCode = require('fs').readFileSync(__filename, 'utf8');
+        const analysisPrompt = `Analisis kode bot Telegram berikut. Identifikasi 3 kelemahan terbesar (performance, logic error, missing feature). Berikan kode perbaikan singkat. Output JSON: {"weaknesses":["..."],"fixedCode":"..."}`;
+        const response = await axios.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            { model: "llama-3.3-70b-versatile", messages: [{ role: "user", content: analysisPrompt + "\n\nKode:\n" + currentCode.slice(0, 5000) }], temperature: 0.3 },
+            { headers: { "Authorization": `Bearer ${GROQ_API_KEY}` } }
+        );
+        const analysis = JSON.parse(response.data.choices[0].message.content);
+        if (analysis.fixedCode && analysis.fixedCode !== currentCode) {
+            const getFile = await axios.get(`https://api.github.com/repos/${REPO_NAME}/contents/telebot.js`, { headers: { "Authorization": `token ${GITHUB_TOKEN}` } });
+            await axios.put(`https://api.github.com/repos/${REPO_NAME}/contents/telebot.js`, {
+                message: `Self-improve: ${analysis.weaknesses.join(", ")}`,
+                content: Buffer.from(analysis.fixedCode).toString('base64'),
+                sha: getFile.data.sha
+            }, { headers: { "Authorization": `token ${GITHUB_TOKEN}` } });
+            console.log("✅ Self-improvement pushed to GitHub");
+            stats.lastSelfImprove = Date.now();
+            await saveStats();
+        }
+    } catch(e) { console.error("Self-improve error:", e.message); }
 }
 
 // ==================== JAWABAN UTAMA ====================
@@ -302,19 +275,7 @@ async function getUltraAnswer(question, userId, mood, chatHistory, userPreferenc
     const recentRules = lessons.rules.slice(-3).map(r => "- " + r.rule).join("\n");
     const recentSuccess = successStrategies.strategies.slice(-2).map(s => "- " + s.strategy).join("\n");
     const systemPrompt = getDynamicSystemPrompt(mood, `User ${userId} sudah ${userMem.interactionCount} kali chat.`);
-    
-    const enhancedQuestion = `Pertanyaan: "${question}"
-
-SUASANA: ${mood}
-RIWAYAT USER: ${userMem.lastTopics.slice(0,3).join(", ")}
-
-HINDARI: ${recentRules || "Tidak ada"}
-Gunakan jika relevan: ${recentSuccess || "Tidak ada"}
-
-KONTEKS: ${chatHistory || "Tidak ada"}
-
-Jawab dengan gaya teman ngobrol, pake "aku/kamu", sesuai suasana ${mood}. Akhiri dengan pertanyaan balik.`;
-
+    const enhancedQuestion = `Pertanyaan: "${question}"\nSUASANA: ${mood}\nRIWAYAT: ${userMem.lastTopics.slice(0,3).join(", ")}\nHINDARI: ${recentRules}\nGUNAKAN: ${recentSuccess}\nKONTEKS: ${chatHistory}\nJawab dengan gaya teman ngobrol, akhiri dengan pertanyaan balik.`;
     const { answer, iteration } = await chatAIWithRalphAndChecker(enhancedQuestion, userId);
     return { answer, iteration };
 }
@@ -322,39 +283,27 @@ Jawab dengan gaya teman ngobrol, pake "aku/kamu", sesuai suasana ${mood}. Akhiri
 // ==================== SETUP EXPRESS WEBHOOK ====================
 const app = express();
 app.use(express.json());
-
 const lastResponse = new Map();
 
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const update = req.body;
-    
     if (update.callback_query) {
         const chatId = update.callback_query.message.chat.id;
         const data = update.callback_query.data;
-        const messageId = update.callback_query.message.message_id;
-        const last = lastResponse.get(`${chatId}_${messageId}`);
-        
+        const msgId = update.callback_query.message.message_id;
+        const last = lastResponse.get(`${chatId}_${msgId}`);
         if (last && data === "negative") {
             const lesson = await extractLesson(last.question, last.answer);
             lessons.rules.push({ rule: lesson, source: "user_feedback", userId: chatId.toString(), timestamp: Date.now() });
-            saveLessons();
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
-                callback_query_id: update.callback_query.id,
-                text: "Makasih! Aku belajar 🙏",
-                show_alert: false
-            });
+            await saveLessons();
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, { callback_query_id: update.callback_query.id, text: "Makasih! Aku belajar 🙏", show_alert: false });
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, { chat_id: chatId, message_id: msgId, text: "🙏 *Terima kasih! Aku akan belajar.*\n\n" + last.answer, parse_mode: "Markdown" });
         } else if (last && data === "positive") {
             const strategy = await extractSuccessStrategy(last.question, last.answer);
-            successStrategies.strategies.push({
-                strategy, keywords: last.question.toLowerCase().split(" ").slice(0, 5), timestamp: Date.now(), userId: chatId.toString()
-            });
+            successStrategies.strategies.push({ strategy, keywords: last.question.toLowerCase().split(" ").slice(0,5), timestamp: Date.now(), userId: chatId.toString() });
             if (successStrategies.strategies.length > 100) successStrategies.strategies = successStrategies.strategies.slice(-100);
-            saveSuccessStrategies();
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
-                callback_query_id: update.callback_query.id,
-                text: "Seneng membantu! 😊",
-                show_alert: false
-            });
+            await saveSuccessStrategies();
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, { callback_query_id: update.callback_query.id, text: "Seneng membantu! 😊", show_alert: false });
         }
         return res.sendStatus(200);
     }
@@ -365,26 +314,13 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         const text = update.message.text;
         
         stats.conversationCount++;
-        
-        // Trigger self-improvement setiap 50 percakapan
         if (stats.conversationCount % SELF_IMPROVE_INTERVAL === 0 && GITHUB_TOKEN) {
-            console.log("🔄 Mencapai batas percakapan, menjalankan self-improvement...");
             await analyzeAndImproveCode();
         }
-        
-        const userMem = await getUserMemory(userId);
-        const chatHistory = shortMemory.filter(m => m.userId === userId).slice(-5).map(m => `Kamu: ${m.q}\nAku: ${m.a}`).join("\n");
-        const mood = await detectMood(text);
-        console.log(`😊 User ${userId} mood: ${mood}`);
-        
-        await updateUserMemory(userId, text, "", mood);
+        await saveStats();
         
         if (text === '/start') {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: "🧠 *ULTRA AI v6.0 - Self-Improving*\n\n✅ Self-improvement setiap 50 chat\n✅ ReasoningBank + SAGE + Mem0 + Ralph\n✅ Bisa gambar & suara\n✅ Belajar dari sukses & gagal\n\nKirim pesan biasa, aku jawab kayak teman!",
-                parse_mode: "Markdown"
-            });
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🧠 *ULTRA AI v7.0 - Redis Edition*\n\n✅ Memori permanen (Redis)\n✅ Belajar dari sukses/gagal\n✅ Bisa gambar & suara\n✅ Self-improvement\nKirim pesan biasa, aku jawab kayak teman!", parse_mode: "Markdown" });
             return res.sendStatus(200);
         }
         
@@ -392,11 +328,8 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
             const prompt = text.slice(7);
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `🎨 Lagi gambar: "${prompt}"...` });
             const imageUrl = await generateImage(prompt);
-            if (imageUrl) {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: imageUrl, caption: `✨ Hasil: "${prompt}"` });
-            } else {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal buat gambar." });
-            }
+            if (imageUrl) await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: imageUrl, caption: `✨ Hasil: "${prompt}"` });
+            else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal buat gambar." });
             return res.sendStatus(200);
         }
         
@@ -408,32 +341,29 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
             }
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🔊 Membuat suara..." });
             const audio = await textToSpeech(ttsText);
-            if (audio) {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendVoice`, { chat_id: chatId, voice: audio.toString('base64'), caption: `🔊 "${ttsText}"` });
-            } else {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal buat suara." });
-            }
+            if (audio) await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendVoice`, { chat_id: chatId, voice: audio.toString('base64'), caption: `🔊 "${ttsText}"` });
+            else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal buat suara." });
             return res.sendStatus(200);
         }
         
         let finalQuestion = text;
         if (text.startsWith('/chat ')) finalQuestion = text.slice(6);
         
-        const userPreference = userMem.preferences?.favoriteStyle || "santai";
+        const mood = await detectMood(finalQuestion);
+        const shortMem = await loadShortMemory(userId);
+        const chatHistory = shortMem.slice(-5).map(m => `Kamu: ${m.q}\nAku: ${m.a}`).join("\n");
+        const userPreference = (await getUserMemory(userId)).preferences.favoriteStyle || "santai";
         const { answer, iteration } = await getUltraAnswer(finalQuestion, userId, mood, chatHistory, userPreference);
         
-        shortMemory.push({ userId, q: finalQuestion, a: answer, timestamp: Date.now(), mood });
-        if (shortMemory.length > 500) shortMemory = shortMemory.slice(-500);
-        saveMemory();
-        
+        await saveShortMemory(userId, finalQuestion, answer, mood);
         await updateUserMemory(userId, finalQuestion, answer, mood);
         
         const moodEmoji = { SEDIH: "🥺", MARAH: "😤", SENANG: "😄", BERCANDA: "😜", SERIUS: "🤔", NETRAL: "😊" };
-        const answerWithInfo = `${moodEmoji[mood] || "💬"} *[${mood.toLowerCase()}|R${iteration}]*\n\n${answer}`;
+        const answerText = `${moodEmoji[mood] || "💬"} *[${mood.toLowerCase()}|R${iteration}]*\n\n${answer}`;
         
         const sent = await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
             chat_id: chatId,
-            text: answerWithInfo,
+            text: answerText,
             parse_mode: "Markdown",
             reply_markup: { inline_keyboard: [[{ text: "✅ Membantu", callback_data: "positive" }, { text: "❌ Tidak membantu", callback_data: "negative" }]] }
         });
@@ -445,14 +375,17 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 });
 
 // ==================== START SERVER ====================
-app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`🚀 ULTRA AI v6.0 (Self-Improving) berjalan di port ${PORT}`);
-    console.log(`📊 Self-improvement setiap ${SELF_IMPROVE_INTERVAL} percakapan | GITHUB_TOKEN: ${GITHUB_TOKEN ? "ADA" : "TIDAK ADA"}`);
-    const webhookUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
-    try {
-        await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${webhookUrl}`);
-        console.log(`✅ Webhook diset ke: ${webhookUrl}`);
-    } catch (error) {
-        console.error("❌ Gagal set webhook:", error.message);
-    }
-});
+async function start() {
+    await loadRedisData();
+    app.listen(PORT, '0.0.0.0', async () => {
+        console.log(`🚀 ULTRA AI v7.0 (Redis) berjalan di port ${PORT}`);
+        const webhookUrl = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
+        try {
+            await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${webhookUrl}`);
+            console.log(`✅ Webhook diset ke: ${webhookUrl}`);
+        } catch (error) {
+            console.error("❌ Gagal set webhook:", error.message);
+        }
+    });
+}
+start();
