@@ -74,6 +74,11 @@ async function generateImage(prompt, retryCount = 0) {
     }
 }
 
+// Panggil fungsi embedding (tidak langsung dijalankan, ini ilustrasi)
+async function createEmbedding(text) {
+    const response = await axios.post('http://localhost:8000/embed', { text });
+    return response.data.embedding; // vektor dengan 384 angka
+}
 // ==================== FUNGSI TEXT-TO-SPEECH (POLLINATIONS) ====================
 async function textToSpeech(text) {
     if (!POLLINATIONS_API_KEY) {
