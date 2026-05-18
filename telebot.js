@@ -71,17 +71,15 @@ function saveAll() {
     saveData('ab_log', abLog.slice(-1000));
 }
 
-// ==================== COOLDOWN & RATE LIMITER ====================
+// ==================== COOLDOWN & RATE LIMITER (tanpa gambar) ====================
 const cooldowns = new Map();
-const imageCooldown = new Map();
 
-function checkCooldown(userId, type = 'default') {
+function checkCooldown(userId) {
     const now = Date.now();
-    const map = type === 'image' ? imageCooldown : cooldowns;
-    const last = map.get(userId) || 0;
-    const limit = type === 'image' ? 10000 : 5000;
+    const last = cooldowns.get(userId) || 0;
+    const limit = 5000; // 5 detik
     if (now - last < limit) return limit - (now - last);
-    map.set(userId, now);
+    cooldowns.set(userId, now);
     return 0;
 }
 
@@ -222,16 +220,6 @@ async function getWeather(city) {
         return `🌤️ *Cuaca ${d.name}*\n🌡️ ${d.main.temp}°C\n💧 ${d.main.humidity}%\n🌬️ ${d.wind.speed} m/s\n📝 ${d.weather[0].description}`;
     } catch { return `Kota "${city}" tidak ditemukan.`; }
 }
-async function generateImage(prompt) {
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
-    try {
-        await axios.head(url, { timeout: 15000 });
-        return url;
-    } catch (error) {
-        console.error(`❌ Gambar gagal: ${error.message}`);
-        return null;
-    }
-}
 function crackHash(targetHash, maxLen=6) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     function brute(cur,len) {
@@ -332,32 +320,10 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const userId = chatId.toString();
     const text = update.message.text;
     
-    // Cooldown untuk semua perintah (kecuali /start, /help, /image punya sendiri)
-    if (!text.startsWith('/start') && !text.startsWith('/help') && !text.startsWith('/image')) {
-        const cooldown = checkCooldown(userId, 'default');
-        if (cooldown > 0) {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `⏳ Tunggu ${Math.ceil(cooldown/1000)} detik sebelum perintah berikutnya.` });
-            res.sendStatus(200);
-            return;
-        }
-    }
-    
-    // Perintah /image dengan cooldown khusus
-    if (text.startsWith('/image ')) {
-        const cooldownImg = checkCooldown(userId, 'image');
-        if (cooldownImg > 0) {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `⏳ Tunggu ${Math.ceil(cooldownImg/1000)} detik sebelum perintah gambar berikutnya.` });
-            res.sendStatus(200);
-            return;
-        }
-        const prompt = text.slice(7);
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `🎨 Menggambar: "${prompt}"...` });
-        const imgUrl = await generateImage(prompt);
-        if (imgUrl) {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: imgUrl, caption: `✨ Hasil: ${prompt}` });
-        } else {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal membuat gambar. Coba lagi nanti." });
-        }
+    // Cooldown untuk semua perintah (5 detik)
+    const cooldown = checkCooldown(userId);
+    if (cooldown > 0 && !text.startsWith('/start') && !text.startsWith('/help')) {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `⏳ Tunggu ${Math.ceil(cooldown/1000)} detik sebelum perintah berikutnya.` });
         res.sendStatus(200);
         return;
     }
@@ -382,7 +348,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     
     // Perintah teks khusus
     if (text === '/start') {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🤖 *Ultimate Bot v12* - Multibahasa, belajar, web search (Tavily).\nKetik /help untuk bantuan." });
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🤖 *Ultimate Bot v13* - Multibahasa, belajar, web search (Tavily).\nFitur gambar dihapus untuk stabilitas.\nKetik /help untuk bantuan." });
         res.sendStatus(200);
         return;
     }
@@ -393,7 +359,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 /stats - Statistik bot
 /rollback - Hapus aturan terakhir
 /feedback - 5 feedback terakhir
-/image <desc> - Buat gambar
 /crack <hash> - Crack MD5 (6 char)
 /hitung <expr> - Kalkulator
 /jam - Waktu Jepang
@@ -488,13 +453,13 @@ Kirim pesan biasa, saya jawab dalam bahasa Anda.`;
     res.sendStatus(200);
 });
 
-// ==================== START SERVER (dengan inisialisasi async) ====================
+// ==================== START SERVER ====================
 async function start() {
     await initRedis();
     await loadAllMemories();
     
     app.listen(PORT, '0.0.0.0', async () => {
-        console.log(`✅ Ultimate Bot v12 (Tavily) berjalan di port ${PORT}`);
+        console.log(`✅ Ultimate Bot v13 (tanpa gambar) berjalan di port ${PORT}`);
         const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
         try {
             await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
