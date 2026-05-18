@@ -18,19 +18,27 @@ if (!TELEGRAM_TOKEN || !GROQ_API_KEY) {
 
 // ==================== MEMORI PERSISTEN (REDIS + FILE FALLBACK) ====================
 let redisClient = null;
-if (REDIS_URL) {
-    try {
-        const Redis = require('ioredis');
-        redisClient = new Redis(REDIS_URL);
-        console.log("✅ Redis Cloud terhubung. Data persisten.");
-    } catch(e) { console.log("⚠️ Redis gagal, fallback file JSON."); }
+let shortMemory = [];
+let lessons = { rules: [] };
+let userMemory = {};
+let abLog = [];
+
+async function initRedis() {
+    if (REDIS_URL) {
+        try {
+            const Redis = require('ioredis');
+            redisClient = new Redis(REDIS_URL);
+            await redisClient.ping();
+            console.log("✅ Redis Cloud terhubung. Data persisten.");
+        } catch(e) {
+            console.log("⚠️ Redis gagal, fallback file JSON.", e.message);
+            redisClient = null;
+        }
+    } else {
+        console.log("⚠️ REDIS_URL tidak diset, menggunakan file JSON.");
+    }
 }
 
-async function saveData(key, data) {
-    const str = JSON.stringify(data);
-    if (redisClient) await redisClient.set(key, str);
-    fs.writeFileSync(`${key}.json`, str);
-}
 async function loadData(key, defaultValue) {
     if (redisClient) {
         const val = await redisClient.get(key);
@@ -42,10 +50,19 @@ async function loadData(key, defaultValue) {
     return defaultValue;
 }
 
-let shortMemory = await loadData('memory', []);
-let lessons = await loadData('lessons', { rules: [] });
-let userMemory = await loadData('user_memory', {});
-let abLog = await loadData('ab_log', []);
+async function saveData(key, data) {
+    const str = JSON.stringify(data);
+    if (redisClient) await redisClient.set(key, str);
+    fs.writeFileSync(`${key}.json`, str);
+}
+
+async function loadAllMemories() {
+    shortMemory = await loadData('memory', []);
+    lessons = await loadData('lessons', { rules: [] });
+    userMemory = await loadData('user_memory', {});
+    abLog = await loadData('ab_log', []);
+    console.log(`📂 Memori dimuat: ${shortMemory.length} percakapan, ${lessons.rules.length} aturan`);
+}
 
 function saveAll() {
     saveData('memory', shortMemory.slice(-500));
@@ -272,7 +289,6 @@ async function getSmartAnswer(question, userId) {
     if(needsFresh && TAVILY_API_KEY) {
         const searchRes = await searchWebTavily(question);
         if(searchRes && !searchRes.includes('Gagal') && !searchRes.includes('API key')) {
-            // Ekstrak jawaban dari hasil pencarian (optional)
             const learned = await askGroq(`Berdasarkan hasil pencarian berikut: ${searchRes}\nJawab pertanyaan: ${question}`);
             lessons.rules.push({ trigger: question.slice(0,50), answer: learned, source:'auto_learn', timestamp: Date.now() });
             if(lessons.rules.length>200) lessons.rules.shift();
@@ -472,12 +488,22 @@ Kirim pesan biasa, saya jawab dalam bahasa Anda.`;
     res.sendStatus(200);
 });
 
-// ==================== START SERVER ====================
-app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`✅ Ultimate Bot v12 (Tavily) berjalan di port ${PORT}`);
-    const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
-    try {
-        await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
-        console.log(`📂 Webhook diset ke ${url}`);
-    } catch(e) { console.error("Webhook error:", e.message); }
+// ==================== START SERVER (dengan inisialisasi async) ====================
+async function start() {
+    await initRedis();
+    await loadAllMemories();
+    
+    app.listen(PORT, '0.0.0.0', async () => {
+        console.log(`✅ Ultimate Bot v12 (Tavily) berjalan di port ${PORT}`);
+        const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
+        try {
+            await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
+            console.log(`📂 Webhook diset ke ${url}`);
+        } catch(e) { console.error("Webhook error:", e.message); }
+    });
+}
+
+start().catch(err => {
+    console.error("Gagal start bot:", err);
+    process.exit(1);
 });
