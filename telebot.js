@@ -5,8 +5,6 @@ const crypto = require('crypto');
 const schedule = require('node-schedule');
 const { google } = require('googleapis');
 const sharp = require('sharp');
-const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage() });
 const { Mistral } = require('@mistralai/mistralai');
 
 // ==================== KONFIGURASI ====================
@@ -36,8 +34,8 @@ let shortMemory = [];
 let lessons = { rules: [] };
 let userMemory = {};
 let abLog = [];
-let reminders = {};      // { userId: [ { job, message, time } ] }
-let oAuth2Client = null;
+let knowledgeBase = [];
+let scheduledJobs = {}; // untuk menyimpan referensi job reminder
 
 async function initRedis() {
     if (!REDIS_URL) return;
@@ -79,8 +77,28 @@ async function loadAllMemories() {
     lessons = await loadData('lessons', { rules: [] });
     userMemory = await loadData('user_memory', {});
     abLog = await loadData('ab_log', []);
-    reminders = await loadData('reminders', {});
-    console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan`);
+    knowledgeBase = await loadData('knowledge', []);
+    // Load reminders dari userMemory (kita simpan di userMemory[userId].reminders)
+    // Reschedule reminder setelah load
+    for (const userId in userMemory) {
+        const reminders = userMemory[userId]?.reminders || [];
+        for (const rem of reminders) {
+            const jobDate = new Date(rem.time);
+            if (jobDate > new Date()) {
+                const job = schedule.scheduleJob(jobDate, async () => {
+                    await safeSendMessage(userId, `⏰ *Pengingat:* ${rem.message}`, { parse_mode: "Markdown" });
+                    // hapus dari daftar setelah eksekusi
+                    if (userMemory[userId]?.reminders) {
+                        userMemory[userId].reminders = userMemory[userId].reminders.filter(r => r.id !== rem.id);
+                        saveAll();
+                    }
+                });
+                if (!scheduledJobs[userId]) scheduledJobs[userId] = [];
+                scheduledJobs[userId].push(job);
+            }
+        }
+    }
+    console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
 
 function saveAll() {
@@ -88,7 +106,7 @@ function saveAll() {
     saveData('lessons', lessons);
     saveData('user_memory', userMemory);
     saveData('ab_log', abLog.slice(-1000));
-    saveData('reminders', reminders);
+    saveData('knowledge', knowledgeBase);
 }
 
 // ==================== WATCHDOG ====================
@@ -100,7 +118,7 @@ setInterval(() => {
     }
 }, 60000);
 
-// ==================== FUNGSI AI (PRIORITAS MISTRAL) ====================
+// ==================== FUNGSI AI ====================
 async function askMistral(prompt) {
     if (!MISTRAL_API_KEY) throw new Error("MISTRAL_API_KEY tidak diset");
     const client = new Mistral({ apiKey: MISTRAL_API_KEY });
@@ -160,7 +178,7 @@ function simpleDetectLanguage(text) {
     return 'id';
 }
 
-// ==================== SAFE SEND MESSAGE ====================
+// ==================== SAFE SEND ====================
 async function safeSendMessage(chatId, text, extra = {}) {
     const payload = { chat_id: chatId, text: text, ...extra };
     try {
@@ -184,8 +202,7 @@ function getCurrentTime() {
 function getCurrentDate() {
     const now = new Date();
     const options = { timeZone: 'Asia/Jakarta', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
-    const tanggal = now.toLocaleDateString('id-ID', options);
-    return `📅 Hari ini: ${tanggal}`;
+    return `📅 Hari ini: ${now.toLocaleDateString('id-ID', options)}`;
 }
 function calculate(expr) {
     try {
@@ -320,7 +337,7 @@ function getSystemPrompt(userId) {
     return `Kamu adalah asisten pribadi bernama "${botName}". Gunakan bahasa santai (aku/kamu). Jawab singkat, maks 3 kalimat. Jika tidak tahu, bilang tidak tahu. Nama kamu adalah ${botName}.`;
 }
 
-// ==================== FITUR BARU ====================
+// ==================== FITUR TAMBAHAN ====================
 
 // --- Mood Tracking ---
 async function handleMood(chatId, userId, text, msg) {
@@ -337,7 +354,7 @@ async function handleMood(chatId, userId, text, msg) {
             userMemory[userId].lastMoodUpdate = Date.now();
             delete userMemory[userId].awaitingMood;
             saveAll();
-            await safeSendMessage(chatId, `Terima kasih! Aku catat suasana hatimu "${mood}". Semoga harimu menyenangkan! 😊`, { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, `Terima kasih! Suasana hatimu "${mood}" tercatat.`, { reply_to_message_id: msg.message_id });
         } else {
             await safeSendMessage(chatId, "Pilihan: senang, biasa, sedih, cemas, energik.", { reply_to_message_id: msg.message_id });
         }
@@ -350,28 +367,28 @@ async function handleMood(chatId, userId, text, msg) {
 async function handleReminder(chatId, userId, text, msg) {
     if (text.startsWith('/remind')) {
         const parts = text.split(' ').slice(1);
-        if (parts.length < 2) {
-            await safeSendMessage(chatId, "Format: /remind YYYY-MM-DD HH:MM pesan\nContoh: /remind 2026-12-31 23:59 Selamat tahun baru!", { reply_to_message_id: msg.message_id });
+        if (parts.length < 3) {
+            await safeSendMessage(chatId, "Format: /remind YYYY-MM-DD HH:MM pesan", { reply_to_message_id: msg.message_id });
             return true;
         }
         const dateStr = parts[0];
         const timeStr = parts[1];
         const message = parts.slice(2).join(' ');
         const datetime = new Date(`${dateStr}T${timeStr}:00`);
-        if (isNaN(datetime)) {
-            await safeSendMessage(chatId, "Format tanggal/waktu salah. Gunakan YYYY-MM-DD HH:MM", { reply_to_message_id: msg.message_id });
+        if (isNaN(datetime) || datetime <= new Date()) {
+            await safeSendMessage(chatId, "Tanggal/waktu tidak valid atau sudah lewat.", { reply_to_message_id: msg.message_id });
             return true;
         }
+        const reminderId = Date.now().toString();
         const job = schedule.scheduleJob(datetime, async () => {
             await safeSendMessage(chatId, `⏰ *Pengingat:* ${message}`, { parse_mode: "Markdown" });
-            // hapus dari daftar
-            if (reminders[userId]) {
-                reminders[userId] = reminders[userId].filter(j => j !== job);
+            if (userMemory[userId]?.reminders) {
+                userMemory[userId].reminders = userMemory[userId].reminders.filter(r => r.id !== reminderId);
                 saveAll();
             }
         });
-        if (!reminders[userId]) reminders[userId] = [];
-        reminders[userId].push(job);
+        if (!userMemory[userId].reminders) userMemory[userId].reminders = [];
+        userMemory[userId].reminders.push({ id: reminderId, time: datetime.toISOString(), message });
         saveAll();
         await safeSendMessage(chatId, `✅ Pengingat dijadwalkan pada ${datetime.toString()}`, { reply_to_message_id: msg.message_id });
         return true;
@@ -384,7 +401,7 @@ async function handleTodo(chatId, userId, text, msg) {
     if (text === '/todo') {
         const tasks = userMemory[userId]?.todos || [];
         if (tasks.length === 0) {
-            await safeSendMessage(chatId, "📝 Daftar tugas kosong. Gunakan /add <tugas> untuk menambah.", { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "📝 Daftar tugas kosong. Gunakan /add <tugas>", { reply_to_message_id: msg.message_id });
         } else {
             const list = tasks.map((t, i) => `${i+1}. ${t.done ? '✅' : '❌'} ${t.text}`).join('\n');
             await safeSendMessage(chatId, `📋 *To-Do List:*\n${list}`, { parse_mode: "Markdown", reply_to_message_id: msg.message_id });
@@ -410,7 +427,7 @@ async function handleTodo(chatId, userId, text, msg) {
         }
         return true;
     }
-    if (text === '/clear') {
+    if (text === '/cleartodo') {
         if (userMemory[userId]?.todos) {
             userMemory[userId].todos = [];
             saveAll();
@@ -421,60 +438,59 @@ async function handleTodo(chatId, userId, text, msg) {
     return false;
 }
 
-// --- Quiz & Polling ---
+// --- Quiz & Poll ---
+let quizState = {}; // sementara untuk menunggu opsi
 async function handleQuizPoll(chatId, text, msg) {
     if (text.startsWith('/quiz ')) {
         const question = text.slice(6);
+        quizState[chatId] = { type: 'quiz', question };
         await safeSendMessage(chatId, "Kirim opsi jawaban (pisahkan dengan koma):", { reply_to_message_id: msg.message_id });
-        userMemory[chatId.toString()]?.awaitingQuizOptions || (userMemory[chatId.toString()] = { ...userMemory[chatId.toString()], awaitingQuizOptions: question });
         return true;
     }
-    if (userMemory[chatId.toString()]?.awaitingQuizOptions) {
-        const question = userMemory[chatId.toString()].awaitingQuizOptions;
+    if (quizState[chatId] && quizState[chatId].type === 'quiz') {
         const options = text.split(',').map(o => o.trim()).filter(o => o);
         if (options.length < 2) {
             await safeSendMessage(chatId, "Minimal 2 opsi.", { reply_to_message_id: msg.message_id });
-            delete userMemory[chatId.toString()].awaitingQuizOptions;
+            delete quizState[chatId];
             return true;
         }
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPoll`, {
             chat_id: chatId,
-            question: question,
+            question: quizState[chatId].question,
             options: options,
             is_anonymous: false,
             type: 'quiz',
             correct_option_id: 0
         });
-        delete userMemory[chatId.toString()].awaitingQuizOptions;
+        delete quizState[chatId];
         return true;
     }
     if (text.startsWith('/poll ')) {
-        const pollText = text.slice(6);
+        const question = text.slice(6);
+        quizState[chatId] = { type: 'poll', question };
         await safeSendMessage(chatId, "Kirim opsi polling (pisahkan dengan koma):", { reply_to_message_id: msg.message_id });
-        userMemory[chatId.toString()]?.awaitingPollOptions || (userMemory[chatId.toString()] = { ...userMemory[chatId.toString()], awaitingPollOptions: pollText });
         return true;
     }
-    if (userMemory[chatId.toString()]?.awaitingPollOptions) {
-        const question = userMemory[chatId.toString()].awaitingPollOptions;
+    if (quizState[chatId] && quizState[chatId].type === 'poll') {
         const options = text.split(',').map(o => o.trim()).filter(o => o);
         if (options.length < 2) {
             await safeSendMessage(chatId, "Minimal 2 opsi.", { reply_to_message_id: msg.message_id });
-            delete userMemory[chatId.toString()].awaitingPollOptions;
+            delete quizState[chatId];
             return true;
         }
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPoll`, {
             chat_id: chatId,
-            question: question,
+            question: quizState[chatId].question,
             options: options,
             is_anonymous: false
         });
-        delete userMemory[chatId.toString()].awaitingPollOptions;
+        delete quizState[chatId];
         return true;
     }
     return false;
 }
 
-// --- Group Management (sederhana) ---
+// --- Group Management ---
 async function handleGroupManagement(chatId, text, msg) {
     if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') return false;
     if (text === '/kick' && msg.reply_to_message) {
@@ -497,29 +513,29 @@ async function handleGroupManagement(chatId, text, msg) {
     return false;
 }
 
-// --- Image Editing (via reply ke foto) ---
+// --- Image Editing (resize) ---
 async function handleImageEdit(chatId, text, msg) {
-    if (text.startsWith('/resize ')) {
+    if (text.startsWith('/resize ') && msg.reply_to_message?.photo) {
         const size = text.slice(8).split('x');
-        if (size.length !== 2 || !msg.reply_to_message?.photo) {
-            await safeSendMessage(chatId, "Balas foto dengan /resize widthxheight", { reply_to_message_id: msg.message_id });
+        if (size.length !== 2) {
+            await safeSendMessage(chatId, "Format: /resize widthxheight (balas foto)", { reply_to_message_id: msg.message_id });
             return true;
         }
         const width = parseInt(size[0]);
         const height = parseInt(size[1]);
         if (isNaN(width) || isNaN(height)) {
-            await safeSendMessage(chatId, "Format salah. Contoh: /resize 300x200", { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "Lebar/tinggi tidak valid.", { reply_to_message_id: msg.message_id });
             return true;
         }
         const fileId = msg.reply_to_message.photo[msg.reply_to_message.photo.length-1].file_id;
         const fileInfo = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
         const filePath = fileInfo.data.result.file_path;
         const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
-        const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-        const resizedImage = await sharp(imageResponse.data).resize(width, height).toBuffer();
+        const imageRes = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        const resized = await sharp(imageRes.data).resize(width, height).toBuffer();
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, {
             chat_id: chatId,
-            photo: resizedImage.toString('base64'),
+            photo: resized.toString('base64'),
             caption: `Resize ke ${width}x${height}`,
             reply_to_message_id: msg.message_id
         });
@@ -528,38 +544,29 @@ async function handleImageEdit(chatId, text, msg) {
     return false;
 }
 
-// --- Sticker Generation (dari gambar yang dibalas) ---
-async function handleSticker(chatId, text, msg) {
+// --- Sticker hint ---
+async function handleStickerHint(chatId, text, msg) {
     if (text === '/sticker' && msg.reply_to_message?.photo) {
-        await safeSendMessage(chatId, "Membuat stiker...", { reply_to_message_id: msg.message_id });
-        const fileId = msg.reply_to_message.photo[msg.reply_to_message.photo.length-1].file_id;
-        const fileInfo = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
-        const filePath = fileInfo.data.result.file_path;
-        const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
-        const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-        const webpBuffer = await sharp(imageResponse.data).resize(512, 512).webp().toBuffer();
-        // upload sebagai stiker (perlu set nama stiker set, tidak bisa langsung sembarang)
-        await safeSendMessage(chatId, "Fitur stiker memerlukan pembuatan stiker set terlebih dahulu. Sementara, kirim gambar sebagai stiker biasa tidak didukung langsung. Namun kamu bisa menggunakan @Stickers bot.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, "Untuk membuat stiker, gunakan @Stickers bot. Saya belum support pembuatan stiker otomatis.", { reply_to_message_id: msg.message_id });
         return true;
     }
     return false;
 }
 
-// --- Knowledge Base (RAG sederhana) ---
-let knowledgeBase = [];
+// --- Knowledge Base ---
 async function handleKnowledge(chatId, text, msg) {
     if (text.startsWith('/learn ')) {
         const content = text.slice(7);
         knowledgeBase.push({ content, timestamp: Date.now() });
         saveData('knowledge', knowledgeBase);
-        await safeSendMessage(chatId, "✅ Pengetahuan ditambahkan ke basis data.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, "✅ Pengetahuan ditambahkan.", { reply_to_message_id: msg.message_id });
         return true;
     }
     if (text.startsWith('/askkb ')) {
-        const query = text.slice(7);
-        const relevant = knowledgeBase.filter(k => k.content.toLowerCase().includes(query.toLowerCase()));
+        const query = text.slice(7).toLowerCase();
+        const relevant = knowledgeBase.filter(k => k.content.toLowerCase().includes(query));
         if (relevant.length === 0) {
-            await safeSendMessage(chatId, "Tidak ada informasi terkait dalam basis pengetahuan.", { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "Tidak ada informasi terkait.", { reply_to_message_id: msg.message_id });
         } else {
             const answer = relevant.slice(-3).map(k => k.content).join('\n\n');
             await safeSendMessage(chatId, `📚 *Basis Pengetahuan:*\n${answer}`, { parse_mode: "Markdown", reply_to_message_id: msg.message_id });
@@ -569,9 +576,69 @@ async function handleKnowledge(chatId, text, msg) {
     return false;
 }
 
+// ==================== GOOGLE CALENDAR OAUTH ====================
+let oAuth2Client = null;
+if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI) {
+    oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+    console.log("✅ Google Calendar OAuth2 siap.");
+} else {
+    console.log("⚠️ Google Calendar OAuth2 tidak dikonfigurasi.");
+}
+
+function getAuthUrl(state) {
+    if (!oAuth2Client) return null;
+    return oAuth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://www.googleapis.com/auth/calendar'],
+        prompt: 'consent',
+        state: state
+    });
+}
+
+async function getTokensFromCode(code) {
+    if (!oAuth2Client) throw new Error("OAuth2 tidak dikonfigurasi");
+    const { tokens } = await oAuth2Client.getToken(code);
+    return tokens;
+}
+
+async function saveUserTokens(userId, tokens) {
+    if (!userMemory[userId]) userMemory[userId] = {};
+    userMemory[userId].calendarTokens = tokens;
+    saveAll();
+}
+
+async function getUserTokens(userId) {
+    return userMemory[userId]?.calendarTokens || null;
+}
+
+async function getCalendarClient(userId) {
+    const tokens = await getUserTokens(userId);
+    if (!tokens || !oAuth2Client) return null;
+    oAuth2Client.setCredentials(tokens);
+    return google.calendar({ version: 'v3', auth: oAuth2Client });
+}
+
 // ==================== WEBHOOK SERVER ====================
 const app = express();
 app.use(express.json());
+
+// Endpoint OAuth callback
+app.get('/oauth2callback', async (req, res) => {
+    const code = req.query.code;
+    const state = req.query.state;
+    if (!code) return res.send('No code provided');
+    if (!state) return res.send('Missing state');
+    try {
+        const tokens = await getTokensFromCode(code);
+        await saveUserTokens(state, tokens);
+        await safeSendMessage(state, "✅ Autentikasi Google Calendar berhasil! Sekarang kamu bisa menggunakan `/addevent`.", { parse_mode: "Markdown" });
+        res.send('Autentikasi berhasil! Silakan kembali ke Telegram.');
+    } catch (error) {
+        console.error(error);
+        res.send('Autentikasi gagal: ' + error.message);
+    }
+});
+
 app.get('/health', (req, res) => res.send('OK'));
 
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
@@ -579,11 +646,8 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (update.callback_query) {
         const cb = update.callback_query;
         const chatId = cb.message.chat.id;
-        if (cb.data === 'positive') {
-            await safeSendMessage(chatId, "👍 Terima kasih!");
-        } else {
-            await safeSendMessage(chatId, "👎 Gunakan /koreksi untuk mengajari saya.");
-        }
+        if (cb.data === 'positive') await safeSendMessage(chatId, "👍 Terima kasih!");
+        else await safeSendMessage(chatId, "👎 Gunakan /koreksi untuk mengajari saya.");
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, { callback_query_id: cb.id });
         return res.sendStatus(200);
     }
@@ -595,19 +659,19 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     if (!userMemory[userId]) userMemory[userId] = { botName: "Bot Desa" };
 
-    // ========== PERINTAH LAMA ==========
+    // ========== PERINTAH DASAR ==========
     if (text === '/start') {
         await safeSendMessage(chatId, `🤖 Halo! Aku ${userMemory[userId].botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/help') {
         const help = `/start - mulai
-/help - bantuan ini
+/help - bantuan
 /stats - statistik
 /rollback - hapus aturan
 /feedback - log A/B
 /image <desc> - gambar
-/crack <hash> - crack MD5
+/crack <hash> - crack
 /hitung <expr> - kalkulator
 /jam - waktu Jepang
 /tanggal - tanggal hari ini
@@ -620,18 +684,20 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 ✨ *Fitur Baru:*
 /mood - catat suasana hati
 /remind YYYY-MM-DD HH:MM pesan - pengingat
-/todo - lihat daftar tugas
+/todo - lihat tugas
 /add <tugas> - tambah tugas
 /done <nomor> - selesaikan tugas
-/clear - hapus semua tugas
+/cleartodo - hapus semua tugas
 /quiz <pertanyaan> - buat kuis
 /poll <pertanyaan> - buat polling
-/kick (balas pesan) - tendang anggota (grup)
-/pin (balas pesan) - semat pesan (grup)
-/resize widthxheight (balas foto) - ubah ukuran gambar
-/sticker (balas foto) - buat stiker (sementara)
-/learn <teks> - tambah basis pengetahuan
-/askkb <pertanyaan> - tanya basis pengetahuan`;
+/kick (balas pesan) - tendang (grup)
+/pin (balas pesan) - semat (grup)
+/resize widthxheight (balas foto) - ubah ukuran
+/sticker (balas foto) - panduan stiker
+/learn <teks> - tambah pengetahuan
+/askkb <pertanyaan> - tanya pengetahuan
+/auth - autentikasi Google Calendar
+/addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM - tambah event`;
         await safeSendMessage(chatId, help, { parse_mode: "Markdown", reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
@@ -683,17 +749,17 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (text.startsWith('/koreksi ')) {
         const parts = text.slice(9).split('|');
         if (parts.length < 2) {
-            await safeSendMessage(chatId, "Format: /koreksi pertanyaan | jawaban_benar\nContoh: /koreksi siapa presiden Indonesia | Ir. Soekarno", { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "Format: /koreksi pertanyaan | jawaban_benar", { reply_to_message_id: msg.message_id });
         } else {
             const trigger = parts[0].trim();
             const answer = parts[1].trim();
             if (!answer || answer.length < 3) {
-                await safeSendMessage(chatId, "❌ Jawaban terlalu pendek atau tidak valid.", { reply_to_message_id: msg.message_id });
+                await safeSendMessage(chatId, "❌ Jawaban terlalu pendek.", { reply_to_message_id: msg.message_id });
             } else {
                 lessons.rules.push({ trigger, answer, source: 'user', timestamp: Date.now() });
                 if (lessons.rules.length > 200) lessons.rules.shift();
                 saveAll();
-                await safeSendMessage(chatId, "✅ Terima kasih, saya belajar. Coba tanyakan pertanyaan tersebut sekarang.", { reply_to_message_id: msg.message_id });
+                await safeSendMessage(chatId, "✅ Terima kasih, saya belajar.", { reply_to_message_id: msg.message_id });
             }
         }
         return res.sendStatus(200);
@@ -704,33 +770,85 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     }
     if (text.startsWith('/setname ')) {
         const newName = text.slice(9).trim();
-        if (newName && newName.length > 0 && newName.length < 50) {
+        if (newName && newName.length < 50) {
             userMemory[userId].botName = newName;
             saveAll();
-            await safeSendMessage(chatId, `✅ Nama panggilanku sekarang "${newName}".`, { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, `✅ Namaku sekarang "${newName}".`, { reply_to_message_id: msg.message_id });
         } else {
             await safeSendMessage(chatId, "❌ Nama tidak valid.", { reply_to_message_id: msg.message_id });
         }
         return res.sendStatus(200);
     }
 
-    // ========== FITUR BARU ==========
+    // ========== FITUR TAMBAHAN ==========
     if (await handleMood(chatId, userId, text, msg)) return res.sendStatus(200);
     if (await handleReminder(chatId, userId, text, msg)) return res.sendStatus(200);
     if (await handleTodo(chatId, userId, text, msg)) return res.sendStatus(200);
     if (await handleQuizPoll(chatId, text, msg)) return res.sendStatus(200);
     if (await handleGroupManagement(chatId, text, msg)) return res.sendStatus(200);
     if (await handleImageEdit(chatId, text, msg)) return res.sendStatus(200);
-    if (await handleSticker(chatId, text, msg)) return res.sendStatus(200);
+    if (await handleStickerHint(chatId, text, msg)) return res.sendStatus(200);
     if (await handleKnowledge(chatId, text, msg)) return res.sendStatus(200);
 
-    // ========== TOOLS & AI ==========
-    const toolRes = await handleTools(text);
-    if (toolRes) {
-        await safeSendMessage(chatId, toolRes, { reply_to_message_id: msg.message_id, parse_mode: "Markdown", disable_web_page_preview: true });
+    // ========== GOOGLE CALENDAR ==========
+    if (text === '/auth') {
+        if (!oAuth2Client) {
+            await safeSendMessage(chatId, "❌ Fitur Google Calendar belum dikonfigurasi.", { reply_to_message_id: msg.message_id });
+            return res.sendStatus(200);
+        }
+        const authUrl = getAuthUrl(userId);
+        if (!authUrl) {
+            await safeSendMessage(chatId, "❌ Gagal membuat link autentikasi.", { reply_to_message_id: msg.message_id });
+            return res.sendStatus(200);
+        }
+        await safeSendMessage(chatId, `🔐 Klik tautan untuk autentikasi Google Calendar:\n${authUrl}\n\nSetelah login, kamu akan diarahkan kembali.`, { reply_to_message_id: msg.message_id });
+        return res.sendStatus(200);
+    }
+    if (text.startsWith('/addevent ')) {
+        const calendar = await getCalendarClient(userId);
+        if (!calendar) {
+            await safeSendMessage(chatId, "❌ Belum autentikasi. Gunakan /auth dulu.", { reply_to_message_id: msg.message_id });
+            return res.sendStatus(200);
+        }
+        const parts = text.slice(10).split('|');
+        if (parts.length < 3) {
+            await safeSendMessage(chatId, "Format: /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM", { reply_to_message_id: msg.message_id });
+            return res.sendStatus(200);
+        }
+        const summary = parts[0].trim();
+        const startStr = parts[1].trim();
+        const endStr = parts[2].trim();
+        const startDateTime = new Date(startStr.replace(' ', 'T') + ':00');
+        const endDateTime = new Date(endStr.replace(' ', 'T') + ':00');
+        if (isNaN(startDateTime) || isNaN(endDateTime)) {
+            await safeSendMessage(chatId, "Format tanggal/waktu salah.", { reply_to_message_id: msg.message_id });
+            return res.sendStatus(200);
+        }
+        try {
+            await calendar.events.insert({
+                calendarId: 'primary',
+                resource: {
+                    summary: summary,
+                    start: { dateTime: startDateTime.toISOString(), timeZone: 'Asia/Jakarta' },
+                    end: { dateTime: endDateTime.toISOString(), timeZone: 'Asia/Jakarta' }
+                }
+            });
+            await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
+        } catch (err) {
+            console.error(err);
+            await safeSendMessage(chatId, "❌ Gagal menambahkan event.", { reply_to_message_id: msg.message_id });
+        }
         return res.sendStatus(200);
     }
 
+    // ========== TOOLS ==========
+    const toolRes = await handleTools(text);
+    if (toolRes) {
+        await safeSendMessage(chatId, toolRes, { parse_mode: "Markdown", disable_web_page_preview: true, reply_to_message_id: msg.message_id });
+        return res.sendStatus(200);
+    }
+
+    // ========== CHAT BIASA ==========
     const lang = simpleDetectLanguage(text);
     let prompt;
     if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
@@ -747,7 +865,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         answer = "❌ AI sedang sibuk. Coba lagi nanti.";
     }
 
-    // Ringkasan & rekomendasi
+    // Ringkasan dan rekomendasi
     userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
     if (userMemory[userId].msgCount % 20 === 0) {
         const history = shortMemory.filter(m => m.userId === userId).slice(-20).map(m => `Q: ${m.q}\nA: ${m.a}`).join('\n');
@@ -781,7 +899,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 async function start() {
     await initRedis();
     await loadAllMemories();
-    knowledgeBase = await loadData('knowledge', []);
     app.listen(PORT, '0.0.0.0', async () => {
         console.log(`✅ Bot AI Super lengkap berjalan di port ${PORT}`);
         let host = process.env.RENDER_EXTERNAL_HOSTNAME;
