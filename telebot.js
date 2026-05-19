@@ -100,7 +100,7 @@ async function askGemini(prompt) {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY tidak diset");
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     // Model yang valid dan gratis (per 19 Mei 2026)
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(prompt);
     return result.response.text();
 }
