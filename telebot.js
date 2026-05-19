@@ -99,8 +99,8 @@ async function askGroq(prompt) {
 async function askGemini(prompt) {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY tidak diset");
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    // Model yang valid dan gratis (per 19 Mei 2026)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    // Model gratis yang benar dan stabil
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     return result.response.text();
 }
@@ -308,7 +308,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const userId = chatId.toString();
     const text = update.message.text;
 
-    // Perintah /start
     if (text === '/start') {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🤖 Bot AI siap. Ketik /help untuk perintah." });
         return res.sendStatus(200);
@@ -368,14 +367,12 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // Tools
     const toolRes = await handleTools(text);
     if (toolRes) {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: toolRes });
         return res.sendStatus(200);
     }
 
-    // Chat biasa
     const userLang = await detectLanguage(text);
     let answer;
     if (userLang !== 'id' && userLang !== 'en') {
@@ -389,7 +386,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         answer = await getSmartAnswer(text, userId);
     }
 
-    // Memori & rekomendasi
     if (!userMemory[userId]) userMemory[userId] = {};
     userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
     if (userMemory[userId].msgCount % 20 === 0) {
