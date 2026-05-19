@@ -21,7 +21,7 @@ if (!TELEGRAM_TOKEN) {
     process.exit(1);
 }
 
-// ==================== MEMORI PERSISTEN (REDIS + FILE JSON) ====================
+// ==================== MEMORI PERSISTEN ====================
 let redisClient = null;
 let shortMemory = [];
 let lessons = { rules: [] };
@@ -99,7 +99,8 @@ async function askGroq(prompt) {
 async function askGemini(prompt) {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY tidak diset");
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // Model yang valid dan gratis (per 19 Mei 2026)
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
     const result = await model.generateContent(prompt);
     return result.response.text();
 }
@@ -148,7 +149,7 @@ async function askWithFallback(prompt) {
     throw new Error("Semua layanan AI sedang sibuk. Coba lagi nanti.");
 }
 
-// ==================== DETEKSI BAHASA (TETAP PAKAI FALLBACK) ====================
+// ==================== DETEKSI BAHASA ====================
 const langMap = { ja:'Jepang', my:'Myanmar', fil:'Filipina', ms:'Malaysia', ko:'Korea Selatan', ta:'India', ur:'Pakistan', vi:'Vietnam', en:'Inggris', id:'Indonesia' };
 async function detectLanguage(text) {
     const prompt = `Deteksi bahasa dari teks berikut. Output hanya kode bahasa ISO 639-1 (id,en,ja,my,fil,ms,ko,ta,ur,vi). Teks: "${text}"`;
@@ -174,7 +175,7 @@ async function getTopicSuggestion(question, answer) {
     return suggestions;
 }
 
-// ==================== TOOLS (TIDAK PAKAI AI) ====================
+// ==================== TOOLS ====================
 function getCurrentTime() {
     return `🕒 Waktu Jepang: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Tokyo', hour:'2-digit', minute:'2-digit', second:'2-digit' })}`;
 }
@@ -307,7 +308,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const userId = chatId.toString();
     const text = update.message.text;
 
-    // Perintah /start, /help, /stats, /rollback, /feedback, /image, /crack, /koreksi (sama seperti sebelumnya)
+    // Perintah /start
     if (text === '/start') {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🤖 Bot AI siap. Ketik /help untuk perintah." });
         return res.sendStatus(200);
