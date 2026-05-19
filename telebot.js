@@ -34,8 +34,8 @@ async function initRedis() {
     try {
         const Redis = require('ioredis');
         redisClient = new Redis(REDIS_URL, {
-            maxRetriesPerRequest: 3,
-            retryStrategy: (times) => times > 3 ? null : Math.min(times * 100, 3000)
+            maxRetriesPerRequest: 2,
+            retryStrategy: (times) => times > 2 ? null : Math.min(times * 100, 2000)
         });
         await redisClient.ping();
         console.log("✅ Redis terhubung.");
@@ -88,46 +88,26 @@ setInterval(() => {
     }
 }, 60000);
 
-// ==================== SYSTEM PROMPT DINAMIS (BERDASARKAN NAMA YANG DISIMPAN) ====================
-function getSystemPrompt(userId) {
-    const botName = userMemory[userId]?.botName || "Bot Desa";
-    return `Kamu adalah asisten pribadi bernama "${botName}" yang ramah dan cerdas. 
-Aturan:
-1. Jawab langsung ke pertanyaan, jangan bertele-tele. Maksimal 3-4 kalimat.
-2. Gunakan bahasa Indonesia sehari-hari, panggil dirimu "aku" dan panggil user "kamu". Hindari bahasa formal seperti "saya" dan "anda".
-3. Jika tidak tahu jawabannya, katakan "Maaf, aku tidak tahu" — JANGAN mengarang informasi.
-4. Jika user bertanya tentang tanggal/waktu terkini, arahkan ke perintah /tanggal atau /jam.
-5. Jangan menyebutkan bahwa kamu adalah AI atau model bahasa, kecuali ditanya.
-6. Nama kamu adalah "${botName}". Jika user menanyakan namamu, jawab sesuai nama itu.
-7. Bersikap sopan dan membantu.`;
-}
-
-// ==================== FUNGSI AI DENGAN SYSTEM PROMPT DINAMIS ====================
-async function askMistral(prompt, systemPrompt) {
+// ==================== FUNGSI AI (PRIORITAS MISTRAL DULU) ====================
+async function askMistral(prompt) {
     if (!MISTRAL_API_KEY) throw new Error("MISTRAL_API_KEY tidak diset");
     const client = new Mistral({ apiKey: MISTRAL_API_KEY });
     const response = await client.chat.complete({
         model: "mistral-large-latest",
-        messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt }
-        ],
+        messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 800
     });
     return response.choices[0].message.content;
 }
 
-async function askGroq(prompt, systemPrompt) {
+async function askGroq(prompt) {
     if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY tidak diset");
     const res = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
         model: "llama-3.3-70b-versatile",
-        messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt }
-        ],
+        messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 800
     }, {
         headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
         timeout: 15000
@@ -135,11 +115,12 @@ async function askGroq(prompt, systemPrompt) {
     return res.data.choices[0].message.content;
 }
 
-async function askAI(prompt, systemPrompt) {
+async function askAI(prompt) {
+    // Prioritas: Mistral dulu, baru Groq
     if (MISTRAL_API_KEY) {
         try {
             console.log("🟢 Mistral...");
-            const answer = await askMistral(prompt, systemPrompt);
+            const answer = await askMistral(prompt);
             console.log("✅ Mistral sukses");
             return answer;
         } catch (err) {
@@ -148,8 +129,8 @@ async function askAI(prompt, systemPrompt) {
     }
     if (GROQ_API_KEY) {
         try {
-            console.log("🟡 Groq...");
-            const answer = await askGroq(prompt, systemPrompt);
+            console.log("⚡ Groq...");
+            const answer = await askGroq(prompt);
             console.log("✅ Groq sukses");
             return answer;
         } catch (err) {
@@ -159,7 +140,7 @@ async function askAI(prompt, systemPrompt) {
     throw new Error("Semua AI gagal.");
 }
 
-// ==================== DETEKSI BAHASA SEDERHANA ====================
+// ==================== DETEKSI BAHASA SEDERHANA (TANPA AI) ====================
 function simpleDetectLanguage(text) {
     if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) return 'ja';
     if (/[\u1000-\u109F]/.test(text)) return 'my';
@@ -172,39 +153,34 @@ function simpleDetectLanguage(text) {
 async function safeSendMessage(chatId, text, extra = {}) {
     const payload = { chat_id: chatId, text: text, ...extra };
     try {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, payload);
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, payload, { timeout: 8000 });
     } catch (err) {
         if (err.response && err.response.status === 400 && extra.reply_to_message_id) {
             delete extra.reply_to_message_id;
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: text,
-                ...extra
-            });
+            try {
+                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: text, ...extra }, { timeout: 8000 });
+            } catch (e) {}
         } else {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: "Maaf, terjadi kesalahan teknis."
-            });
+            console.error("Send error:", err.message);
         }
     }
 }
 
 // ==================== RINGKASAN & REKOMENDASI ====================
-async function summarizeChat(userId, history, systemPrompt) {
+async function summarizeChat(userId, history) {
     if (history.length < 10) return;
     try {
-        const summary = await askAI(`Ringkas percakapan ini (maks 100 kata):\n${history}`, systemPrompt);
+        const summary = await askAI(`Ringkas percakapan ini (maks 100 kata):\n${history}`);
         if (!userMemory[userId]) userMemory[userId] = {};
         userMemory[userId].summary = summary;
         saveAll();
     } catch (e) {}
 }
 
-async function getTopicSuggestion(question, answer, systemPrompt) {
+async function getTopicSuggestion(question, answer) {
     try {
         const prompt = `Berdasarkan Q: "${question}" dan A: "${answer}", beri 2 pertanyaan lanjutan (format 1. ... 2. ...)`;
-        return await askAI(prompt, systemPrompt);
+        return await askAI(prompt);
     } catch { return null; }
 }
 
@@ -296,7 +272,7 @@ async function handleTools(msg) {
         let city = msg.replace(/cuaca|weather|di|kota/gi, '').trim();
         return city ? await getWeather(city) : "Contoh: cuaca Tokyo";
     }
-    const searchKw = ['cari', 'search', 'google', 'apa itu', 'informação', 'berita'];
+    const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita'];
     if (searchKw.some(k => low.includes(k))) {
         let q = msg;
         searchKw.forEach(k => q = q.replace(new RegExp(k, 'gi'), ''));
@@ -311,25 +287,25 @@ function getCachedAnswer(question) {
     const match = lessons.rules.find(r => question.toLowerCase().includes(r.trigger?.toLowerCase() || ''));
     return match ? match.answer : null;
 }
-async function getAnswerWithAB(question, userId, systemPrompt) {
+async function getAnswerWithAB(question, userId) {
     const chosen = Math.random() > 0.5 ? 'santai' : 'formal';
     const prompt = chosen === 'santai' 
         ? `Jawab dengan santai (pake 'aku','kamu'): ${question}` 
         : `Jawab informatif: ${question}`;
-    const answer = await askAI(prompt, systemPrompt);
+    const answer = await askAI(prompt);
     abLog.push({ userId, question, chosen, answer, timestamp: Date.now() });
     if (abLog.length > 1000) abLog.shift();
     saveAll();
     return { answer, style: chosen };
 }
-async function getSmartAnswer(question, userId, systemPrompt) {
+async function getSmartAnswer(question, userId) {
     const cached = getCachedAnswer(question);
     if (cached) return cached;
     const needsFresh = ['terbaru','berita','update','sekarang','harga','skor'].some(k => question.toLowerCase().includes(k));
     if (needsFresh && TAVILY_API_KEY) {
         const searchRes = await searchWebTavily(question);
         if (searchRes && !searchRes.includes('Error')) {
-            const learned = await askAI(`Berdasarkan pencarian: ${searchRes}\nJawab: ${question}`, systemPrompt);
+            const learned = await askAI(`Berdasarkan pencarian: ${searchRes}\nJawab: ${question}`);
             lessons.rules.push({ trigger: question.slice(0,50), answer: learned, source:'auto', timestamp: Date.now() });
             if (lessons.rules.length > 200) lessons.rules.shift();
             saveAll();
@@ -338,11 +314,17 @@ async function getSmartAnswer(question, userId, systemPrompt) {
     }
     const similar = shortMemory.filter(m => m.userId === userId).slice(-5).map(m => `Q: ${m.q}\nA: ${m.a}`).join('\n');
     const context = similar ? `Konteks:\n${similar}\n\n` : '';
-    const { answer } = await getAnswerWithAB(context + question, userId, systemPrompt);
+    const { answer } = await getAnswerWithAB(context + question, userId);
     shortMemory.push({ userId, q: question, a: answer, timestamp: Date.now() });
     if (shortMemory.length > 500) shortMemory.shift();
     saveAll();
     return answer;
+}
+
+// ==================== SYSTEM PROMPT DINAMIS (UNTUK NAMA) ====================
+function getSystemPrompt(userId) {
+    const botName = userMemory[userId]?.botName || "Bot Desa";
+    return `Kamu adalah asisten pribadi bernama "${botName}". Gunakan bahasa santai (aku/kamu). Jawab singkat, maks 3 kalimat. Jika tidak tahu, bilang tidak tahu. Nama kamu adalah ${botName}.`;
 }
 
 // ==================== WEBHOOK SERVER ====================
@@ -369,12 +351,11 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const msg = update.message;
     const text = msg.text;
 
-    // Pastikan userMemory untuk user ini ada
     if (!userMemory[userId]) userMemory[userId] = { botName: "Bot Desa" };
 
     // ========== PERINTAH ==========
     if (text === '/start') {
-        await safeSendMessage(chatId, `🤖 Halo! Aku ${userMemory[userId].botName}, asisten pribadimu. Ketik /help untuk perintah.`, { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, `🤖 Halo! Aku ${userMemory[userId].botName}. Ketik /help untuk perintah.`, { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/help') {
@@ -435,7 +416,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
             const trigger = parts[0].trim();
             const answer = parts[1].trim();
             if (!answer || answer.length < 3) {
-                await safeSendMessage(chatId, "❌ Jawaban terlalu pendek atau tidak valid. Berikan jawaban yang informatif.", { reply_to_message_id: msg.message_id });
+                await safeSendMessage(chatId, "❌ Jawaban terlalu pendek atau tidak valid.", { reply_to_message_id: msg.message_id });
             } else {
                 lessons.rules.push({ trigger, answer, source: 'user', timestamp: Date.now() });
                 if (lessons.rules.length > 200) lessons.rules.shift();
@@ -449,7 +430,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
-    // Perintah untuk mengganti nama asisten
     if (text.startsWith('/setname ')) {
         const newName = text.slice(9).trim();
         if (newName && newName.length > 0 && newName.length < 50) {
@@ -481,7 +461,8 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const systemPrompt = getSystemPrompt(userId);
     let answer;
     try {
-        answer = await getSmartAnswer(prompt, userId, systemPrompt);
+        // Gunakan getSmartAnswer yang sudah memakai prioritas Mistral
+        answer = await getSmartAnswer(prompt, userId);
     } catch (e) {
         answer = "❌ AI sedang sibuk. Coba lagi nanti.";
     }
@@ -490,11 +471,11 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
     if (userMemory[userId].msgCount % 20 === 0) {
         const history = shortMemory.filter(m => m.userId === userId).slice(-20).map(m => `Q: ${m.q}\nA: ${m.a}`).join('\n');
-        if (history.length > 50) await summarizeChat(userId, history, systemPrompt);
+        if (history.length > 50) await summarizeChat(userId, history);
     }
     if (userMemory[userId].msgCount % 5 === 0 && answer.length > 50 && !text.startsWith('/')) {
         try {
-            const suggestions = await getTopicSuggestion(text, answer, systemPrompt);
+            const suggestions = await getTopicSuggestion(text, answer);
             if (suggestions && suggestions.length > 10 && !suggestions.includes("tidak")) {
                 await safeSendMessage(chatId, `💡 Topik lanjutan:\n${suggestions}`, { reply_to_message_id: msg.message_id });
             }
@@ -515,7 +496,7 @@ async function start() {
     await initRedis();
     await loadAllMemories();
     app.listen(PORT, '0.0.0.0', async () => {
-        console.log(`✅ Bot AI (Mistral + Groq fallback) siap di port ${PORT}`);
+        console.log(`✅ Bot AI (Mistral prioritas) siap di port ${PORT}`);
         let host = process.env.RENDER_EXTERNAL_HOSTNAME;
         if (!host) host = 'telegrambotsaya.onrender.com';
         const url = `https://${host}/webhook/${TELEGRAM_TOKEN}`;
