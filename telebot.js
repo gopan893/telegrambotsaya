@@ -116,7 +116,6 @@ async function askGroq(prompt) {
 }
 
 async function askAI(prompt) {
-    // Prioritas Mistral, lalu Groq
     if (MISTRAL_API_KEY) {
         try {
             console.log("🟢 Mistral...");
@@ -140,28 +139,41 @@ async function askAI(prompt) {
     throw new Error("Semua AI gagal.");
 }
 
-// ==================== DETEKSI BAHASA (sederhana, tanpa panggil AI untuk efisiensi) ====================
-// Kita gunakan pendekatan sederhana: jika teks mengandung karakter Jepang, deteksi kasar.
-// Tapi untuk akurasi, kita tetap pakai AI hanya jika perlu. Namun untuk menghindari double call,
-// kita bisa lakukan deteksi dengan library 'franc'? Tidak, karena tidak ingin tambahan dependency.
-// Alternatif: deteksi bahasa menggunakan AI hanya sekali per pesan untuk keperluan jawaban.
-// Di sini, kita akan menggabungkan deteksi bahasa dengan jawaban utama (prompt bilingual) agar hanya 1 panggilan.
-// Namun agar sederhana, kita tetap pakai AI untuk deteksi hanya jika diperlukan.
-// Tapi untuk meminimalisir panggilan, kita gunakan pendekatan: jika teks mengandung huruf non-ASCII, coba deteksi dengan regex sederhana.
-// Berikut adalah fungsi deteksi bahasa sederhana tanpa AI (hanya untuk bahasa Indonesia/Inggris/Jepang).
-// Ini tidak 100% akurat tapi cukup untuk mengurangi panggilan AI.
-
+// ==================== DETEKSI BAHASA SEDERHANA ====================
 function simpleDetectLanguage(text) {
-    // Deteksi Jepang (Hiragana/Katakana/Kanji)
     if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) return 'ja';
-    // Deteksi Myanmar (Burmese)
     if (/[\u1000-\u109F]/.test(text)) return 'my';
-    // Deteksi Korea
     if (/[\uAC00-\uD7AF]/.test(text)) return 'ko';
-    // Deteksi Vietnam (ada tanda diakritik)
     if (/[ăâđêôơư]/.test(text)) return 'vi';
-    // Default Indonesia/Inggris
     return 'id';
+}
+
+// ==================== SAFE SEND MESSAGE (dengan fallback jika reply gagal) ====================
+async function safeSendMessage(chatId, text, extra = {}) {
+    const payload = {
+        chat_id: chatId,
+        text: text,
+        ...extra
+    };
+    try {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, payload);
+    } catch (err) {
+        if (err.response && err.response.status === 400 && extra.reply_to_message_id) {
+            // Coba kirim tanpa reply
+            delete extra.reply_to_message_id;
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                chat_id: chatId,
+                text: text,
+                ...extra
+            });
+        } else {
+            // Kirim pesan error sederhana tanpa reply
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                chat_id: chatId,
+                text: "Maaf, terjadi kesalahan teknis."
+            });
+        }
+    }
 }
 
 // ==================== RINGKASAN & REKOMENDASI ====================
@@ -323,9 +335,9 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         const cb = update.callback_query;
         const chatId = cb.message.chat.id;
         if (cb.data === 'positive') {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "👍 Terima kasih!" });
+            await safeSendMessage(chatId, "👍 Terima kasih!");
         } else {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "👎 Gunakan /koreksi untuk mengajari saya." });
+            await safeSendMessage(chatId, "👎 Gunakan /koreksi untuk mengajari saya.");
         }
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, { callback_query_id: cb.id });
         return res.sendStatus(200);
@@ -338,59 +350,55 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     // ========== PERINTAH ==========
     if (text === '/start') {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-            chat_id: chatId, 
-            text: "🤖 Bot AI siap (Mistral + Groq). Ketik /help untuk perintah.",
-            reply_to_message_id: msg.message_id
-        });
+        await safeSendMessage(chatId, "🤖 Bot AI siap (Mistral + Groq). Ketik /help untuk perintah.", { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/help') {
         const help = `/start - mulai\n/help - bantuan\n/stats - statistik\n/rollback - hapus aturan\n/feedback - log A/B\n/image <desc> - gambar\n/crack <hash> - crack\n/hitung <expr> - kalkulator\n/jam - waktu Jepang\n/cuaca <kota>\n/lokasi <tempat>\n/cari <topik>\n/koreksi Q | A - ajari bot`;
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: help, reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, help, { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/stats') {
         const mem = process.memoryUsage();
         const msgText = `Uptime: ${Math.floor(process.uptime()/60)} menit\nMemory: ${(mem.heapUsed/1024/1024).toFixed(2)} MB\nAturan: ${lessons.rules.length}\nChats: ${shortMemory.length}`;
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: msgText, reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, msgText, { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/rollback') {
         if (lessons.rules.length) {
             lessons.rules.pop();
             saveAll();
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🗑️ Aturan terakhir dihapus.", reply_to_message_id: msg.message_id });
-        } else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Tidak ada aturan.", reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "🗑️ Aturan terakhir dihapus.", { reply_to_message_id: msg.message_id });
+        } else await safeSendMessage(chatId, "Tidak ada aturan.", { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/feedback') {
         const last = abLog.slice(-5).map(l => `${l.style}: ${l.question.slice(0,30)}...`).join('\n');
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `Feedback terakhir:\n${last || 'Belum ada'}`, reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, `Feedback terakhir:\n${last || 'Belum ada'}`, { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text.startsWith('/image ')) {
         const prompt = text.slice(7);
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `🎨 Menggambar: ${prompt}...`, reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, `🎨 Menggambar: ${prompt}...`, { reply_to_message_id: msg.message_id });
         const img = await generateImage(prompt);
         if (img) {
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: img, caption: `✨ ${prompt}`, reply_to_message_id: msg.message_id });
         } else {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal membuat gambar.", reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "❌ Gagal membuat gambar.", { reply_to_message_id: msg.message_id });
         }
         return res.sendStatus(200);
     }
     if (text.startsWith('/crack ')) {
         const hash = text.slice(7).trim();
         if (hash.length !== 32) {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Hash 32 hex diperlukan.", reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "Hash 32 hex diperlukan.", { reply_to_message_id: msg.message_id });
         } else {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🔓 Memproses... (maks 6 karakter)", reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "🔓 Memproses... (maks 6 karakter)", { reply_to_message_id: msg.message_id });
             const found = crackHash(hash);
             if (found) {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `✅ Password: \`${found}\``, reply_to_message_id: msg.message_id });
+                await safeSendMessage(chatId, `✅ Password: \`${found}\``, { reply_to_message_id: msg.message_id, parse_mode: "Markdown" });
             } else {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Tidak ditemukan.", reply_to_message_id: msg.message_id });
+                await safeSendMessage(chatId, "❌ Tidak ditemukan.", { reply_to_message_id: msg.message_id });
             }
         }
         return res.sendStatus(200);
@@ -398,12 +406,12 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (text.startsWith('/koreksi ')) {
         const parts = text.slice(9).split('|');
         if (parts.length < 2) {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Format: /koreksi Q | A", reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "Format: /koreksi Q | A", { reply_to_message_id: msg.message_id });
         } else {
             lessons.rules.push({ trigger: parts[0].trim(), answer: parts[1].trim(), source: 'user', timestamp: Date.now() });
             if (lessons.rules.length > 200) lessons.rules.shift();
             saveAll();
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "✅ Terima kasih, saya belajar.", reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "✅ Terima kasih, saya belajar.", { reply_to_message_id: msg.message_id });
         }
         return res.sendStatus(200);
     }
@@ -411,32 +419,18 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     // ========== TOOLS ==========
     const toolRes = await handleTools(text);
     if (toolRes) {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-            chat_id: chatId, 
-            text: toolRes, 
-            parse_mode: "Markdown", 
-            disable_web_page_preview: true,
-            reply_to_message_id: msg.message_id
-        });
+        await safeSendMessage(chatId, toolRes, { reply_to_message_id: msg.message_id, parse_mode: "Markdown", disable_web_page_preview: true });
         return res.sendStatus(200);
     }
 
     // ========== CHAT BIASA ==========
-    // Deteksi bahasa sederhana tanpa panggil AI
     let lang = simpleDetectLanguage(text);
     let prompt;
-    if (lang === 'ja') {
-        prompt = `Jawab dalam bahasa Jepang: ${text}`;
-    } else if (lang === 'my') {
-        prompt = `Jawab dalam bahasa Myanmar: ${text}`;
-    } else if (lang === 'ko') {
-        prompt = `Jawab dalam bahasa Korea: ${text}`;
-    } else if (lang === 'vi') {
-        prompt = `Jawab dalam bahasa Vietnam: ${text}`;
-    } else {
-        // Default Indonesia/Inggris
-        prompt = text;
-    }
+    if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
+    else if (lang === 'my') prompt = `Jawab dalam bahasa Myanmar: ${text}`;
+    else if (lang === 'ko') prompt = `Jawab dalam bahasa Korea: ${text}`;
+    else if (lang === 'vi') prompt = `Jawab dalam bahasa Vietnam: ${text}`;
+    else prompt = text;
     
     let answer;
     try {
@@ -445,7 +439,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         answer = "❌ AI sedang sibuk. Coba lagi nanti.";
     }
 
-    // Ringkasan & rekomendasi (opsional)
+    // Ringkasan & rekomendasi
     if (!userMemory[userId]) userMemory[userId] = {};
     userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
     if (userMemory[userId].msgCount % 20 === 0) {
@@ -456,21 +450,15 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         try {
             const suggestions = await getTopicSuggestion(text, answer);
             if (suggestions && suggestions.length > 10 && !suggestions.includes("tidak")) {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-                    chat_id: chatId, 
-                    text: `💡 Topik lanjutan:\n${suggestions}`,
-                    reply_to_message_id: msg.message_id
-                });
+                await safeSendMessage(chatId, `💡 Topik lanjutan:\n${suggestions}`, { reply_to_message_id: msg.message_id });
             }
         } catch (e) {}
     }
     saveAll();
 
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-        chat_id: chatId,
-        text: answer,
-        parse_mode: "Markdown",
+    await safeSendMessage(chatId, answer, {
         reply_to_message_id: msg.message_id,
+        parse_mode: "Markdown",
         reply_markup: { inline_keyboard: [[ { text: "👍", callback_data: "positive" }, { text: "👎", callback_data: "negative" } ]] }
     });
     res.sendStatus(200);
@@ -482,21 +470,14 @@ async function start() {
     await loadAllMemories();
     app.listen(PORT, '0.0.0.0', async () => {
         console.log(`✅ Bot AI (Mistral + Groq fallback) siap di port ${PORT}`);
-        // Set webhook dengan hostname yang benar
         let host = process.env.RENDER_EXTERNAL_HOSTNAME;
-        if (!host) {
-            // Fallback: gunakan nama service hardcode (ganti jika perlu)
-            host = 'telegrambotsaya.onrender.com';
-        }
+        if (!host) host = 'telegrambotsaya.onrender.com';
         const url = `https://${host}/webhook/${TELEGRAM_TOKEN}`;
         console.log(`🔄 Mengatur webhook ke: ${url}`);
         try {
             const result = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
-            if (result.data.ok) {
-                console.log(`✅ Webhook berhasil diset: ${url}`);
-            } else {
-                console.error(`❌ Gagal set webhook: ${result.data.description}`);
-            }
+            if (result.data.ok) console.log(`✅ Webhook berhasil diset: ${url}`);
+            else console.error(`❌ Gagal set webhook: ${result.data.description}`);
         } catch (e) {
             console.error(`❌ Webhook error: ${e.message}`);
         }
