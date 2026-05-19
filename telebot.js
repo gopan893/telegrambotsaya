@@ -22,6 +22,16 @@ if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
     process.exit(1);
 }
 
+// ==================== SYSTEM PROMPT (INSTRUKSI UNTUK AI) ====================
+const SYSTEM_PROMPT = `Kamu adalah asisten AI yang ramah dan cerdas bernama "Bot Desa". 
+Aturan:
+1. Jawab langsung ke pertanyaan, jangan bertele-tele. Maksimal 3-4 kalimat.
+2. Gunakan bahasa Indonesia sehari-hari, boleh panggil "aku" dan "kamu". Hindari bahasa formal seperti "saya" dan "anda".
+3. Jika tidak tahu jawabannya, katakan "Maaf, aku tidak tahu" — JANGAN mengarang informasi.
+4. Jika user bertanya tentang tanggal/waktu terkini, arahkan ke perintah /tanggal atau /jam.
+5. Jangan menyebutkan bahwa kamu adalah AI atau model bahasa, kecuali ditanya.
+6. Bersikap sopan dan membantu.`;
+
 // ==================== MEMORI PERSISTEN ====================
 let redisClient = null;
 let shortMemory = [];
@@ -88,13 +98,16 @@ setInterval(() => {
     }
 }, 60000);
 
-// ==================== FUNGSI AI ====================
+// ==================== FUNGSI AI DENGAN SYSTEM PROMPT ====================
 async function askMistral(prompt) {
     if (!MISTRAL_API_KEY) throw new Error("MISTRAL_API_KEY tidak diset");
     const client = new Mistral({ apiKey: MISTRAL_API_KEY });
     const response = await client.chat.complete({
         model: "mistral-large-latest",
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: prompt }
+        ],
         temperature: 0.7,
         max_tokens: 1000
     });
@@ -105,7 +118,10 @@ async function askGroq(prompt) {
     if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY tidak diset");
     const res = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
         model: "llama-3.3-70b-versatile",
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: prompt }
+        ],
         temperature: 0.7,
         max_tokens: 1000
     }, {
@@ -148,18 +164,13 @@ function simpleDetectLanguage(text) {
     return 'id';
 }
 
-// ==================== SAFE SEND MESSAGE (dengan fallback jika reply gagal) ====================
+// ==================== SAFE SEND MESSAGE ====================
 async function safeSendMessage(chatId, text, extra = {}) {
-    const payload = {
-        chat_id: chatId,
-        text: text,
-        ...extra
-    };
+    const payload = { chat_id: chatId, text: text, ...extra };
     try {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, payload);
     } catch (err) {
         if (err.response && err.response.status === 400 && extra.reply_to_message_id) {
-            // Coba kirim tanpa reply
             delete extra.reply_to_message_id;
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
                 chat_id: chatId,
@@ -167,7 +178,6 @@ async function safeSendMessage(chatId, text, extra = {}) {
                 ...extra
             });
         } else {
-            // Kirim pesan error sederhana tanpa reply
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
                 chat_id: chatId,
                 text: "Maaf, terjadi kesalahan teknis."
@@ -197,6 +207,12 @@ async function getTopicSuggestion(question, answer) {
 // ==================== TOOLS ====================
 function getCurrentTime() {
     return `🕒 Waktu Jepang: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Tokyo', hour:'2-digit', minute:'2-digit', second:'2-digit' })}`;
+}
+function getCurrentDate() {
+    const now = new Date();
+    const options = { timeZone: 'Asia/Jakarta', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+    const tanggal = now.toLocaleDateString('id-ID', options);
+    return `📅 Hari ini: ${tanggal}`;
 }
 function calculate(expr) {
     try {
@@ -262,23 +278,24 @@ function crackHash(targetHash, maxLen=6) {
 }
 async function handleTools(msg) {
     const low = msg.toLowerCase();
-    if (low.includes('jam')||low.includes('waktu')) return getCurrentTime();
-    if ((low.includes('hitung')||low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
+    if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini'))) return getCurrentDate();
+    if (low.includes('jam') || low.includes('waktu')) return getCurrentTime();
+    if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
         let expr = msg.replace(/[^0-9+\-*/().%]/g, '');
         if (expr) return calculate(expr);
     }
-    if (low.includes('alamat')||low.includes('lokasi')||low.includes('dimana')) {
-        let q = msg.replace(/alamat|lokasi|dimana|cari tempat/gi,'').trim();
+    if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana')) {
+        let q = msg.replace(/alamat|lokasi|dimana|cari tempat/gi, '').trim();
         return q ? await searchLocation(q) : "Sebutkan tempat";
     }
     if (low.includes('cuaca')) {
-        let city = msg.replace(/cuaca|weather|di|kota/gi,'').trim();
+        let city = msg.replace(/cuaca|weather|di|kota/gi, '').trim();
         return city ? await getWeather(city) : "Contoh: cuaca Tokyo";
     }
-    const searchKw = ['cari','search','google','apa itu','informasi','berita'];
+    const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita'];
     if (searchKw.some(k => low.includes(k))) {
         let q = msg;
-        searchKw.forEach(k => q = q.replace(new RegExp(k,'gi'), ''));
+        searchKw.forEach(k => q = q.replace(new RegExp(k, 'gi'), ''));
         q = q.trim();
         return q ? await searchWebTavily(q) : "Apa yang ingin dicari?";
     }
@@ -354,7 +371,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         return res.sendStatus(200);
     }
     if (text === '/help') {
-        const help = `/start - mulai\n/help - bantuan\n/stats - statistik\n/rollback - hapus aturan\n/feedback - log A/B\n/image <desc> - gambar\n/crack <hash> - crack\n/hitung <expr> - kalkulator\n/jam - waktu Jepang\n/cuaca <kota>\n/lokasi <tempat>\n/cari <topik>\n/koreksi Q | A - ajari bot`;
+        const help = `/start - mulai\n/help - bantuan\n/stats - statistik\n/rollback - hapus aturan\n/feedback - log A/B\n/image <desc> - gambar\n/crack <hash> - crack\n/hitung <expr> - kalkulator\n/jam - waktu Jepang\n/tanggal - tanggal hari ini\n/cuaca <kota>\n/lokasi <tempat>\n/cari <topik>\n/koreksi Q | A - ajari bot`;
         await safeSendMessage(chatId, help, { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
@@ -406,13 +423,23 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (text.startsWith('/koreksi ')) {
         const parts = text.slice(9).split('|');
         if (parts.length < 2) {
-            await safeSendMessage(chatId, "Format: /koreksi Q | A", { reply_to_message_id: msg.message_id });
+            await safeSendMessage(chatId, "Format: /koreksi pertanyaan | jawaban_benar\nContoh: /koreksi siapa presiden Indonesia | Ir. Soekarno", { reply_to_message_id: msg.message_id });
         } else {
-            lessons.rules.push({ trigger: parts[0].trim(), answer: parts[1].trim(), source: 'user', timestamp: Date.now() });
-            if (lessons.rules.length > 200) lessons.rules.shift();
-            saveAll();
-            await safeSendMessage(chatId, "✅ Terima kasih, saya belajar.", { reply_to_message_id: msg.message_id });
+            const trigger = parts[0].trim();
+            const answer = parts[1].trim();
+            if (!answer || answer.length < 3) {
+                await safeSendMessage(chatId, "❌ Jawaban terlalu pendek atau tidak valid. Berikan jawaban yang informatif.", { reply_to_message_id: msg.message_id });
+            } else {
+                lessons.rules.push({ trigger, answer, source: 'user', timestamp: Date.now() });
+                if (lessons.rules.length > 200) lessons.rules.shift();
+                saveAll();
+                await safeSendMessage(chatId, "✅ Terima kasih, saya belajar. Coba tanyakan pertanyaan tersebut sekarang.", { reply_to_message_id: msg.message_id });
+            }
         }
+        return res.sendStatus(200);
+    }
+    if (text === '/tanggal') {
+        await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
 
