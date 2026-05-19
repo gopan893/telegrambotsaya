@@ -39,8 +39,6 @@ async function initRedis() {
             console.log("⚠️ Redis gagal, fallback file JSON.");
             redisClient = null;
         }
-    } else {
-        console.log("⚠️ REDIS_URL tidak diset, pakai file JSON.");
     }
 }
 
@@ -85,21 +83,20 @@ setInterval(() => {
     }
 }, 30000);
 
-// ==================== FUNGSI AI INDIVIDU ====================
+// ==================== FUNGSI AI INDIVIDU (Cepat) ====================
 async function askGroq(prompt) {
     if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY tidak diset");
     const res = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
         model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7, max_tokens: 1000
-    }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, timeout: 30000 });
+    }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, timeout: 15000 });
     return res.data.choices[0].message.content;
 }
 
 async function askGemini(prompt) {
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY tidak diset");
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    // Model gratis yang benar dan stabil
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     return result.response.text();
@@ -122,12 +119,12 @@ async function askDeepSeek(prompt) {
         messages: [{ role: 'user', content: prompt }]
     }, {
         headers: { 'Authorization': `Bearer ${DEEPSEEK_API_KEY}`, 'Content-Type': 'application/json' },
-        timeout: 30000
+        timeout: 15000
     });
     return response.data.choices[0].message.content;
 }
 
-// ==================== FALLBACK AI ====================
+// ==================== FALLBACK CEPAT (Berhenti saat berhasil) ====================
 async function askWithFallback(prompt) {
     const providers = [
         { name: "Groq", fn: askGroq, hasKey: !!GROQ_API_KEY },
@@ -138,44 +135,16 @@ async function askWithFallback(prompt) {
     for (const provider of providers) {
         if (!provider.hasKey) continue;
         try {
-            console.log(`🟢 Mencoba ${provider.name}...`);
             const answer = await provider.fn(prompt);
-            console.log(`✅ Berhasil menggunakan ${provider.name}`);
-            return answer;
+            return answer; // Langsung balas, tidak perlu log untuk kecepatan
         } catch (error) {
-            console.error(`${provider.name} gagal:`, error.message);
+            // Gagal, lanjut ke provider berikutnya
         }
     }
     throw new Error("Semua layanan AI sedang sibuk. Coba lagi nanti.");
 }
 
-// ==================== DETEKSI BAHASA ====================
-const langMap = { ja:'Jepang', my:'Myanmar', fil:'Filipina', ms:'Malaysia', ko:'Korea Selatan', ta:'India', ur:'Pakistan', vi:'Vietnam', en:'Inggris', id:'Indonesia' };
-async function detectLanguage(text) {
-    const prompt = `Deteksi bahasa dari teks berikut. Output hanya kode bahasa ISO 639-1 (id,en,ja,my,fil,ms,ko,ta,ur,vi). Teks: "${text}"`;
-    try {
-        const res = await askWithFallback(prompt);
-        const lang = res.trim().toLowerCase();
-        return langMap[lang] ? lang : 'id';
-    } catch { return 'id'; }
-}
-
-// ==================== RINGKASAN & REKOMENDASI ====================
-async function summarizeChat(userId, history) {
-    if (history.length < 10) return;
-    const summary = await askWithFallback(`Ringkas percakapan berikut menjadi paragraf pendek (maks 100 kata):\n${history}`);
-    if (!userMemory[userId]) userMemory[userId] = {};
-    userMemory[userId].summary = summary;
-    saveAll();
-}
-
-async function getTopicSuggestion(question, answer) {
-    const prompt = `Berdasarkan pertanyaan "${question}" dan jawaban "${answer}", berikan 2 pertanyaan lanjutan yang relevan (masing-masing maks 10 kata). Output format: "1. ... 2. ..."`;
-    const suggestions = await askWithFallback(prompt);
-    return suggestions;
-}
-
-// ==================== TOOLS ====================
+// ==================== TOOLS LANGSUNG (Tanpa AI) ====================
 function getCurrentTime() {
     return `🕒 Waktu Jepang: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Tokyo', hour:'2-digit', minute:'2-digit', second:'2-digit' })}`;
 }
@@ -188,7 +157,7 @@ function calculate(expr) {
 }
 async function searchLocation(query) {
     try {
-        const res = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, { headers: { 'User-Agent': 'TelegramBot/1.0' } });
+        const res = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, { headers: { 'User-Agent': 'TelegramBot/1.0' }, timeout: 10000 });
         if (!res.data.length) return "Tidak ditemukan";
         const p = res.data[0];
         return `📍 ${p.display_name}\n🗺️ https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}`;
@@ -197,7 +166,7 @@ async function searchLocation(query) {
 async function getWeather(city) {
     if (!OPENWEATHER_API_KEY) return "API key cuaca tidak ada";
     try {
-        const res = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=id`);
+        const res = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=id`, { timeout: 10000 });
         const d = res.data;
         return `🌤️ Cuaca ${d.name}: ${d.main.temp}°C, ${d.weather[0].description}`;
     } catch { return `Kota ${city} tidak ditemukan`; }
@@ -205,7 +174,7 @@ async function getWeather(city) {
 async function searchWebTavily(query) {
     if (!TAVILY_API_KEY) return "API key Tavily tidak ada";
     try {
-        const res = await axios.post('https://api.tavily.com/search', { api_key: TAVILY_API_KEY, query, search_depth: "basic", max_results: 3, include_answer: true });
+        const res = await axios.post('https://api.tavily.com/search', { api_key: TAVILY_API_KEY, query, search_depth: "basic", max_results: 3, include_answer: true }, { timeout: 10000 });
         let out = `🔍 Hasil untuk: ${query}\n`;
         if (res.data.answer) out += `📝 ${res.data.answer}\n`;
         (res.data.results || []).forEach((item,i) => out += `${i+1}. ${item.title}\n   ${item.content.slice(0,150)}...\n   ${item.url}\n`);
@@ -214,8 +183,8 @@ async function searchWebTavily(query) {
 }
 async function generateImage(prompt, retry=0) {
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
-    try { await axios.head(url, { timeout: 15000 }); return url; } catch {
-        if (retry<2) { await new Promise(r=>setTimeout(r,3000)); return generateImage(prompt, retry+1); }
+    try { await axios.head(url, { timeout: 10000 }); return url; } catch {
+        if (retry<1) { await new Promise(r=>setTimeout(r,2000)); return generateImage(prompt, retry+1); }
         return null;
     }
 }
@@ -229,6 +198,8 @@ function crackHash(targetHash, maxLen=6) {
     for (let l=1;l<=maxLen;l++) { const f=brute('',l); if (f) return f; }
     return null;
 }
+
+// ==================== HANDLER PERINTAH ====================
 async function handleTools(msg) {
     const low = msg.toLowerCase();
     if (low.includes('jam')||low.includes('waktu')) return getCurrentTime();
@@ -252,22 +223,13 @@ async function handleTools(msg) {
     return null;
 }
 
-// ==================== A/B TESTING & MEMORY ====================
-function getCachedAnswer(question) {
-    const match = lessons.rules.find(r => question.toLowerCase().includes(r.trigger?.toLowerCase() || ''));
-    return match ? match.answer : null;
-}
-async function getAnswerWithAB(question, userId) {
-    const chosen = Math.random()>0.5?'santai':'formal';
-    const prompt = chosen==='santai' ? `Jawab dengan santai (pake 'aku','kamu'): ${question}` : `Jawab informatif: ${question}`;
-    const answer = await askWithFallback(prompt);
-    abLog.push({ userId, question, chosen, answer });
-    if (abLog.length>1000) abLog.shift();
-    return { answer, style: chosen };
-}
+// ==================== AI CHAT DENGAN MEMORI SEDERHANA ====================
 async function getSmartAnswer(question, userId) {
-    const cached = getCachedAnswer(question);
-    if (cached) return cached;
+    // Cek cache dari koreksi manual
+    const cached = lessons.rules.find(r => question.toLowerCase().includes(r.trigger?.toLowerCase() || ''));
+    if (cached) return cached.answer;
+    
+    // Cek apakah perlu web search (untuk info terkini)
     const needsFresh = ['terbaru','berita','update','sekarang','harga','skor'].some(k=>question.toLowerCase().includes(k));
     if (needsFresh && TAVILY_API_KEY) {
         const searchRes = await searchWebTavily(question);
@@ -279,9 +241,13 @@ async function getSmartAnswer(question, userId) {
             return learned;
         }
     }
-    const similar = shortMemory.filter(m=>m.userId===userId).slice(-5).map(m=>`Q: ${m.q}\nA: ${m.a}`).join('\n');
+    
+    // Konteks dari percakapan terakhir
+    const similar = shortMemory.filter(m=>m.userId===userId).slice(-3).map(m=>`Q: ${m.q}\nA: ${m.a}`).join('\n');
     const context = similar ? `Konteks:\n${similar}\n\n` : '';
-    const { answer } = await getAnswerWithAB(context+question, userId);
+    const answer = await askWithFallback(context + question);
+    
+    // Simpan ke memori
     shortMemory.push({ userId, q: question, a: answer });
     if (shortMemory.length>500) shortMemory.shift();
     saveAll();
@@ -295,19 +261,26 @@ app.get('/health', (req, res) => res.send('OK'));
 
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const update = req.body;
+    
+    // Callback tombol feedback
     if (update.callback_query) {
         const cb = update.callback_query;
         const chatId = cb.message.chat.id;
-        if (cb.data === 'positive') await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "👍 Terima kasih!" });
-        else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "👎 Gunakan /koreksi untuk mengajari saya." });
+        if (cb.data === 'positive') {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "👍 Terima kasih!" });
+        } else {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "👎 Gunakan /koreksi untuk mengajari saya." });
+        }
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, { callback_query_id: cb.id });
         return res.sendStatus(200);
     }
+    
     if (!update.message || update.message.from.is_bot) return res.sendStatus(200);
     const chatId = update.message.chat.id;
     const userId = chatId.toString();
     const text = update.message.text;
-
+    
+    // Perintah /start
     if (text === '/start') {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🤖 Bot AI siap. Ketik /help untuk perintah." });
         return res.sendStatus(200);
@@ -328,7 +301,9 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
             lessons.rules.pop();
             saveAll();
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🗑️ Aturan terakhir dihapus." });
-        } else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Tidak ada aturan." });
+        } else {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Tidak ada aturan." });
+        }
         return res.sendStatus(200);
     }
     if (text === '/feedback') {
@@ -336,29 +311,43 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `Feedback terakhir:\n${last || 'Belum ada'}` });
         return res.sendStatus(200);
     }
+    
+    // Perintah /image
     if (text.startsWith('/image ')) {
         const prompt = text.slice(7);
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `🎨 Menggambar: ${prompt}...` });
         const img = await generateImage(prompt);
-        if (img) await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: img });
-        else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal membuat gambar." });
-        return res.sendStatus(200);
-    }
-    if (text.startsWith('/crack ')) {
-        const hash = text.slice(7).trim();
-        if (hash.length !== 32) await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Hash 32 hex diperlukan." });
-        else {
-            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🔓 Memproses..." });
-            const found = crackHash(hash);
-            if (found) await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `✅ Password: ${found}` });
-            else await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Tidak ditemukan." });
+        if (img) {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: img });
+        } else {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Gagal membuat gambar." });
         }
         return res.sendStatus(200);
     }
+    
+    // Perintah /crack
+    if (text.startsWith('/crack ')) {
+        const hash = text.slice(7).trim();
+        if (hash.length !== 32) {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Hash 32 hex diperlukan." });
+        } else {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "🔓 Memproses..." });
+            const found = crackHash(hash);
+            if (found) {
+                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `✅ Password: ${found}` });
+            } else {
+                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ Tidak ditemukan." });
+            }
+        }
+        return res.sendStatus(200);
+    }
+    
+    // Perintah /koreksi
     if (text.startsWith('/koreksi ')) {
         const parts = text.slice(9).split('|');
-        if (parts.length < 2) await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Format: /koreksi Q | A" });
-        else {
+        if (parts.length < 2) {
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "Format: /koreksi Q | A" });
+        } else {
             lessons.rules.push({ trigger: parts[0].trim(), answer: parts[1].trim(), source: 'user' });
             if (lessons.rules.length > 200) lessons.rules.shift();
             saveAll();
@@ -366,47 +355,25 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         }
         return res.sendStatus(200);
     }
-
+    
+    // Tools langsung (tanpa AI)
     const toolRes = await handleTools(text);
     if (toolRes) {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: toolRes });
         return res.sendStatus(200);
     }
-
-    const userLang = await detectLanguage(text);
-    let answer;
-    if (userLang !== 'id' && userLang !== 'en') {
-        const prompt = `Jawab dalam bahasa ${langMap[userLang]}: ${text}`;
-        try {
-            answer = await askWithFallback(prompt);
-        } catch(e) {
-            answer = "Maaf, semua AI sedang sibuk. Coba lagi nanti.";
-        }
-    } else {
-        answer = await getSmartAnswer(text, userId);
+    
+    // Chat biasa dengan AI cepat
+    try {
+        const answer = await getSmartAnswer(text, userId);
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+            chat_id: chatId,
+            text: answer,
+            reply_markup: { inline_keyboard: [[ { text: "👍", callback_data: "positive" }, { text: "👎", callback_data: "negative" } ]] }
+        });
+    } catch (err) {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: "❌ AI sedang sibuk. Coba lagi nanti." });
     }
-
-    if (!userMemory[userId]) userMemory[userId] = {};
-    userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
-    if (userMemory[userId].msgCount % 20 === 0) {
-        const history = shortMemory.filter(m => m.userId === userId).slice(-20).map(m => `Q: ${m.q}\nA: ${m.a}`).join('\n');
-        if (history.length > 50) await summarizeChat(userId, history);
-    }
-    if (userMemory[userId].msgCount % 5 === 0 && answer.length > 50 && !text.startsWith('/')) {
-        try {
-            const suggestions = await getTopicSuggestion(text, answer);
-            if (suggestions && suggestions.length > 10 && !suggestions.includes("tidak")) {
-                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: `💡 Topik lanjutan:\n${suggestions}` });
-            }
-        } catch(e) {}
-    }
-    saveAll();
-
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-        chat_id: chatId,
-        text: answer,
-        reply_markup: { inline_keyboard: [[ { text: "👍", callback_data: "positive" }, { text: "👎", callback_data: "negative" } ]] }
-    });
     res.sendStatus(200);
 });
 
@@ -415,11 +382,11 @@ async function start() {
     await initRedis();
     await loadAllMemories();
     app.listen(PORT, '0.0.0.0', async () => {
-        console.log(`✅ Bot AI fallback siap di port ${PORT}`);
+        console.log(`✅ Bot AI cepat berjalan di port ${PORT}`);
         const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
         try {
             await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
-            console.log(`📂 Webhook diset ke ${url}`);
+            console.log(`Webhook diset`);
         } catch(e) { console.error("Webhook error:", e.message); }
     });
 }
