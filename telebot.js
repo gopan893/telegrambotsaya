@@ -1,33 +1,43 @@
 const express = require('express');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
-const schedule = require('node-schedule');
-const { google } = require('googleapis');
-const sharp = require('sharp');
-const FormData = require('form-data');
-const { Mistral } = require('@mistralai/mistralai');
 
-// ==================== KONFIGURASI ====================
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
-const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
-const REDIS_URL = process.env.REDIS_URL;
+// Optional dependencies agar bot tidak langsung crash kalau modul belum terpasang
+let scheduleLib = null;
+let googleLib = null;
+let sharpLib = null;
+let FormDataLib = null;
+let MistralClass = null;
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+try { scheduleLib = require('node-schedule'); } catch (_) {}
+try { ({ google: googleLib } = require('googleapis')); } catch (_) {}
+try { sharpLib = require('sharp'); } catch (_) {}
+try { FormDataLib = require('form-data'); } catch (_) {}
+try { ({ Mistral: MistralClass } = require('@mistralai/mistralai')); } catch (_) {}
 
-const PORT = process.env.PORT || 10000;
+const {
+  TELEGRAM_TOKEN,
+  MISTRAL_API_KEY,
+  GROQ_API_KEY,
+  TAVILY_API_KEY,
+  OPENWEATHER_API_KEY,
+  REDIS_URL,
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REDIRECT_URI,
+  PORT = 10000,
+  RENDER_EXTERNAL_HOSTNAME
+} = process.env;
 
 if (!TELEGRAM_TOKEN) {
-  console.error("❌ TELEGRAM_TOKEN tidak ditemukan!");
+  console.error('❌ TELEGRAM_TOKEN tidak ditemukan!');
   process.exit(1);
 }
+
 if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
-  console.error("❌ Tidak ada API key AI!");
+  console.error('❌ Tidak ada API key AI! Set minimal MISTRAL_API_KEY atau GROQ_API_KEY.');
   process.exit(1);
 }
 
@@ -38,30 +48,109 @@ const FILE_DIR = process.cwd();
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
-// ==================== MEMORI ====================
+let server = null;
+
+// ==================== MEMORY ====================
 let redisClient = null;
 let shortMemory = [];
 let lessons = { rules: [] };
 let userMemory = {};
 let abLog = [];
 let knowledgeBase = [];
+let quizState = {};
+const reminderJobs = new Map();
 
 // ==================== AI CLIENT ====================
-const mistralClient = MISTRAL_API_KEY ? new Mistral({ apiKey: MISTRAL_API_KEY }) : null;
+const mistralClient = (MISTRAL_API_KEY && MistralClass)
+  ? new MistralClass({ apiKey: MISTRAL_API_KEY })
+  : null;
 
-// ==================== REDIS ====================
+// ==================== UTIL ====================
+function nowMs() {
+  return Date.now();
+}
+
+function isValidDate(d) {
+  return d instanceof Date && !isNaN(d.getTime());
+}
+
+function getCommandBase(text) {
+  const t = String(text || '').trim();
+  if (!t.startsWith('/')) return null;
+  const first = t.split(/\s+/)[0];
+  return first.split('@')[0].toLowerCase();
+}
+
+function getCommandArgs(text) {
+  const t = String(text || '').trim();
+  if (!t.startsWith('/')) return '';
+  const i = t.indexOf(' ');
+  return i === -1 ? '' : t.slice(i + 1).trim();
+}
+
+function cleanupSpaces(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function isLikelyActionRequest(text) {
+  const q = String(text || '').toLowerCase();
+  const kws = [
+    'tambah', 'buat', 'jadwalkan', 'ingatkan', 'pengingat', 'remind',
+    'cuaca', 'hitung', 'jam', 'waktu', 'tanggal', 'lokasi', 'alamat',
+    'cari', 'search', 'gambar', 'image', 'mood', 'tugas', 'todo',
+    'event', 'agenda', 'poll', 'quiz'
+  ];
+  return kws.some(k => q.includes(k));
+}
+
+function extractJsonObject(text) {
+  if (!text) return null;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseFlexibleDateTime(input, fallbackTime = '09:00') {
+  if (!input) return null;
+  const s = String(input).trim();
+
+  // ISO atau format yang sudah lengkap
+  if (s.includes('T')) {
+    const d = new Date(s);
+    return isValidDate(d) ? d : null;
+  }
+
+  // YYYY-MM-DD HH:MM
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?$/);
+  if (m) {
+    return parseJakartaDateTime(m[1], m[2] || fallbackTime);
+  }
+
+  const d = new Date(s);
+  return isValidDate(d) ? d : null;
+}
+
+// ==================== REDIS / STORAGE ====================
 async function initRedis() {
   if (!REDIS_URL) return;
+
   try {
     const Redis = require('ioredis');
     redisClient = new Redis(REDIS_URL, {
       maxRetriesPerRequest: 2,
-      retryStrategy: (times) => times > 2 ? null : Math.min(times * 100, 2000)
+      retryStrategy: (times) => (times > 2 ? null : Math.min(times * 200, 2000))
     });
+
     await redisClient.ping();
-    console.log("✅ Redis terhubung.");
+    console.log('✅ Redis terhubung.');
   } catch (e) {
-    console.log("⚠️ Redis gagal, pakai file JSON.");
+    console.log('⚠️ Redis gagal, pakai file JSON.');
     redisClient = null;
   }
 }
@@ -77,7 +166,7 @@ async function loadData(key, defaultValue) {
   try {
     const filePath = path.join(FILE_DIR, `${key}.json`);
     if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return JSON.parse(await fsp.readFile(filePath, 'utf-8'));
     }
   } catch (_) {}
 
@@ -96,9 +185,56 @@ async function saveData(key, data) {
   }
 
   try {
-    fs.writeFileSync(path.join(FILE_DIR, `${key}.json`), str, 'utf-8');
+    await fsp.writeFile(path.join(FILE_DIR, `${key}.json`), str, 'utf-8');
   } catch (e) {
     console.error(`File save ${key} gagal:`, e.message);
+  }
+}
+
+async function saveAll() {
+  await Promise.all([
+    saveData('memory', shortMemory.slice(-500)),
+    saveData('lessons', lessons),
+    saveData('user_memory', userMemory),
+    saveData('ab_log', abLog.slice(-1000)),
+    saveData('knowledge', knowledgeBase.slice(-1000)),
+  ]);
+}
+
+let saveChain = Promise.resolve();
+function persist() {
+  saveChain = saveChain
+    .then(() => saveAll())
+    .catch((err) => console.error('Save error:', err.message));
+  return saveChain;
+}
+
+function ensureUser(userId) {
+  if (!userMemory[userId]) {
+    userMemory[userId] = {
+      botName: 'Bot Desa',
+      todos: [],
+      reminders: [],
+      nlpPatterns: [],
+      msgCount: 0,
+      summary: '',
+    };
+  } else {
+    userMemory[userId].botName ||= 'Bot Desa';
+    userMemory[userId].todos ||= [];
+    userMemory[userId].reminders ||= [];
+    userMemory[userId].nlpPatterns ||= [];
+    userMemory[userId].msgCount ||= 0;
+    userMemory[userId].summary ||= '';
+  }
+  return userMemory[userId];
+}
+
+function cleanupStaleUserState(u) {
+  if (!u) return;
+  if (u.awaitingClarificationAt && nowMs() - u.awaitingClarificationAt > 10 * 60 * 1000) {
+    delete u.awaitingClarification;
+    delete u.awaitingClarificationAt;
   }
 }
 
@@ -112,41 +248,16 @@ async function loadAllMemories() {
   console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
 
-async function saveAll() {
-  await Promise.all([
-    saveData('memory', shortMemory.slice(-500)),
-    saveData('lessons', lessons),
-    saveData('user_memory', userMemory),
-    saveData('ab_log', abLog.slice(-1000)),
-    saveData('knowledge', knowledgeBase),
-  ]);
-}
-
-function ensureUser(userId) {
-  if (!userMemory[userId]) {
-    userMemory[userId] = {
-      botName: "Bot Desa",
-      todos: [],
-      reminders: [],
-      nlpPatterns: [],
-      msgCount: 0
-    };
-  } else {
-    userMemory[userId].botName ||= "Bot Desa";
-    userMemory[userId].todos ||= [];
-    userMemory[userId].reminders ||= [];
-    userMemory[userId].nlpPatterns ||= [];
-    userMemory[userId].msgCount ||= 0;
-  }
-  return userMemory[userId];
-}
-
 // ==================== WATCHDOG ====================
 setInterval(() => {
   const mem = process.memoryUsage();
-  if (mem.heapUsed / mem.heapTotal > 0.95) {
-    console.error('⚠️ Memory >95%, exit');
+  const ratio = mem.heapUsed / mem.heapTotal;
+
+  if (ratio > 0.98) {
+    console.error('⚠️ Memory >98%, exit untuk mencegah crash total.');
     process.exit(1);
+  } else if (ratio > 0.9) {
+    console.warn(`⚠️ Memory tinggi: ${(ratio * 100).toFixed(1)}%`);
   }
 }, 60000);
 
@@ -156,13 +267,15 @@ async function telegramPost(method, payload) {
 }
 
 async function safeSendMessage(chatId, text, extra = {}) {
-  const payload = { chat_id: chatId, text, ...extra };
+  const msg = String(text || '').trim();
+  if (!msg) return false;
+
+  const payload = { chat_id: chatId, text: msg, ...extra };
 
   try {
     await telegramPost('sendMessage', payload);
     return true;
   } catch (err) {
-    // fallback kalau reply_to / parse_mode bikin error
     try {
       const retry = { ...payload };
       delete retry.reply_to_message_id;
@@ -170,16 +283,18 @@ async function safeSendMessage(chatId, text, extra = {}) {
       await telegramPost('sendMessage', retry);
       return true;
     } catch (e) {
-      console.error("Send error:", e.response?.data || e.message);
+      console.error('Send error:', e.response?.data || e.message);
       return false;
     }
   }
 }
 
 function splitText(text, maxLen = 3900) {
-  if (!text || text.length <= maxLen) return [text];
+  const s = String(text || '');
+  if (s.length <= maxLen) return [s];
+
   const chunks = [];
-  let remaining = text;
+  let remaining = s;
 
   while (remaining.length > maxLen) {
     let cut = remaining.lastIndexOf('\n', maxLen);
@@ -187,6 +302,7 @@ function splitText(text, maxLen = 3900) {
     chunks.push(remaining.slice(0, cut));
     remaining = remaining.slice(cut).trimStart();
   }
+
   if (remaining) chunks.push(remaining);
   return chunks;
 }
@@ -208,13 +324,18 @@ async function sendPhotoUrl(chatId, photoUrl, caption = '', extra = {}) {
     });
     return true;
   } catch (e) {
-    console.error("Send photo URL error:", e.response?.data || e.message);
+    console.error('Send photo URL error:', e.response?.data || e.message);
     return false;
   }
 }
 
 async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = null) {
-  const form = new FormData();
+  if (!FormDataLib) {
+    console.error('FormData belum terpasang, upload buffer foto tidak bisa.');
+    return false;
+  }
+
+  const form = new FormDataLib();
   form.append('chat_id', String(chatId));
   if (caption) form.append('caption', caption);
   if (replyToMessageId) form.append('reply_to_message_id', String(replyToMessageId));
@@ -230,7 +351,7 @@ async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = 
     });
     return true;
   } catch (e) {
-    console.error("Send photo buffer error:", e.response?.data || e.message);
+    console.error('Send photo buffer error:', e.response?.data || e.message);
     return false;
   }
 }
@@ -238,20 +359,30 @@ async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = 
 // ==================== WAKTU / LOKASI / UTIL ====================
 function getTimeInZone(location) {
   const timezones = {
-    'jakarta': 'Asia/Jakarta', 'indonesia': 'Asia/Jakarta',
-    'jepang': 'Asia/Tokyo', 'tokyo': 'Asia/Tokyo',
-    'new york': 'America/New_York', 'london': 'Europe/London',
-    'paris': 'Europe/Paris', 'dubai': 'Asia/Dubai',
-    'riyadh': 'Asia/Riyadh', 'mekkah': 'Asia/Riyadh',
-    'singapore': 'Asia/Singapore', 'kuala lumpur': 'Asia/Kuala_Lumpur',
-    'bangkok': 'Asia/Bangkok', 'seoul': 'Asia/Seoul',
-    'beijing': 'Asia/Shanghai', 'sydney': 'Australia/Sydney',
-    'los angeles': 'America/Los_Angeles', 'chicago': 'America/Chicago',
-    'moscow': 'Europe/Moscow', 'berlin': 'Europe/Berlin'
+    'jakarta': 'Asia/Jakarta',
+    'indonesia': 'Asia/Jakarta',
+    'jepang': 'Asia/Tokyo',
+    'tokyo': 'Asia/Tokyo',
+    'new york': 'America/New_York',
+    'london': 'Europe/London',
+    'paris': 'Europe/Paris',
+    'dubai': 'Asia/Dubai',
+    'riyadh': 'Asia/Riyadh',
+    'mekkah': 'Asia/Riyadh',
+    'singapore': 'Asia/Singapore',
+    'kuala lumpur': 'Asia/Kuala_Lumpur',
+    'bangkok': 'Asia/Bangkok',
+    'seoul': 'Asia/Seoul',
+    'beijing': 'Asia/Shanghai',
+    'sydney': 'Australia/Sydney',
+    'los angeles': 'America/Los_Angeles',
+    'chicago': 'America/Chicago',
+    'moscow': 'Europe/Moscow',
+    'berlin': 'Europe/Berlin'
   };
 
   if (!location) return null;
-  const q = location.toLowerCase().trim();
+  const q = String(location).toLowerCase().trim();
 
   let tz = timezones[q] || null;
   if (!tz) {
@@ -282,9 +413,10 @@ function getTimeInZone(location) {
   };
 }
 
-function getCurrentTime() {
-  const res = getTimeInZone('jakarta');
-  return `🕒 Waktu Indonesia (WIB): ${res.time}`;
+function getCurrentTime(location = 'jakarta') {
+  const res = getTimeInZone(location);
+  if (!res) return `❌ Lokasi "${location}" tidak dikenal. Coba Jakarta, Tokyo, New York, dll.`;
+  return `🕒 Waktu di ${location}: ${res.time}`;
 }
 
 function getCurrentDate() {
@@ -300,46 +432,58 @@ function getCurrentDate() {
 
 function calculate(expr) {
   try {
-    const clean = String(expr).replace(/[^0-9+\-*/().%]/g, '');
-    if (!clean) return "Format salah";
+    const clean = String(expr)
+      .replace(/[^0-9+\-*/().%\s]/g, '')
+      .replace(/\s+/g, '');
+
+    if (!clean || !/[0-9]/.test(clean)) return 'Format salah';
+
     const result = Function(`"use strict"; return (${clean})`)();
     return `Hasil: ${expr} = ${result}`;
   } catch {
-    return "Error hitung";
+    return 'Error hitung';
   }
 }
 
 function parseJakartaDateTime(dateStr, timeStr = '09:00') {
   if (!dateStr) return null;
-  const t = String(timeStr).trim();
-  const normalizedTime = t.length === 5 ? `${t}:00` : t;
-  const dt = new Date(`${dateStr}T${normalizedTime}+07:00`);
-  return isNaN(dt) ? null : dt;
+
+  const date = String(dateStr).trim();
+  const time = String(timeStr).trim();
+
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  const dt = new Date(`${date}T${normalizedTime}+07:00`);
+  return isValidDate(dt) ? dt : null;
 }
 
 async function searchLocation(query) {
   try {
     const res = await axios.get(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-      { headers: { 'User-Agent': 'TelegramBot/1.0' }, timeout: 15000 }
+      {
+        headers: { 'User-Agent': 'TelegramBot/1.0' },
+        timeout: 15000
+      }
     );
 
-    if (!res.data.length) return "Tidak ditemukan";
+    if (!res.data.length) return 'Tidak ditemukan';
 
     const p = res.data[0];
     return `📍 ${p.display_name}\n🗺️ https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}`;
   } catch (e) {
-    return "Error lokasi";
+    return 'Error lokasi';
   }
 }
 
 async function getWeather(city) {
-  if (!OPENWEATHER_API_KEY) return "API key cuaca tidak ada";
+  if (!OPENWEATHER_API_KEY) return 'API key cuaca tidak ada';
+
   try {
     const res = await axios.get(
       `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=id`,
       { timeout: 15000 }
     );
+
     const d = res.data;
     return `🌤️ Cuaca ${d.name}: ${d.main.temp}°C, ${d.weather[0].description}`;
   } catch {
@@ -348,14 +492,15 @@ async function getWeather(city) {
 }
 
 async function searchWebTavily(query) {
-  if (!TAVILY_API_KEY) return "API key Tavily tidak ada";
+  if (!TAVILY_API_KEY) return 'API key Tavily tidak ada';
+
   try {
     const res = await axios.post(
       'https://api.tavily.com/search',
       {
         api_key: TAVILY_API_KEY,
         query,
-        search_depth: "basic",
+        search_depth: 'basic',
         max_results: 3,
         include_answer: true
       },
@@ -366,19 +511,18 @@ async function searchWebTavily(query) {
     if (res.data.answer) out += `\n📝 ${res.data.answer}\n`;
 
     (res.data.results || []).forEach((item, i) => {
-      const content = (item.content || item.snippet || '').toString().slice(0, 180);
+      const content = String(item.content || item.snippet || '').slice(0, 180);
       out += `\n${i + 1}. ${item.title}\n   ${content}${content.length >= 180 ? '...' : ''}\n   ${item.url}\n`;
     });
 
     return out.trim();
   } catch (e) {
-    return "Error web search";
+    return 'Error web search';
   }
 }
 
 async function generateImage(prompt) {
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
-  return url;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
 }
 
 function simpleDetectLanguage(text) {
@@ -386,18 +530,19 @@ function simpleDetectLanguage(text) {
   if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) return 'ja';
   if (/[\u1000-\u109F]/.test(text)) return 'my';
   if (/[\uAC00-\uD7AF]/.test(text)) return 'ko';
-  if (/[ăâđêôơư]/.test(text)) return 'vi';
+  if (/[ăâđêôơư]/i.test(text)) return 'vi';
   return 'id';
 }
 
 // ==================== AI ====================
 async function askMistral(systemPrompt, userPrompt) {
-  if (!mistralClient) throw new Error("MISTRAL tidak diset");
+  if (!mistralClient) throw new Error('MISTRAL tidak diset atau package belum ada');
+
   const response = await mistralClient.chat.complete({
-    model: "mistral-large-latest",
+    model: 'mistral-large-latest',
     messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt }
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
     ],
     temperature: 0.7,
     max_tokens: 800
@@ -409,14 +554,15 @@ async function askMistral(systemPrompt, userPrompt) {
 }
 
 async function askGroq(systemPrompt, userPrompt) {
-  if (!GROQ_API_KEY) throw new Error("GROQ tidak diset");
+  if (!GROQ_API_KEY) throw new Error('GROQ tidak diset');
+
   const res = await axios.post(
-    "https://api.groq.com/openai/v1/chat/completions",
+    'https://api.groq.com/openai/v1/chat/completions',
     {
-      model: "llama-3.3-70b-versatile",
+      model: 'llama-3.3-70b-versatile',
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
       ],
       temperature: 0.7,
       max_tokens: 800
@@ -426,68 +572,74 @@ async function askGroq(systemPrompt, userPrompt) {
       timeout: 20000
     }
   );
-  return res.data.choices[0].message.content;
+
+  return res.data.choices?.[0]?.message?.content || '';
 }
 
 async function askAI(systemPrompt, userPrompt) {
   if (MISTRAL_API_KEY) {
     try {
-      console.log("🟢 Mistral...");
+      console.log('🟢 Mistral...');
       const answer = await askMistral(systemPrompt, userPrompt);
-      console.log("✅ Mistral sukses");
+      console.log('✅ Mistral sukses');
       return answer;
     } catch (err) {
-      console.error("Mistral gagal:", err.message);
+      console.error('Mistral gagal:', err.message);
     }
   }
 
   if (GROQ_API_KEY) {
     try {
-      console.log("⚡ Groq...");
+      console.log('⚡ Groq...');
       const answer = await askGroq(systemPrompt, userPrompt);
-      console.log("✅ Groq sukses");
+      console.log('✅ Groq sukses');
       return answer;
     } catch (err) {
-      console.error("Groq gagal:", err.message);
+      console.error('Groq gagal:', err.message);
     }
   }
 
-  throw new Error("Semua AI gagal.");
+  throw new Error('Semua AI gagal.');
 }
 
 function getSystemPrompt(userId) {
-  const botName = ensureUser(userId).botName || "Bot Desa";
+  const botName = ensureUser(userId).botName || 'Bot Desa';
   return `Kamu adalah asisten pribadi bernama "${botName}".
 Gunakan bahasa Indonesia santai, pakai "aku" dan "kamu".
 Jawab singkat, jelas, dan maksimal 3 kalimat.
 Kalau tidak tahu, bilang tidak tahu.
-Jangan mengaku sebagai manusia.
-`;
+Jangan mengaku sebagai manusia.`;
 }
 
 function getCachedAnswer(question) {
-  const q = question.toLowerCase();
-  const match = lessons.rules.find(r => {
-    const trig = (r.trigger || '').toLowerCase().trim();
+  const q = String(question || '').toLowerCase();
+
+  const sortedRules = [...lessons.rules].sort(
+    (a, b) => String(b.trigger || '').length - String(a.trigger || '').length
+  );
+
+  const match = sortedRules.find(r => {
+    const trig = String(r.trigger || '').toLowerCase().trim();
     return trig && q.includes(trig);
   });
+
   return match ? match.answer : null;
 }
 
 async function getAnswerWithAB(question, userId, systemPrompt) {
   const chosen = Math.random() > 0.5 ? 'santai' : 'formal';
   const stylePrompt = chosen === 'santai'
-    ? `Jawab dengan santai, gunakan "aku" dan "kamu".`
-    : `Jawab dengan gaya informatif dan sopan.`;
+    ? 'Jawab dengan santai, gunakan "aku" dan "kamu".'
+    : 'Jawab dengan gaya informatif dan sopan.';
 
   const answer = await askAI(
     systemPrompt,
     `${stylePrompt}\n\nPertanyaan user:\n${question}`
   );
 
-  abLog.push({ userId, question, chosen, answer, timestamp: Date.now() });
+  abLog.push({ userId, question, chosen, answer, timestamp: nowMs() });
   if (abLog.length > 1000) abLog.shift();
-  await saveAll();
+  await persist();
 
   return { answer, style: chosen };
 }
@@ -496,7 +648,7 @@ async function getSmartAnswer(question, userId, systemPrompt) {
   const cached = getCachedAnswer(question);
   if (cached) return cached;
 
-  const qLower = question.toLowerCase();
+  const qLower = String(question || '').toLowerCase();
   const needsFresh = ['terbaru', 'berita', 'update', 'sekarang', 'harga', 'skor'].some(k => qLower.includes(k));
 
   if (needsFresh && TAVILY_API_KEY) {
@@ -504,9 +656,16 @@ async function getSmartAnswer(question, userId, systemPrompt) {
     if (searchRes && !searchRes.includes('Error')) {
       const learnedPrompt = `${question}\n\nHasil pencarian web:\n${searchRes}\n\nJawab singkat berdasarkan data di atas.`;
       const learned = await askAI(systemPrompt, learnedPrompt);
-      lessons.rules.push({ trigger: question.slice(0, 50), answer: learned, source: 'auto', timestamp: Date.now() });
+
+      lessons.rules.push({
+        trigger: question.slice(0, 50),
+        answer: learned,
+        source: 'auto',
+        timestamp: nowMs()
+      });
+
       if (lessons.rules.length > 200) lessons.rules.shift();
-      await saveAll();
+      await persist();
       return learned;
     }
   }
@@ -520,22 +679,23 @@ async function getSmartAnswer(question, userId, systemPrompt) {
   const context = similar ? `Konteks percakapan terakhir:\n${similar}\n\n` : '';
   const { answer } = await getAnswerWithAB(context + question, userId, systemPrompt);
 
-  shortMemory.push({ userId, q: question, a: answer, timestamp: Date.now() });
+  shortMemory.push({ userId, q: question, a: answer, timestamp: nowMs() });
   if (shortMemory.length > 500) shortMemory.shift();
-  await saveAll();
+  await persist();
 
   return answer;
 }
 
 // ==================== GOOGLE CALENDAR ====================
 function createOAuthClient() {
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) return null;
-  return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+  if (!googleLib || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) return null;
+  return new googleLib.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
 }
 
 function getAuthUrl(state) {
   const client = createOAuthClient();
   if (!client) return null;
+
   return client.generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/calendar'],
@@ -546,7 +706,7 @@ function getAuthUrl(state) {
 
 async function getTokensFromCode(code) {
   const client = createOAuthClient();
-  if (!client) throw new Error("OAuth2 tidak dikonfigurasi");
+  if (!client) throw new Error('OAuth2 tidak dikonfigurasi');
   const { tokens } = await client.getToken(code);
   return tokens;
 }
@@ -554,7 +714,7 @@ async function getTokensFromCode(code) {
 async function saveUserTokens(userId, tokens) {
   ensureUser(userId);
   userMemory[userId].calendarTokens = tokens;
-  await saveAll();
+  await persist();
 }
 
 async function getUserTokens(userId) {
@@ -569,32 +729,109 @@ async function getCalendarClient(userId) {
   if (!client) return null;
 
   client.setCredentials(tokens);
-  return google.calendar({ version: 'v3', auth: client });
+  return googleLib.calendar({ version: 'v3', auth: client });
+}
+
+async function addCalendarEvent(userId, summary, startDT, endDT) {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) return { ok: false, reason: 'auth' };
+
+  await calendar.events.insert({
+    calendarId: 'primary',
+    resource: {
+      summary,
+      start: { dateTime: startDT.toISOString(), timeZone: 'Asia/Jakarta' },
+      end: { dateTime: endDT.toISOString(), timeZone: 'Asia/Jakarta' }
+    }
+  });
+
+  return { ok: true };
+}
+
+// ==================== REMINDER ====================
+function scheduleReminderJob(userId, reminder) {
+  if (!scheduleLib) return false;
+
+  const when = new Date(reminder.time);
+  if (!isValidDate(when) || when <= new Date()) return false;
+
+  if (reminderJobs.has(reminder.id)) {
+    try { reminderJobs.get(reminder.id).cancel(); } catch (_) {}
+    reminderJobs.delete(reminder.id);
+  }
+
+  const job = scheduleLib.scheduleJob(when, async () => {
+    const chatId = reminder.chatId || userId;
+    await safeSendMessage(chatId, `⏰ Pengingat: ${reminder.message}`);
+
+    const u = ensureUser(userId);
+    u.reminders = (u.reminders || []).filter(r => r.id !== reminder.id);
+    reminderJobs.delete(reminder.id);
+    await persist();
+  });
+
+  if (job) reminderJobs.set(reminder.id, job);
+  return !!job;
+}
+
+async function restoreAllReminders() {
+  if (!scheduleLib) {
+    console.warn('⚠️ node-schedule tidak terpasang, reminder tidak akan aktif.');
+    return;
+  }
+
+  for (const job of reminderJobs.values()) {
+    try { job.cancel(); } catch (_) {}
+  }
+  reminderJobs.clear();
+
+  let changed = false;
+  const now = new Date();
+
+  for (const [userId, u] of Object.entries(userMemory)) {
+    const reminders = Array.isArray(u.reminders) ? u.reminders : [];
+    const keep = [];
+
+    for (const r of reminders) {
+      const when = new Date(r.time);
+      if (isValidDate(when) && when > now) {
+        scheduleReminderJob(userId, r);
+        keep.push(r);
+      } else {
+        changed = true;
+      }
+    }
+
+    u.reminders = keep;
+  }
+
+  if (changed) await persist();
 }
 
 // ==================== FITUR TAMBAHAN ====================
-async function handleMood(chatId, userId, text, msg) {
+async function handleMood(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
+  cleanupStaleUserState(u);
 
-  if (text === '/mood') {
-    await safeSendMessage(chatId, "Apa kabarmu hari ini? (senang/biasa/sedih/cemas/energik)", { reply_to_message_id: msg.message_id });
+  if (cmd === '/mood') {
+    await safeSendMessage(chatId, 'Apa kabarmu hari ini? (senang/biasa/sedih/cemas/energik)', { reply_to_message_id: msg.message_id });
     u.awaitingMood = true;
-    await saveAll();
+    await persist();
     return true;
   }
 
-  if (u.awaitingMood) {
-    const mood = text.toLowerCase().trim();
+  if (u.awaitingMood && !cmd) {
+    const mood = String(msg.text || args || '').toLowerCase().trim();
     const valid = ['senang', 'biasa', 'sedih', 'cemas', 'energik'];
 
     if (valid.includes(mood)) {
       u.mood = mood;
-      u.lastMoodUpdate = Date.now();
+      u.lastMoodUpdate = nowMs();
       delete u.awaitingMood;
-      await saveAll();
+      await persist();
       await safeSendMessage(chatId, `Terima kasih! Suasana hatimu "${mood}" tercatat.`, { reply_to_message_id: msg.message_id });
     } else {
-      await safeSendMessage(chatId, "Pilihan: senang, biasa, sedih, cemas, energik.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Pilihan: senang, biasa, sedih, cemas, energik.', { reply_to_message_id: msg.message_id });
     }
     return true;
   }
@@ -602,37 +839,49 @@ async function handleMood(chatId, userId, text, msg) {
   return false;
 }
 
-async function handleReminder(chatId, userId, text, msg) {
+function parseReminderFromArgs(args) {
+  const parts = cleanupSpaces(args).split(' ');
+  if (parts.length < 3) return null;
+
+  const dateStr = parts[0];
+  const timeStr = parts[1];
+  const message = parts.slice(2).join(' ').trim();
+
+  return { dateStr, timeStr, message };
+}
+
+async function handleReminder(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
 
-  if (text.startsWith('/remind')) {
-    const parts = text.split(' ').slice(1);
-    if (parts.length < 3) {
-      await safeSendMessage(chatId, "Format: /remind YYYY-MM-DD HH:MM pesan", { reply_to_message_id: msg.message_id });
+  if (cmd === '/remind') {
+    const data = parseReminderFromArgs(args);
+    if (!data) {
+      await safeSendMessage(chatId, 'Format: /remind YYYY-MM-DD HH:MM pesan', { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    const dateStr = parts[0];
-    const timeStr = parts[1];
-    const message = parts.slice(2).join(' ');
-
-    const datetime = parseJakartaDateTime(dateStr, timeStr);
-    if (!datetime || datetime <= new Date()) {
-      await safeSendMessage(chatId, "Tanggal/waktu tidak valid atau sudah lewat.", { reply_to_message_id: msg.message_id });
+    const datetime = parseJakartaDateTime(data.dateStr, data.timeStr);
+    if (!isValidDate(datetime) || datetime <= new Date()) {
+      await safeSendMessage(chatId, 'Tanggal/waktu tidak valid atau sudah lewat.', { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    const reminderId = Date.now().toString();
+    const reminderId = String(nowMs());
+    const reminder = {
+      id: reminderId,
+      chatId,
+      time: datetime.toISOString(),
+      message: data.message
+    };
 
-    schedule.scheduleJob(datetime, async () => {
-      await safeSendMessage(chatId, `⏰ Pengingat: ${message}`);
-      const current = ensureUser(userId);
-      current.reminders = (current.reminders || []).filter(r => r.id !== reminderId);
-      await saveAll();
-    });
+    u.reminders.push(reminder);
+    const scheduled = scheduleReminderJob(userId, reminder);
+    await persist();
 
-    u.reminders.push({ id: reminderId, time: datetime.toISOString(), message });
-    await saveAll();
+    if (!scheduled) {
+      await safeSendMessage(chatId, '⚠️ Pengingat tersimpan, tetapi scheduler tidak aktif di server ini.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
 
     await safeSendMessage(chatId, `✅ Pengingat dijadwalkan pada ${datetime.toString()}`, { reply_to_message_id: msg.message_id });
     return true;
@@ -641,13 +890,13 @@ async function handleReminder(chatId, userId, text, msg) {
   return false;
 }
 
-async function handleTodo(chatId, userId, text, msg) {
+async function handleTodo(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
 
-  if (text === '/todo') {
+  if (cmd === '/todo') {
     const tasks = u.todos || [];
     if (tasks.length === 0) {
-      await safeSendMessage(chatId, "📝 Daftar tugas kosong. Gunakan /add <tugas>", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, '📝 Daftar tugas kosong. Gunakan /add <tugas>', { reply_to_message_id: msg.message_id });
     } else {
       const list = tasks.map((t, i) => `${i + 1}. ${t.done ? '✅' : '❌'} ${t.text}`).join('\n');
       await sendChunkedMessage(chatId, `📋 To-Do List:\n${list}`, { reply_to_message_id: msg.message_id });
@@ -655,109 +904,87 @@ async function handleTodo(chatId, userId, text, msg) {
     return true;
   }
 
-  if (text.startsWith('/add ')) {
-    const taskText = text.slice(5).trim();
+  if (cmd === '/add') {
+    const taskText = args.trim();
     if (!taskText) {
-      await safeSendMessage(chatId, "Isi tugasnya dulu.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Isi tugasnya dulu.', { reply_to_message_id: msg.message_id });
       return true;
     }
-    u.todos.push({ text: taskText, done: false, createdAt: Date.now() });
-    await saveAll();
+
+    u.todos.push({ text: taskText, done: false, createdAt: nowMs() });
+    await persist();
     await safeSendMessage(chatId, `✅ Tugas "${taskText}" ditambahkan.`, { reply_to_message_id: msg.message_id });
     return true;
   }
 
-  if (text.startsWith('/done ')) {
-    const idx = parseInt(text.slice(6)) - 1;
-    if (!u.todos || idx < 0 || idx >= u.todos.length) {
-      await safeSendMessage(chatId, "Nomor tugas tidak valid.", { reply_to_message_id: msg.message_id });
+  if (cmd === '/done') {
+    const idx = parseInt(args, 10) - 1;
+    if (!u.todos || Number.isNaN(idx) || idx < 0 || idx >= u.todos.length) {
+      await safeSendMessage(chatId, 'Nomor tugas tidak valid.', { reply_to_message_id: msg.message_id });
     } else {
       u.todos[idx].done = true;
-      await saveAll();
+      await persist();
       await safeSendMessage(chatId, `✅ Tugas "${u.todos[idx].text}" selesai.`, { reply_to_message_id: msg.message_id });
     }
     return true;
   }
 
-  if (text === '/cleartodo') {
+  if (cmd === '/cleartodo') {
     u.todos = [];
-    await saveAll();
-    await safeSendMessage(chatId, "🗑️ Semua tugas dihapus.", { reply_to_message_id: msg.message_id });
+    await persist();
+    await safeSendMessage(chatId, '🗑️ Semua tugas dihapus.', { reply_to_message_id: msg.message_id });
     return true;
   }
 
   return false;
 }
 
-let quizState = {};
-
-async function handleQuizPoll(chatId, text, msg) {
-  if (text.startsWith('/quiz ')) {
-    const question = text.slice(6).trim();
+async function handleQuizPoll(chatId, cmd, args, msg) {
+  if (cmd === '/quiz') {
+    const question = args.trim();
     if (!question) {
-      await safeSendMessage(chatId, "Ketik pertanyaan kuisnya dulu.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Ketik pertanyaan kuisnya dulu.', { reply_to_message_id: msg.message_id });
       return true;
     }
-    quizState[chatId] = { type: 'quiz', question };
-    await safeSendMessage(chatId, "Kirim opsi jawaban (pisahkan dengan koma):", { reply_to_message_id: msg.message_id });
+    quizState[chatId] = { type: 'quiz', question, createdAt: nowMs() };
+    await safeSendMessage(chatId, 'Kirim opsi jawaban (pisahkan dengan koma):', { reply_to_message_id: msg.message_id });
     return true;
   }
 
-  if (quizState[chatId] && quizState[chatId].type === 'quiz') {
-    const options = text.split(',').map(o => o.trim()).filter(Boolean);
+  if (cmd === '/poll') {
+    const question = args.trim();
+    if (!question) {
+      await safeSendMessage(chatId, 'Ketik pertanyaan pollingnya dulu.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+    quizState[chatId] = { type: 'poll', question, createdAt: nowMs() };
+    await safeSendMessage(chatId, 'Kirim opsi polling (pisahkan dengan koma):', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  // Jika sedang menunggu opsi dan user mengirim pesan biasa
+  if (quizState[chatId] && !cmd) {
+    const state = quizState[chatId];
+    const options = String(msg.text || '').split(',').map(o => o.trim()).filter(Boolean);
+
     if (options.length < 2) {
-      await safeSendMessage(chatId, "Minimal 2 opsi.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Minimal 2 opsi.', { reply_to_message_id: msg.message_id });
       delete quizState[chatId];
       return true;
     }
+
     if (options.length > 10) {
-      await safeSendMessage(chatId, "Maksimal 10 opsi.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Maksimal 10 opsi.', { reply_to_message_id: msg.message_id });
       delete quizState[chatId];
       return true;
     }
 
     await telegramPost('sendPoll', {
       chat_id: chatId,
-      question: quizState[chatId].question,
+      question: state.question,
       options,
       is_anonymous: false,
-      type: 'quiz',
-      correct_option_id: 0
-    });
-
-    delete quizState[chatId];
-    return true;
-  }
-
-  if (text.startsWith('/poll ')) {
-    const question = text.slice(6).trim();
-    if (!question) {
-      await safeSendMessage(chatId, "Ketik pertanyaan pollingnya dulu.", { reply_to_message_id: msg.message_id });
-      return true;
-    }
-    quizState[chatId] = { type: 'poll', question };
-    await safeSendMessage(chatId, "Kirim opsi polling (pisahkan dengan koma):", { reply_to_message_id: msg.message_id });
-    return true;
-  }
-
-  if (quizState[chatId] && quizState[chatId].type === 'poll') {
-    const options = text.split(',').map(o => o.trim()).filter(Boolean);
-    if (options.length < 2) {
-      await safeSendMessage(chatId, "Minimal 2 opsi.", { reply_to_message_id: msg.message_id });
-      delete quizState[chatId];
-      return true;
-    }
-    if (options.length > 10) {
-      await safeSendMessage(chatId, "Maksimal 10 opsi.", { reply_to_message_id: msg.message_id });
-      delete quizState[chatId];
-      return true;
-    }
-
-    await telegramPost('sendPoll', {
-      chat_id: chatId,
-      question: quizState[chatId].question,
-      options,
-      is_anonymous: false
+      ...(state.type === 'quiz' ? { type: 'quiz', correct_option_id: 0 } : {})
     });
 
     delete quizState[chatId];
@@ -767,10 +994,10 @@ async function handleQuizPoll(chatId, text, msg) {
   return false;
 }
 
-async function handleGroupManagement(chatId, text, msg) {
+async function handleGroupManagement(chatId, cmd, args, msg) {
   if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') return false;
 
-  if (text === '/kick' && msg.reply_to_message) {
+  if (cmd === '/kick' && msg.reply_to_message) {
     const userIdToKick = msg.reply_to_message.from.id;
     try {
       await telegramPost('banChatMember', {
@@ -779,20 +1006,20 @@ async function handleGroupManagement(chatId, text, msg) {
       });
       await safeSendMessage(chatId, `User ${msg.reply_to_message.from.first_name} dikeluarkan.`, { reply_to_message_id: msg.message_id });
     } catch (e) {
-      await safeSendMessage(chatId, "Gagal mengeluarkan user. Pastikan bot punya izin admin.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Gagal mengeluarkan user. Pastikan bot punya izin admin.', { reply_to_message_id: msg.message_id });
     }
     return true;
   }
 
-  if (text === '/pin' && msg.reply_to_message) {
+  if (cmd === '/pin' && msg.reply_to_message) {
     try {
       await telegramPost('pinChatMessage', {
         chat_id: chatId,
         message_id: msg.reply_to_message.message_id
       });
-      await safeSendMessage(chatId, "Pesan disematkan.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Pesan disematkan.', { reply_to_message_id: msg.message_id });
     } catch (e) {
-      await safeSendMessage(chatId, "Gagal pin pesan. Pastikan bot punya izin admin.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Gagal pin pesan. Pastikan bot punya izin admin.', { reply_to_message_id: msg.message_id });
     }
     return true;
   }
@@ -800,19 +1027,24 @@ async function handleGroupManagement(chatId, text, msg) {
   return false;
 }
 
-async function handleImageEdit(chatId, text, msg) {
-  if (text.startsWith('/resize ') && msg.reply_to_message?.photo) {
-    const size = text.slice(8).toLowerCase().split('x');
-    if (size.length !== 2) {
-      await safeSendMessage(chatId, "Format: /resize widthxheight (balas foto)", { reply_to_message_id: msg.message_id });
+async function handleImageEdit(chatId, cmd, args, msg) {
+  if (cmd === '/resize' && msg.reply_to_message?.photo) {
+    if (!sharpLib) {
+      await safeSendMessage(chatId, 'Fitur resize belum aktif karena package sharp belum terpasang.', { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    const width = parseInt(size[0]);
-    const height = parseInt(size[1]);
+    const size = args.toLowerCase().split('x');
+    if (size.length !== 2) {
+      await safeSendMessage(chatId, 'Format: /resize widthxheight (balas foto)', { reply_to_message_id: msg.message_id });
+      return true;
+    }
 
-    if (isNaN(width) || isNaN(height) || width < 1 || height < 1) {
-      await safeSendMessage(chatId, "Lebar/tinggi tidak valid.", { reply_to_message_id: msg.message_id });
+    const width = parseInt(size[0], 10);
+    const height = parseInt(size[1], 10);
+
+    if (Number.isNaN(width) || Number.isNaN(height) || width < 1 || height < 1) {
+      await safeSendMessage(chatId, 'Lebar/tinggi tidak valid.', { reply_to_message_id: msg.message_id });
       return true;
     }
 
@@ -824,15 +1056,15 @@ async function handleImageEdit(chatId, text, msg) {
       const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
 
       const imageRes = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 });
-      const resized = await sharp(imageRes.data)
+      const resized = await sharpLib(imageRes.data)
         .resize(width, height, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 90 })
         .toBuffer();
 
       await sendPhotoBuffer(chatId, resized, `Resize ke ${width}x${height}`, msg.message_id);
     } catch (e) {
-      console.error("Resize error:", e.message);
-      await safeSendMessage(chatId, "Gagal memproses gambar.", { reply_to_message_id: msg.message_id });
+      console.error('Resize error:', e.message);
+      await safeSendMessage(chatId, 'Gagal memproses gambar.', { reply_to_message_id: msg.message_id });
     }
 
     return true;
@@ -841,38 +1073,43 @@ async function handleImageEdit(chatId, text, msg) {
   return false;
 }
 
-async function handleStickerHint(chatId, text, msg) {
-  if (text === '/sticker' && msg.reply_to_message?.photo) {
-    await safeSendMessage(chatId, "Untuk membuat stiker, gunakan @Stickers bot. Saya belum support pembuatan stiker otomatis.", { reply_to_message_id: msg.message_id });
+async function handleStickerHint(chatId, cmd, args, msg) {
+  if (cmd === '/sticker' && msg.reply_to_message?.photo) {
+    await safeSendMessage(
+      chatId,
+      'Untuk membuat stiker, gunakan @Stickers bot. Saya belum support pembuatan stiker otomatis.',
+      { reply_to_message_id: msg.message_id }
+    );
     return true;
   }
   return false;
 }
 
-async function handleKnowledge(chatId, text, msg) {
-  if (text.startsWith('/learn ')) {
-    const content = text.slice(7).trim();
+async function handleKnowledge(chatId, cmd, args, msg) {
+  if (cmd === '/learn') {
+    const content = args.trim();
     if (!content) {
-      await safeSendMessage(chatId, "Isi pengetahuan yang mau disimpan.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Isi pengetahuan yang mau disimpan.', { reply_to_message_id: msg.message_id });
       return true;
     }
-    knowledgeBase.push({ content, timestamp: Date.now() });
+
+    knowledgeBase.push({ content, timestamp: nowMs() });
     if (knowledgeBase.length > 1000) knowledgeBase.shift();
-    await saveAll();
-    await safeSendMessage(chatId, "✅ Pengetahuan ditambahkan.", { reply_to_message_id: msg.message_id });
+    await persist();
+    await safeSendMessage(chatId, '✅ Pengetahuan ditambahkan.', { reply_to_message_id: msg.message_id });
     return true;
   }
 
-  if (text.startsWith('/askkb ')) {
-    const query = text.slice(7).trim().toLowerCase();
+  if (cmd === '/askkb') {
+    const query = args.trim().toLowerCase();
     if (!query) {
-      await safeSendMessage(chatId, "Tulis pertanyaannya.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Tulis pertanyaannya.', { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    const relevant = knowledgeBase.filter(k => k.content.toLowerCase().includes(query));
+    const relevant = knowledgeBase.filter(k => String(k.content || '').toLowerCase().includes(query));
     if (relevant.length === 0) {
-      await safeSendMessage(chatId, "Tidak ada informasi terkait.", { reply_to_message_id: msg.message_id });
+      await safeSendMessage(chatId, 'Tidak ada informasi terkait.', { reply_to_message_id: msg.message_id });
     } else {
       const answer = relevant.slice(-3).map(k => `- ${k.content}`).join('\n\n');
       await sendChunkedMessage(chatId, `📚 Basis Pengetahuan:\n${answer}`, { reply_to_message_id: msg.message_id });
@@ -884,19 +1121,96 @@ async function handleKnowledge(chatId, text, msg) {
 }
 
 // ==================== NLP UNIVERSAL ====================
-function extractJsonObject(text) {
-  if (!text) return null;
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
+function heuristicIntent(userMessage) {
+  const q = String(userMessage || '').toLowerCase().trim();
 
-  try {
-    return JSON.parse(match[0]);
-  } catch (_) {
-    return null;
+  if (!q) return { intent: 'NONE', params: {} };
+
+  // Hitung
+  if (q.includes('hitung') || /^[0-9\s()+\-*/%.]+$/.test(q)) {
+    const expr = q.includes('hitung')
+      ? q.replace(/.*hitung/i, '').trim()
+      : q;
+
+    const clean = expr.replace(/[^0-9+\-*/().%]/g, '');
+    if (clean) return { intent: 'HITUNG', params: { expression: clean } };
   }
+
+  // Tanggal
+  if (q.includes('tanggal') && (q.includes('hari ini') || q.includes('sekarang') || q.includes('berapa'))) {
+    return { intent: 'TANGGAL', params: {} };
+  }
+
+  // Jam
+  if (q.includes('jam') || q.includes('waktu')) {
+    let location = q
+      .replace(/(jam|waktu|di|pukul|sekarang|berapa|di mana|dimana)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    location = location || 'jakarta';
+    return { intent: 'JAM', params: { location } };
+  }
+
+  // Cuaca
+  if (q.includes('cuaca') || q.includes('weather')) {
+    let city = q
+      .replace(/(cuaca|weather|di|kota|bagaimana|sekarang|bagaimanakah)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    city = city || 'jakarta';
+    return { intent: 'CUACA', params: { city } };
+  }
+
+  // Lokasi
+  if (q.includes('lokasi') || q.includes('alamat') || q.includes('dimana') || q.includes('di mana')) {
+    let place = q
+      .replace(/(cari|lokasi|alamat|dimana|di mana|tempat|tunjukkan|lihat|di|adalah)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (place) return { intent: 'LOKASI', params: { place } };
+  }
+
+  // Search
+  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita'];
+  if (searchKw.some(k => q.includes(k))) {
+    let query = q;
+    searchKw.forEach(k => { query = query.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' '); });
+    query = query.replace(/\s+/g, ' ').trim();
+    if (query) return { intent: 'SEARCH', params: { query } };
+  }
+
+  // Gambar
+  if (q.includes('gambar') || q.includes('buat image') || q.includes('buat gambar') || q.includes('image')) {
+    let prompt = q
+      .replace(/(buat gambar|gambar|buat image|image|gambar kan|render)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (prompt) return { intent: 'GAMBAR', params: { prompt } };
+  }
+
+  // Tugas
+  if ((q.includes('tugas') || q.includes('todo')) && /(tambah|buat|catat|ingat|save)/.test(q)) {
+    let task = q
+      .replace(/(tambah tugas|buat tugas|catat tugas|ingatkan tugas|save tugas|tugas|todo|tambahkan|buat|catat|ingat|save)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (task) return { intent: 'TAMBAH_TUGAS', params: { task } };
+  }
+
+  // Mood
+  if (q.includes('mood') || q.includes('suasana hati')) {
+    for (const mood of ['senang', 'biasa', 'sedih', 'cemas', 'energik']) {
+      if (q.includes(mood)) return { intent: 'TAMBAH_MOOD', params: { mood } };
+    }
+  }
+
+  return null;
 }
 
 async function universalNLP(userMessage, userId) {
+  const heuristic = heuristicIntent(userMessage);
+  if (heuristic) return heuristic;
+
   const savedPatterns = userMemory[userId]?.nlpPatterns || [];
   const today = new Date().toLocaleString('id-ID', {
     timeZone: 'Asia/Jakarta',
@@ -951,29 +1265,37 @@ Contoh:
 
   try {
     const response = await askAI(
-      "Kamu hanya boleh mengeluarkan JSON valid untuk klasifikasi intent.",
+      'Kamu hanya boleh mengeluarkan JSON valid untuk klasifikasi intent.',
       prompt
     );
 
     const parsed = extractJsonObject(response);
-    if (!parsed || !parsed.intent) return { intent: "NONE" };
-    return parsed;
+    if (!parsed || !parsed.intent) return { intent: 'NONE', params: {} };
+
+    const validIntents = [
+      'TAMBAH_EVENT', 'TAMBAH_TUGAS', 'TAMBAH_PENGINGAT',
+      'TAMBAH_MOOD', 'CUACA', 'SEARCH', 'HITUNG',
+      'JAM', 'TANGGAL', 'GAMBAR', 'LOKASI', 'NONE'
+    ];
+
+    if (!validIntents.includes(parsed.intent)) return { intent: 'NONE', params: {} };
+    return { intent: parsed.intent, params: parsed.params || {} };
   } catch (e) {
-    console.error("NLP error:", e.message);
-    return { intent: "NONE" };
+    console.error('NLP error:', e.message);
+    return { intent: 'NONE', params: {} };
   }
 }
 
 async function saveNlpPattern(userId, originalQuestion, correctedIntent, correctedParams) {
   const u = ensureUser(userId);
   u.nlpPatterns.push({
-    question: originalQuestion.toLowerCase(),
+    question: String(originalQuestion || '').toLowerCase(),
     intent: correctedIntent,
     params: correctedParams,
-    timestamp: Date.now()
+    timestamp: nowMs()
   });
   if (u.nlpPatterns.length > 100) u.nlpPatterns.shift();
-  await saveAll();
+  await persist();
 }
 
 async function askClarification(chatId, userId, originalText, msg) {
@@ -985,36 +1307,73 @@ async function askClarification(chatId, userId, originalText, msg) {
 
   const u = ensureUser(userId);
   u.awaitingClarification = originalText;
-  await saveAll();
+  u.awaitingClarificationAt = nowMs();
+  await persist();
+}
+
+async function scheduleReminderFromParams(chatId, userId, message, timeValue, msg) {
+  const u = ensureUser(userId);
+
+  if (!message || !timeValue) {
+    await safeSendMessage(chatId, '❌ Pesan atau waktu pengingat belum lengkap.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  const reminderDate = parseFlexibleDateTime(timeValue, '09:00');
+  if (!isValidDate(reminderDate) || reminderDate <= new Date()) {
+    await safeSendMessage(chatId, '❌ Waktu pengingat tidak valid.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  const reminderId = String(nowMs());
+  const reminder = {
+    id: reminderId,
+    chatId,
+    time: reminderDate.toISOString(),
+    message
+  };
+
+  u.reminders.push(reminder);
+  const scheduled = scheduleReminderJob(userId, reminder);
+  await persist();
+
+  if (!scheduled) {
+    await safeSendMessage(chatId, '⚠️ Pengingat tersimpan, tetapi scheduler tidak aktif di server ini.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  await safeSendMessage(chatId, `✅ Pengingat dijadwalkan pada ${reminderDate.toString()}`, { reply_to_message_id: msg.message_id });
+  return true;
 }
 
 async function executeUniversalIntent(intent, params, chatId, userId, msg) {
   const u = ensureUser(userId);
 
   switch (intent) {
-    case "TAMBAH_EVENT": {
-      const summary = params.summary || "Event";
+    case 'TAMBAH_EVENT': {
+      const summary = params.summary || 'Event';
       const startDate = params.startDate;
-      const startTime = params.startTime || "09:00";
+      const startTime = params.startTime || '09:00';
       const endDate = params.endDate || startDate;
-      const endTime = params.endTime || "10:00";
+      const endTime = params.endTime || '10:00';
 
       if (!startDate) {
-        await safeSendMessage(chatId, "❌ Tanggal event belum jelas.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Tanggal event belum jelas.', { reply_to_message_id: msg.message_id });
         return true;
       }
 
-      const startDT = parseJakartaDateTime(startDate, startTime);
-      const endDT = parseJakartaDateTime(endDate, endTime) || new Date(startDT.getTime() + 60 * 60 * 1000);
+      const startDT = parseFlexibleDateTime(`${startDate} ${startTime}`, '09:00');
+      const endDT = parseFlexibleDateTime(`${endDate || startDate} ${endTime}`, '10:00')
+        || (startDT ? new Date(startDT.getTime() + 60 * 60 * 1000) : null);
 
-      if (!startDT || !endDT) {
-        await safeSendMessage(chatId, "❌ Format tanggal/waktu event tidak valid.", { reply_to_message_id: msg.message_id });
+      if (!isValidDate(startDT) || !isValidDate(endDT)) {
+        await safeSendMessage(chatId, '❌ Format tanggal/waktu event tidak valid.', { reply_to_message_id: msg.message_id });
         return true;
       }
 
       const calendar = await getCalendarClient(userId);
       if (!calendar) {
-        await safeSendMessage(chatId, "❌ Google Calendar belum terautentikasi. Gunakan /auth dulu.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Google Calendar belum terautentikasi. Gunakan /auth dulu.', { reply_to_message_id: msg.message_id });
         return true;
       }
 
@@ -1030,91 +1389,65 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg) {
 
         await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
       } catch (err) {
-        console.error("Calendar insert error:", err.response?.data || err.message);
-        await safeSendMessage(chatId, "❌ Gagal menambahkan event. Periksa format tanggal.", { reply_to_message_id: msg.message_id });
+        console.error('Calendar insert error:', err.response?.data || err.message);
+        await safeSendMessage(chatId, '❌ Gagal menambahkan event. Periksa format tanggal.', { reply_to_message_id: msg.message_id });
       }
 
       return true;
     }
 
-    case "TAMBAH_TUGAS": {
+    case 'TAMBAH_TUGAS': {
       const taskText = params.task;
       if (!taskText) {
-        await safeSendMessage(chatId, "❌ Tugasnya belum jelas.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Tugasnya belum jelas.', { reply_to_message_id: msg.message_id });
         return true;
       }
-      u.todos.push({ text: taskText, done: false, createdAt: Date.now() });
-      await saveAll();
+
+      u.todos.push({ text: taskText, done: false, createdAt: nowMs() });
+      await persist();
       await safeSendMessage(chatId, `✅ Tugas "${taskText}" ditambahkan.`, { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    case "TAMBAH_PENGINGAT": {
-      const message = params.message;
-      const time = params.time;
-
-      if (!message || !time) {
-        await safeSendMessage(chatId, "❌ Pesan atau waktu pengingat belum lengkap.", { reply_to_message_id: msg.message_id });
-        return true;
-      }
-
-      const remindDate = new Date(time);
-      if (isNaN(remindDate) || remindDate <= new Date()) {
-        await safeSendMessage(chatId, "❌ Waktu pengingat tidak valid.", { reply_to_message_id: msg.message_id });
-        return true;
-      }
-
-      const reminderId = Date.now().toString();
-
-      schedule.scheduleJob(remindDate, async () => {
-        await safeSendMessage(chatId, `⏰ Pengingat: ${message}`);
-        const current = ensureUser(userId);
-        current.reminders = (current.reminders || []).filter(r => r.id !== reminderId);
-        await saveAll();
-      });
-
-      u.reminders.push({ id: reminderId, time: remindDate.toISOString(), message });
-      await saveAll();
-
-      await safeSendMessage(chatId, `✅ Pengingat dijadwalkan pada ${remindDate.toString()}`, { reply_to_message_id: msg.message_id });
-      return true;
+    case 'TAMBAH_PENGINGAT': {
+      return await scheduleReminderFromParams(chatId, userId, params.message, params.time, msg);
     }
 
-    case "TAMBAH_MOOD": {
-      const mood = (params.mood || '').toLowerCase();
+    case 'TAMBAH_MOOD': {
+      const mood = String(params.mood || '').toLowerCase();
       const validMoods = ['senang', 'biasa', 'sedih', 'cemas', 'energik'];
 
       if (validMoods.includes(mood)) {
         u.mood = mood;
-        u.lastMoodUpdate = Date.now();
-        await saveAll();
+        u.lastMoodUpdate = nowMs();
+        await persist();
         await safeSendMessage(chatId, `📝 Suasana hatimu "${mood}" tercatat.`, { reply_to_message_id: msg.message_id });
       } else {
-        await safeSendMessage(chatId, "Mood tidak dikenali. Pilihan: senang, biasa, sedih, cemas, energik.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, 'Mood tidak dikenali. Pilihan: senang, biasa, sedih, cemas, energik.', { reply_to_message_id: msg.message_id });
       }
       return true;
     }
 
-    case "CUACA": {
-      const weather = await getWeather(params.city);
+    case 'CUACA': {
+      const weather = await getWeather(params.city || 'jakarta');
       await safeSendMessage(chatId, weather, { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    case "SEARCH": {
-      const searchRes = await searchWebTavily(params.query);
+    case 'SEARCH': {
+      const searchRes = await searchWebTavily(params.query || '');
       await sendChunkedMessage(chatId, searchRes, { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    case "HITUNG": {
-      const calcRes = calculate(params.expression);
+    case 'HITUNG': {
+      const calcRes = calculate(params.expression || '');
       await safeSendMessage(chatId, calcRes, { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    case "JAM": {
-      const location = params.location || "jakarta";
+    case 'JAM': {
+      const location = params.location || 'jakarta';
       const timeData = getTimeInZone(location);
 
       if (timeData) {
@@ -1125,29 +1458,29 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg) {
       return true;
     }
 
-    case "TANGGAL": {
+    case 'TANGGAL': {
       await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    case "GAMBAR": {
+    case 'GAMBAR': {
       const prompt = params.prompt;
       if (!prompt) {
-        await safeSendMessage(chatId, "❌ Prompt gambar belum ada.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Prompt gambar belum ada.', { reply_to_message_id: msg.message_id });
         return true;
       }
 
       await safeSendMessage(chatId, `🎨 Membuat gambar: ${prompt}...`, { reply_to_message_id: msg.message_id });
       const img = await generateImage(prompt);
       const ok = await sendPhotoUrl(chatId, img, `✨ ${prompt}`);
-      if (!ok) await safeSendMessage(chatId, "❌ Gagal membuat gambar.", { reply_to_message_id: msg.message_id });
+      if (!ok) await safeSendMessage(chatId, '❌ Gagal membuat gambar.', { reply_to_message_id: msg.message_id });
       return true;
     }
 
-    case "LOKASI": {
+    case 'LOKASI': {
       const place = params.place;
       if (!place) {
-        await safeSendMessage(chatId, "❌ Nama lokasi belum ada.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Nama lokasi belum ada.', { reply_to_message_id: msg.message_id });
         return true;
       }
       const locRes = await searchLocation(place);
@@ -1160,7 +1493,7 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg) {
   }
 }
 
-// ==================== HELPERS COMMAND ====================
+// ==================== HELP ====================
 async function handleHelp(chatId, msg) {
   const help = `/start - mulai
 /help - bantuan
@@ -1169,7 +1502,7 @@ async function handleHelp(chatId, msg) {
 /feedback - log A/B
 /image <deskripsi> - buat gambar
 /hitung <expr> - kalkulator
-/jam - waktu Indonesia
+/jam [lokasi]
 /tanggal - tanggal hari ini
 /cuaca <kota>
 /lokasi <tempat>
@@ -1205,6 +1538,66 @@ Kamu juga bisa langsung pakai bahasa alami:
   await sendChunkedMessage(chatId, help, { reply_to_message_id: msg.message_id });
 }
 
+// ==================== TOOLS ROUTER ====================
+async function handleTools(msgText) {
+  const low = String(msgText || '').toLowerCase();
+
+  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
+    return getCurrentDate();
+  }
+
+  if (low.includes('jam') || low.includes('waktu')) {
+    let q = low
+      .replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    q = q || 'jakarta';
+    return getCurrentTime(q);
+  }
+
+  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
+    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
+    if (expr) return calculate(expr);
+  }
+
+  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
+    const q = String(msgText || '')
+      .replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '')
+      .trim();
+    return q ? await searchLocation(q) : 'Sebutkan tempat';
+  }
+
+  if (low.includes('cuaca')) {
+    const city = String(msgText || '')
+      .replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '')
+      .trim();
+    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
+  }
+
+  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita'];
+  if (searchKw.some(k => low.includes(k))) {
+    let q = String(msgText || '');
+    searchKw.forEach(k => {
+      q = q.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
+    });
+    q = q.trim();
+    return q ? await searchWebTavily(q) : 'Apa yang ingin dicari?';
+  }
+
+  return null;
+}
+
+// ==================== COMMAND HANDLER HELPERS ====================
+function isUnknownCommand(cmd) {
+  const known = new Set([
+    '/start', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
+    '/jam', '/tanggal', '/cuaca', '/lokasi', '/cari', '/setname', '/koreksi',
+    '/mood', '/remind', '/todo', '/add', '/done', '/cleartodo', '/quiz', '/poll',
+    '/kick', '/pin', '/resize', '/sticker', '/learn', '/askkb', '/auth', '/addevent'
+  ]);
+  return cmd && !known.has(cmd);
+}
+
 // ==================== WEBHOOK ====================
 app.get('/health', (req, res) => res.send('OK'));
 
@@ -1219,8 +1612,7 @@ app.get('/oauth2callback', async (req, res) => {
     const tokens = await getTokensFromCode(code);
     await saveUserTokens(String(state), tokens);
 
-    // state = userId / chatId di private chat
-    await safeSendMessage(String(state), "✅ Autentikasi Google Calendar berhasil! Sekarang kamu bisa pakai /addevent.");
+    await safeSendMessage(String(state), '✅ Autentikasi Google Calendar berhasil! Sekarang kamu bisa pakai /addevent.');
     res.send('Autentikasi berhasil! Silakan kembali ke Telegram.');
   } catch (error) {
     console.error(error);
@@ -1238,9 +1630,9 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const chatId = cb.message.chat.id;
 
       if (cb.data === 'positive') {
-        await safeSendMessage(chatId, "👍 Terima kasih!");
+        await safeSendMessage(chatId, '👍 Terima kasih!');
       } else if (cb.data === 'negative') {
-        await safeSendMessage(chatId, "👎 Gunakan /koreksi untuk mengajari saya.");
+        await safeSendMessage(chatId, '👎 Gunakan /koreksi untuk mengajari saya.');
       }
 
       try {
@@ -1252,134 +1644,185 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     if (!update.message) return res.sendStatus(200);
     if (update.message.from?.is_bot) return res.sendStatus(200);
+    if (update.message.edited_message) return res.sendStatus(200);
 
     const msg = update.message;
     const chatId = msg.chat.id;
     const userId = String(msg.from.id);
-    const text = (msg.text || '').trim();
+    const text = String(msg.text || '').trim();
+    const cmd = getCommandBase(text);
+    const args = getCommandArgs(text);
 
     ensureUser(userId);
+    const u = ensureUser(userId);
+    cleanupStaleUserState(u);
 
     if (!text) {
-      await safeSendMessage(chatId, "Maaf, saya hanya bisa membaca pesan teks biasa saat ini.");
+      await safeSendMessage(chatId, 'Maaf, saya hanya bisa membaca pesan teks biasa saat ini.');
       return res.sendStatus(200);
     }
 
     // ===== COMMAND DASAR =====
-    if (text === '/start') {
+    if (cmd === '/start') {
       const botName = ensureUser(userId).botName;
       await safeSendMessage(chatId, `🤖 Halo! Aku ${botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
 
-    if (text === '/help') {
+    if (cmd === '/help') {
       await handleHelp(chatId, msg);
       return res.sendStatus(200);
     }
 
-    if (text === '/stats') {
+    if (cmd === '/stats') {
       const mem = process.memoryUsage();
       const msgText = `Uptime: ${Math.floor(process.uptime() / 60)} menit
 Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB
 Aturan: ${lessons.rules.length}
-Chats: ${shortMemory.length}
-Pengetahuan: ${knowledgeBase.length}`;
+Histori chat: ${shortMemory.length}
+Pengetahuan: ${knowledgeBase.length}
+Reminder aktif: ${(u.reminders || []).length}`;
       await safeSendMessage(chatId, msgText, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
 
-    if (text === '/rollback') {
+    if (cmd === '/rollback') {
       if (lessons.rules.length) {
         lessons.rules.pop();
-        await saveAll();
-        await safeSendMessage(chatId, "🗑️ Aturan terakhir dihapus.", { reply_to_message_id: msg.message_id });
+        await persist();
+        await safeSendMessage(chatId, '🗑️ Aturan terakhir dihapus.', { reply_to_message_id: msg.message_id });
       } else {
-        await safeSendMessage(chatId, "Tidak ada aturan.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, 'Tidak ada aturan.', { reply_to_message_id: msg.message_id });
       }
       return res.sendStatus(200);
     }
 
-    if (text === '/feedback') {
-      const last = abLog.slice(-5).map(l => `${l.style}: ${l.question.slice(0, 30)}...`).join('\n');
+    if (cmd === '/feedback') {
+      const last = abLog.slice(-5).map(l => `${l.style}: ${String(l.question || '').slice(0, 30)}...`).join('\n');
       await safeSendMessage(chatId, `Feedback terakhir:\n${last || 'Belum ada'}`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
 
-    if (text.startsWith('/image ')) {
-      const prompt = text.slice(7).trim();
+    if (cmd === '/image') {
+      const prompt = args.trim();
       if (!prompt) {
-        await safeSendMessage(chatId, "Tulis deskripsi gambarnya dulu.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, 'Tulis deskripsi gambarnya dulu.', { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
       }
       const img = await generateImage(prompt);
       const ok = await sendPhotoUrl(chatId, img, `✨ ${prompt}`);
-      if (!ok) await safeSendMessage(chatId, "❌ Gagal membuat gambar.", { reply_to_message_id: msg.message_id });
+      if (!ok) await safeSendMessage(chatId, '❌ Gagal membuat gambar.', { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
 
     // /koreksi Q | A
-    if (text.startsWith('/koreksi ')) {
-      const parts = text.slice(9).split('|');
+    if (cmd === '/koreksi') {
+      const parts = args.split('|');
       if (parts.length < 2) {
-        await safeSendMessage(chatId, "Format: /koreksi pertanyaan | jawaban_benar", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, 'Format: /koreksi pertanyaan | jawaban_benar', { reply_to_message_id: msg.message_id });
       } else {
         const trigger = parts[0].trim();
-        const answer = parts[1].trim();
+        const answer = parts.slice(1).join('|').trim();
 
         if (!answer || answer.length < 3) {
-          await safeSendMessage(chatId, "❌ Jawaban terlalu pendek.", { reply_to_message_id: msg.message_id });
+          await safeSendMessage(chatId, '❌ Jawaban terlalu pendek.', { reply_to_message_id: msg.message_id });
         } else {
-          lessons.rules.push({ trigger, answer, source: 'user', timestamp: Date.now() });
+          lessons.rules.push({ trigger, answer, source: 'user', timestamp: nowMs() });
           if (lessons.rules.length > 200) lessons.rules.shift();
-          await saveAll();
-          await safeSendMessage(chatId, "✅ Terima kasih, saya belajar.", { reply_to_message_id: msg.message_id });
+          await persist();
+          await safeSendMessage(chatId, '✅ Terima kasih, saya belajar.', { reply_to_message_id: msg.message_id });
         }
       }
       return res.sendStatus(200);
     }
 
-    if (text === '/tanggal') {
+    if (cmd === '/tanggal') {
       await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
 
-    if (text.startsWith('/setname ')) {
-      const newName = text.slice(9).trim();
+    if (cmd === '/setname') {
+      const newName = args.trim();
       if (newName && newName.length < 50) {
         ensureUser(userId).botName = newName;
-        await saveAll();
+        await persist();
         await safeSendMessage(chatId, `✅ Namaku sekarang "${newName}".`, { reply_to_message_id: msg.message_id });
       } else {
-        await safeSendMessage(chatId, "❌ Nama tidak valid.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Nama tidak valid.', { reply_to_message_id: msg.message_id });
+      }
+      return res.sendStatus(200);
+    }
+
+    if (cmd === '/hitung') {
+      if (!args) {
+        await safeSendMessage(chatId, 'Contoh: /hitung 25*4', { reply_to_message_id: msg.message_id });
+      } else {
+        await safeSendMessage(chatId, calculate(args), { reply_to_message_id: msg.message_id });
+      }
+      return res.sendStatus(200);
+    }
+
+    if (cmd === '/jam') {
+      const location = args || 'jakarta';
+      await safeSendMessage(chatId, getCurrentTime(location), { reply_to_message_id: msg.message_id });
+      return res.sendStatus(200);
+    }
+
+    if (cmd === '/cuaca') {
+      const city = args.trim();
+      if (!city) {
+        await safeSendMessage(chatId, 'Contoh: /cuaca Bandung', { reply_to_message_id: msg.message_id });
+      } else {
+        await safeSendMessage(chatId, await getWeather(city), { reply_to_message_id: msg.message_id });
+      }
+      return res.sendStatus(200);
+    }
+
+    if (cmd === '/lokasi') {
+      const place = args.trim();
+      if (!place) {
+        await safeSendMessage(chatId, 'Contoh: /lokasi Monas', { reply_to_message_id: msg.message_id });
+      } else {
+        await safeSendMessage(chatId, await searchLocation(place), { reply_to_message_id: msg.message_id });
+      }
+      return res.sendStatus(200);
+    }
+
+    if (cmd === '/cari') {
+      const query = args.trim();
+      if (!query) {
+        await safeSendMessage(chatId, 'Contoh: /cari sejarah Jakarta', { reply_to_message_id: msg.message_id });
+      } else {
+        await sendChunkedMessage(chatId, await searchWebTavily(query), { reply_to_message_id: msg.message_id });
       }
       return res.sendStatus(200);
     }
 
     // ===== FITUR TAMBAHAN =====
-    if (await handleMood(chatId, userId, text, msg)) return res.sendStatus(200);
-    if (await handleReminder(chatId, userId, text, msg)) return res.sendStatus(200);
-    if (await handleTodo(chatId, userId, text, msg)) return res.sendStatus(200);
-    if (await handleQuizPoll(chatId, text, msg)) return res.sendStatus(200);
-    if (await handleGroupManagement(chatId, text, msg)) return res.sendStatus(200);
-    if (await handleImageEdit(chatId, text, msg)) return res.sendStatus(200);
-    if (await handleStickerHint(chatId, text, msg)) return res.sendStatus(200);
-    if (await handleKnowledge(chatId, text, msg)) return res.sendStatus(200);
+    if (await handleMood(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleReminder(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleTodo(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleQuizPoll(chatId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleGroupManagement(chatId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleImageEdit(chatId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleStickerHint(chatId, cmd, args, msg)) return res.sendStatus(200);
+    if (await handleKnowledge(chatId, cmd, args, msg)) return res.sendStatus(200);
 
     // ===== GOOGLE CALENDAR =====
-    if (text === '/auth') {
+    if (cmd === '/auth') {
       if (msg.chat.type !== 'private') {
-        await safeSendMessage(chatId, "Untuk keamanan, gunakan /auth di chat pribadi dengan bot ini.");
+        await safeSendMessage(chatId, 'Untuk keamanan, gunakan /auth di chat pribadi dengan bot ini.');
         return res.sendStatus(200);
       }
 
-      if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-        await safeSendMessage(chatId, "❌ Fitur Google Calendar belum dikonfigurasi.");
+      if (!googleLib || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+        await safeSendMessage(chatId, '❌ Fitur Google Calendar belum dikonfigurasi atau package googleapis belum terpasang.');
         return res.sendStatus(200);
       }
 
       const authUrl = getAuthUrl(userId);
       if (!authUrl) {
-        await safeSendMessage(chatId, "❌ Gagal membuat link autentikasi.");
+        await safeSendMessage(chatId, '❌ Gagal membuat link autentikasi.');
         return res.sendStatus(200);
       }
 
@@ -1387,16 +1830,16 @@ Pengetahuan: ${knowledgeBase.length}`;
       return res.sendStatus(200);
     }
 
-    if (text.startsWith('/addevent ')) {
+    if (cmd === '/addevent') {
       const calendar = await getCalendarClient(userId);
       if (!calendar) {
-        await safeSendMessage(chatId, "❌ Belum autentikasi. Gunakan /auth dulu.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Belum autentikasi. Gunakan /auth dulu.', { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
       }
 
-      const parts = text.slice(10).split('|');
+      const parts = args.split('|');
       if (parts.length < 3) {
-        await safeSendMessage(chatId, "Format: /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, 'Format: /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM', { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
       }
 
@@ -1404,11 +1847,11 @@ Pengetahuan: ${knowledgeBase.length}`;
       const startStr = parts[1].trim();
       const endStr = parts[2].trim();
 
-      const startDateTime = new Date(startStr.replace(' ', 'T') + ':00+07:00');
-      const endDateTime = new Date(endStr.replace(' ', 'T') + ':00+07:00');
+      const startDateTime = parseFlexibleDateTime(startStr, '09:00');
+      const endDateTime = parseFlexibleDateTime(endStr, '10:00');
 
-      if (isNaN(startDateTime) || isNaN(endDateTime)) {
-        await safeSendMessage(chatId, "Format tanggal/waktu salah.", { reply_to_message_id: msg.message_id });
+      if (!isValidDate(startDateTime) || !isValidDate(endDateTime)) {
+        await safeSendMessage(chatId, 'Format tanggal/waktu salah.', { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
       }
 
@@ -1425,13 +1868,19 @@ Pengetahuan: ${knowledgeBase.length}`;
         await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
       } catch (err) {
         console.error(err.response?.data || err.message);
-        await safeSendMessage(chatId, "❌ Gagal menambahkan event.", { reply_to_message_id: msg.message_id });
+        await safeSendMessage(chatId, '❌ Gagal menambahkan event.', { reply_to_message_id: msg.message_id });
       }
 
       return res.sendStatus(200);
     }
 
-    // ===== TOOLS =====
+    // ===== UNKNOWN COMMAND =====
+    if (isUnknownCommand(cmd)) {
+      await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
+      return res.sendStatus(200);
+    }
+
+    // ===== TOOLS (fallback natural language) =====
     const toolRes = await handleTools(text);
     if (toolRes) {
       await sendChunkedMessage(chatId, toolRes, {
@@ -1441,37 +1890,15 @@ Pengetahuan: ${knowledgeBase.length}`;
       return res.sendStatus(200);
     }
 
-    // ===== NILAI KLARIFIKASI =====
-    const u = ensureUser(userId);
-
-    if (u.awaitingClarification) {
-      const originalQuestion = u.awaitingClarification;
-      delete u.awaitingClarification;
-      await saveAll();
-
-      const clarificationNLP = await universalNLP(text, userId);
-      if (clarificationNLP.intent !== "NONE") {
-        await saveNlpPattern(userId, originalQuestion, clarificationNLP.intent, clarificationNLP.params);
-        await safeSendMessage(chatId, `✅ Terima kasih! Aku akan mengingat maksud "${originalQuestion}".`, { reply_to_message_id: msg.message_id });
-        await executeUniversalIntent(clarificationNLP.intent, clarificationNLP.params || {}, chatId, userId, msg);
-      } else {
-        await safeSendMessage(chatId, "Maaf, masih kurang jelas. Gunakan /help.", { reply_to_message_id: msg.message_id });
-      }
-
-      return res.sendStatus(200);
-    }
-
     // ===== NLP UNIVERSAL =====
     const nlpResult = await universalNLP(text, userId);
 
-    if (nlpResult.intent && nlpResult.intent !== "NONE") {
+    if (nlpResult.intent && nlpResult.intent !== 'NONE') {
       const executed = await executeUniversalIntent(nlpResult.intent, nlpResult.params || {}, chatId, userId, msg);
       if (executed) return res.sendStatus(200);
-    } else {
-      if (text.length > 5 && !text.startsWith('/')) {
-        await askClarification(chatId, userId, text, msg);
-        return res.sendStatus(200);
-      }
+    } else if (isLikelyActionRequest(text)) {
+      await askClarification(chatId, userId, text, msg);
+      return res.sendStatus(200);
     }
 
     // ===== FALLBACK CHAT AI =====
@@ -1490,7 +1917,7 @@ Pengetahuan: ${knowledgeBase.length}`;
       answer = await getSmartAnswer(prompt, userId, systemPrompt);
     } catch (e) {
       console.error(e);
-      answer = "❌ AI sedang sibuk. Coba lagi nanti.";
+      answer = '❌ AI sedang sibuk. Coba lagi nanti.';
     }
 
     u.msgCount = (u.msgCount || 0) + 1;
@@ -1510,83 +1937,43 @@ Pengetahuan: ${knowledgeBase.length}`;
             `Ringkas percakapan ini maksimal 100 kata:\n\n${history}`
           );
           u.summary = summary;
-          await saveAll();
+          await persist();
         } catch (_) {}
       }
     }
 
     // Saran topik lanjutan
-    if (u.msgCount % 5 === 0 && answer.length > 50 && !text.startsWith('/')) {
+    if (u.msgCount % 5 === 0 && String(answer || '').length > 50 && !cmd) {
       try {
         const suggestions = await askAI(
           getSystemPrompt(userId),
           `Berdasarkan pertanyaan user:\n"${text}"\n\nDan jawaban:\n"${answer}"\n\nBeri 2 pertanyaan lanjutan singkat, format:\n1. ...\n2. ...`
         );
 
-        if (suggestions && suggestions.length > 10 && !suggestions.toLowerCase().includes("tidak")) {
+        if (suggestions && suggestions.length > 10 && !suggestions.toLowerCase().includes('tidak')) {
           await safeSendMessage(chatId, `💡 Topik lanjutan:\n${suggestions}`, { reply_to_message_id: msg.message_id });
         }
       } catch (_) {}
     }
 
-    await saveAll();
+    await persist();
 
     await sendChunkedMessage(chatId, answer, {
       reply_to_message_id: msg.message_id,
       reply_markup: {
         inline_keyboard: [[
-          { text: "👍", callback_data: "positive" },
-          { text: "👎", callback_data: "negative" }
+          { text: '👍', callback_data: 'positive' },
+          { text: '👎', callback_data: 'negative' }
         ]]
       }
     });
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error('Webhook error:', err);
     return res.sendStatus(200);
   }
 });
-
-// ==================== TOOL ROUTER ====================
-async function handleTools(msg) {
-  const low = msg.toLowerCase();
-
-  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini'))) {
-    return getCurrentDate();
-  }
-
-  if (low.includes('jam') || low.includes('waktu')) {
-    return getCurrentTime();
-  }
-
-  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
-    const expr = msg.replace(/[^0-9+\-*/().%]/g, '');
-    if (expr) return calculate(expr);
-  }
-
-  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana')) {
-    const q = msg.replace(/alamat|lokasi|dimana|cari tempat/gi, '').trim();
-    return q ? await searchLocation(q) : "Sebutkan tempat";
-  }
-
-  if (low.includes('cuaca')) {
-    const city = msg.replace(/cuaca|weather|di|kota/gi, '').trim();
-    return city ? await getWeather(city) : "Contoh: cuaca Tokyo";
-  }
-
-  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita'];
-  if (searchKw.some(k => low.includes(k))) {
-    let q = msg;
-    searchKw.forEach(k => {
-      q = q.replace(new RegExp(k, 'gi'), '');
-    });
-    q = q.trim();
-    return q ? await searchWebTavily(q) : "Apa yang ingin dicari?";
-  }
-
-  return null;
-}
 
 // ==================== ERROR HANDLER ====================
 process.on('unhandledRejection', (err) => {
@@ -1597,22 +1984,52 @@ process.on('uncaughtException', (err) => {
   console.error('UncaughtException:', err);
 });
 
+async function shutdown() {
+  try {
+    console.log('🛑 Shutdown...');
+    await persist().catch(() => {});
+    if (redisClient) {
+      try { await redisClient.quit(); } catch (_) {}
+    }
+    if (server) {
+      try {
+        await new Promise(resolve => server.close(resolve));
+      } catch (_) {}
+    }
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
 // ==================== START SERVER ====================
 async function start() {
   await initRedis();
   await loadAllMemories();
+  await restoreAllReminders();
 
-  app.listen(PORT, '0.0.0.0', async () => {
+  server = app.listen(PORT, '0.0.0.0', async () => {
     console.log(`✅ Bot AI berjalan di port ${PORT}`);
 
-    let host = process.env.RENDER_EXTERNAL_HOSTNAME;
+    let host = RENDER_EXTERNAL_HOSTNAME;
     if (!host) host = 'telegrambotsaya.onrender.com';
 
     const url = `https://${host}/webhook/${TELEGRAM_TOKEN}`;
     console.log(`🔄 Mengatur webhook ke: ${url}`);
 
     try {
-      const result = await axios.get(`${TELEGRAM_API}/setWebhook?url=${encodeURIComponent(url)}`);
+      const result = await axios.post(
+        `${TELEGRAM_API}/setWebhook`,
+        {
+          url,
+          drop_pending_updates: false,
+          allowed_updates: ['message', 'callback_query']
+        },
+        { timeout: 20000 }
+      );
+
       if (result.data.ok) console.log(`✅ Webhook berhasil diset: ${url}`);
       else console.error(`❌ Gagal set webhook: ${result.data.description}`);
     } catch (e) {
