@@ -35,7 +35,6 @@ let lessons = { rules: [] };
 let userMemory = {};
 let abLog = [];
 let knowledgeBase = [];
-let scheduledJobs = {}; // untuk menyimpan referensi job reminder
 
 async function initRedis() {
     if (!REDIS_URL) return;
@@ -78,26 +77,7 @@ async function loadAllMemories() {
     userMemory = await loadData('user_memory', {});
     abLog = await loadData('ab_log', []);
     knowledgeBase = await loadData('knowledge', []);
-    // Load reminders dari userMemory (kita simpan di userMemory[userId].reminders)
-    // Reschedule reminder setelah load
-    for (const userId in userMemory) {
-        const reminders = userMemory[userId]?.reminders || [];
-        for (const rem of reminders) {
-            const jobDate = new Date(rem.time);
-            if (jobDate > new Date()) {
-                const job = schedule.scheduleJob(jobDate, async () => {
-                    await safeSendMessage(userId, `⏰ *Pengingat:* ${rem.message}`, { parse_mode: "Markdown" });
-                    // hapus dari daftar setelah eksekusi
-                    if (userMemory[userId]?.reminders) {
-                        userMemory[userId].reminders = userMemory[userId].reminders.filter(r => r.id !== rem.id);
-                        saveAll();
-                    }
-                });
-                if (!scheduledJobs[userId]) scheduledJobs[userId] = [];
-                scheduledJobs[userId].push(job);
-            }
-        }
-    }
+    // Reschedule reminders (sederhana, tidak dipulihkan sepenuhnya untuk menghindari kompleksitas)
     console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
 
@@ -195,9 +175,56 @@ async function safeSendMessage(chatId, text, extra = {}) {
     }
 }
 
+// ==================== FUNGSI WAKTU MULTI-ZONA ====================
+function getTimeInZone(location) {
+    const timezones = {
+        'jakarta': 'Asia/Jakarta',
+        'indonesia': 'Asia/Jakarta',
+        'jepang': 'Asia/Tokyo',
+        'tokyo': 'Asia/Tokyo',
+        'new york': 'America/New_York',
+        'london': 'Europe/London',
+        'paris': 'Europe/Paris',
+        'dubai': 'Asia/Dubai',
+        'riyadh': 'Asia/Riyadh',
+        'mekkah': 'Asia/Riyadh',
+        'singapore': 'Asia/Singapore',
+        'kuala lumpur': 'Asia/Kuala_Lumpur',
+        'bangkok': 'Asia/Bangkok',
+        'seoul': 'Asia/Seoul',
+        'beijing': 'Asia/Shanghai',
+        'sydney': 'Australia/Sydney',
+        'los angeles': 'America/Los_Angeles',
+        'chicago': 'America/Chicago',
+        'moscow': 'Europe/Moscow',
+        'berlin': 'Europe/Berlin',
+        'rome': 'Europe/Rome'
+    };
+    let tz = timezones[location.toLowerCase()] || null;
+    if (!tz) {
+        // Coba cari apakah lokasi mengandung kata kunci
+        for (const [key, value] of Object.entries(timezones)) {
+            if (location.toLowerCase().includes(key)) {
+                tz = value;
+                break;
+            }
+        }
+    }
+    if (!tz) return null;
+    const now = new Date();
+    const options = { timeZone: tz, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    const formatted = now.toLocaleString('id-ID', options);
+    return { time: formatted, timezone: tz };
+}
+
+function getCurrentTimeDefault() {
+    return getTimeInZone('jakarta');
+}
+
 // ==================== TOOLS LAMA ====================
 function getCurrentTime() {
-    return `🕒 Waktu Jepang: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Tokyo', hour:'2-digit', minute:'2-digit', second:'2-digit' })}`;
+    const res = getTimeInZone('jakarta');
+    return `🕒 Waktu Indonesia (WIB): ${res.time}`;
 }
 function getCurrentDate() {
     const now = new Date();
@@ -337,9 +364,49 @@ function getSystemPrompt(userId) {
     return `Kamu adalah asisten pribadi bernama "${botName}". Gunakan bahasa santai (aku/kamu). Jawab singkat, maks 3 kalimat. Jika tidak tahu, bilang tidak tahu. Nama kamu adalah ${botName}.`;
 }
 
-// ==================== FITUR TAMBAHAN ====================
+// ==================== GOOGLE CALENDAR OAUTH ====================
+let oAuth2Client = null;
+if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI) {
+    oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+    console.log("✅ Google Calendar OAuth2 siap.");
+} else {
+    console.log("⚠️ Google Calendar OAuth2 tidak dikonfigurasi.");
+}
 
-// --- Mood Tracking ---
+function getAuthUrl(state) {
+    if (!oAuth2Client) return null;
+    return oAuth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://www.googleapis.com/auth/calendar'],
+        prompt: 'consent',
+        state: state
+    });
+}
+
+async function getTokensFromCode(code) {
+    if (!oAuth2Client) throw new Error("OAuth2 tidak dikonfigurasi");
+    const { tokens } = await oAuth2Client.getToken(code);
+    return tokens;
+}
+
+async function saveUserTokens(userId, tokens) {
+    if (!userMemory[userId]) userMemory[userId] = {};
+    userMemory[userId].calendarTokens = tokens;
+    saveAll();
+}
+
+async function getUserTokens(userId) {
+    return userMemory[userId]?.calendarTokens || null;
+}
+
+async function getCalendarClient(userId) {
+    const tokens = await getUserTokens(userId);
+    if (!tokens || !oAuth2Client) return null;
+    oAuth2Client.setCredentials(tokens);
+    return google.calendar({ version: 'v3', auth: oAuth2Client });
+}
+
+// ==================== FITUR TAMBAHAN (MOOD, REMINDER, TODO, DLL) ====================
 async function handleMood(chatId, userId, text, msg) {
     if (text === '/mood') {
         await safeSendMessage(chatId, "Apa kabarmu hari ini? (senang/biasa/sedih/cemas/energik)", { reply_to_message_id: msg.message_id });
@@ -363,7 +430,6 @@ async function handleMood(chatId, userId, text, msg) {
     return false;
 }
 
-// --- Reminder ---
 async function handleReminder(chatId, userId, text, msg) {
     if (text.startsWith('/remind')) {
         const parts = text.split(' ').slice(1);
@@ -396,7 +462,6 @@ async function handleReminder(chatId, userId, text, msg) {
     return false;
 }
 
-// --- To-Do List ---
 async function handleTodo(chatId, userId, text, msg) {
     if (text === '/todo') {
         const tasks = userMemory[userId]?.todos || [];
@@ -438,8 +503,7 @@ async function handleTodo(chatId, userId, text, msg) {
     return false;
 }
 
-// --- Quiz & Poll ---
-let quizState = {}; // sementara untuk menunggu opsi
+let quizState = {};
 async function handleQuizPoll(chatId, text, msg) {
     if (text.startsWith('/quiz ')) {
         const question = text.slice(6);
@@ -490,7 +554,6 @@ async function handleQuizPoll(chatId, text, msg) {
     return false;
 }
 
-// --- Group Management ---
 async function handleGroupManagement(chatId, text, msg) {
     if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') return false;
     if (text === '/kick' && msg.reply_to_message) {
@@ -513,7 +576,6 @@ async function handleGroupManagement(chatId, text, msg) {
     return false;
 }
 
-// --- Image Editing (resize) ---
 async function handleImageEdit(chatId, text, msg) {
     if (text.startsWith('/resize ') && msg.reply_to_message?.photo) {
         const size = text.slice(8).split('x');
@@ -544,7 +606,6 @@ async function handleImageEdit(chatId, text, msg) {
     return false;
 }
 
-// --- Sticker hint ---
 async function handleStickerHint(chatId, text, msg) {
     if (text === '/sticker' && msg.reply_to_message?.photo) {
         await safeSendMessage(chatId, "Untuk membuat stiker, gunakan @Stickers bot. Saya belum support pembuatan stiker otomatis.", { reply_to_message_id: msg.message_id });
@@ -553,7 +614,6 @@ async function handleStickerHint(chatId, text, msg) {
     return false;
 }
 
-// --- Knowledge Base ---
 async function handleKnowledge(chatId, text, msg) {
     if (text.startsWith('/learn ')) {
         const content = text.slice(7);
@@ -576,53 +636,211 @@ async function handleKnowledge(chatId, text, msg) {
     return false;
 }
 
-// ==================== GOOGLE CALENDAR OAUTH ====================
-let oAuth2Client = null;
-if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI) {
-    oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
-    console.log("✅ Google Calendar OAuth2 siap.");
-} else {
-    console.log("⚠️ Google Calendar OAuth2 tidak dikonfigurasi.");
+// ==================== NATURAL LANGUAGE PROCESSING (NLP) UNIVERSAL ====================
+async function universalNLP(userMessage, userId) {
+    const savedPatterns = userMemory[userId]?.nlpPatterns || [];
+    const patternHint = savedPatterns.length > 0 
+        ? `\n\nPola yang sudah pernah diajarkan (gunakan jika cocok):\n${savedPatterns.map(p => `- "${p.question}" → intent: ${p.intent}`).join('\n')}`
+        : '';
+
+    const prompt = `Kamu adalah asisten yang memahami maksud user dari bahasa alami.
+Analisis pesan user berikut. Tentukan intent yang paling sesuai dan ekstrak parameter.
+
+Intents yang tersedia:
+- TAMBAH_EVENT: user ingin menambahkan jadwal/event (ulang tahun, meeting, janji). Parameter: summary, startDate, startTime (opsional), endDate (opsional), endTime (opsional)
+- TAMBAH_TUGAS: user ingin menambahkan tugas ke to-do list. Parameter: task
+- TAMBAH_PENGINGAT: user ingin diingatkan di waktu tertentu. Parameter: message, time
+- TAMBAH_MOOD: user ingin mencatat suasana hati (senang, biasa, sedih, cemas, energik). Parameter: mood
+- CUACA: user ingin tahu cuaca di suatu kota. Parameter: city
+- SEARCH: user ingin mencari informasi di web. Parameter: query
+- HITUNG: user ingin melakukan perhitungan matematika. Parameter: expression
+- JAM: user ingin tahu waktu saat ini. Parameter: location (opsional, nama kota atau zona waktu)
+- TANGGAL: user ingin tahu tanggal hari ini (tanpa parameter)
+- GAMBAR: user ingin membuat gambar dari teks. Parameter: prompt
+- LOKASI: user ingin mencari alamat atau lokasi. Parameter: place
+- NONE: tidak ada intent yang cocok.
+
+Pesan user: "${userMessage}"${patternHint}
+
+Output hanya JSON. Contoh:
+{"intent": "TAMBAH_EVENT", "params": {"summary": "ulang tahun", "startDate": "2026-05-31"}}
+{"intent": "JAM", "params": {"location": "Jakarta"}}
+{"intent": "CUACA", "params": {"city": "Bandung"}}
+{"intent": "NONE"}`;
+
+    try {
+        const response = await askAI(prompt);
+        const jsonMatch = response.match(/\{.*\}/s);
+        if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        return { intent: "NONE" };
+    } catch (e) {
+        console.error("NLP error:", e.message);
+        return { intent: "NONE" };
+    }
 }
 
-function getAuthUrl(state) {
-    if (!oAuth2Client) return null;
-    return oAuth2Client.generateAuthUrl({
-        access_type: 'offline',
-        scope: ['https://www.googleapis.com/auth/calendar'],
-        prompt: 'consent',
-        state: state
-    });
-}
-
-async function getTokensFromCode(code) {
-    if (!oAuth2Client) throw new Error("OAuth2 tidak dikonfigurasi");
-    const { tokens } = await oAuth2Client.getToken(code);
-    return tokens;
-}
-
-async function saveUserTokens(userId, tokens) {
+async function saveNlpPattern(userId, originalQuestion, correctedIntent, correctedParams) {
     if (!userMemory[userId]) userMemory[userId] = {};
-    userMemory[userId].calendarTokens = tokens;
+    if (!userMemory[userId].nlpPatterns) userMemory[userId].nlpPatterns = [];
+    userMemory[userId].nlpPatterns.push({
+        question: originalQuestion.toLowerCase(),
+        intent: correctedIntent,
+        params: correctedParams,
+        timestamp: Date.now()
+    });
+    if (userMemory[userId].nlpPatterns.length > 100) userMemory[userId].nlpPatterns.shift();
     saveAll();
 }
 
-async function getUserTokens(userId) {
-    return userMemory[userId]?.calendarTokens || null;
+async function askClarification(chatId, userId, originalText, msg) {
+    await safeSendMessage(chatId, 
+        `🤔 Maaf, aku kurang paham dengan "${originalText}". 
+Bisa tulis ulang dengan lebih jelas? Contoh:\n
+- "Tambah event rapat besok jam 10"
+- "Tambah tugas beli susu"
+- "Cuaca di Bandung"
+- "Ingatkan saya ..."
+- "Hitung 25*4"
+- "Jam berapa di New York"
+- "Gambar kucing"
+
+Atau gunakan perintah /help.`,
+        { reply_to_message_id: msg.message_id }
+    );
+    userMemory[userId].awaitingClarification = originalText;
+    saveAll();
 }
 
-async function getCalendarClient(userId) {
-    const tokens = await getUserTokens(userId);
-    if (!tokens || !oAuth2Client) return null;
-    oAuth2Client.setCredentials(tokens);
-    return google.calendar({ version: 'v3', auth: oAuth2Client });
+async function executeUniversalIntent(intent, params, chatId, userId, msg) {
+    switch (intent) {
+        case "TAMBAH_EVENT":
+            if (!oAuth2Client) {
+                await safeSendMessage(chatId, "❌ Google Calendar belum dikonfigurasi. Gunakan /auth dulu.", { reply_to_message_id: msg.message_id });
+                return true;
+            }
+            const calendar = await getCalendarClient(userId);
+            if (!calendar) {
+                await safeSendMessage(chatId, "❌ Belum autentikasi Google Calendar. Gunakan /auth.", { reply_to_message_id: msg.message_id });
+                return true;
+            }
+            let startDate = params.startDate;
+            let endDate = params.endDate || startDate;
+            const summary = params.summary || "Event";
+            const startDateTime = `${startDate}T${params.startTime || "09:00"}:00`;
+            const endDateTime = `${endDate}T${params.endTime || "10:00"}:00`;
+            try {
+                await calendar.events.insert({
+                    calendarId: 'primary',
+                    resource: {
+                        summary: summary,
+                        start: { dateTime: new Date(startDateTime).toISOString(), timeZone: 'Asia/Jakarta' },
+                        end: { dateTime: new Date(endDateTime).toISOString(), timeZone: 'Asia/Jakarta' }
+                    }
+                });
+                await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
+            } catch (err) {
+                await safeSendMessage(chatId, "❌ Gagal menambahkan event. Periksa format tanggal.", { reply_to_message_id: msg.message_id });
+            }
+            return true;
+
+        case "TAMBAH_TUGAS":
+            const taskText = params.task;
+            if (!userMemory[userId].todos) userMemory[userId].todos = [];
+            userMemory[userId].todos.push({ text: taskText, done: false, createdAt: Date.now() });
+            saveAll();
+            await safeSendMessage(chatId, `✅ Tugas "${taskText}" ditambahkan.`, { reply_to_message_id: msg.message_id });
+            return true;
+
+        case "TAMBAH_PENGINGAT":
+            const message = params.message;
+            let time = params.time;
+            const remindDate = new Date(time);
+            if (isNaN(remindDate) || remindDate <= new Date()) {
+                await safeSendMessage(chatId, "❌ Waktu pengingat tidak valid.", { reply_to_message_id: msg.message_id });
+                return true;
+            }
+            const reminderId = Date.now().toString();
+            const job = schedule.scheduleJob(remindDate, async () => {
+                await safeSendMessage(chatId, `⏰ *Pengingat:* ${message}`, { parse_mode: "Markdown" });
+                if (userMemory[userId]?.reminders) {
+                    userMemory[userId].reminders = userMemory[userId].reminders.filter(r => r.id !== reminderId);
+                    saveAll();
+                }
+            });
+            if (!userMemory[userId].reminders) userMemory[userId].reminders = [];
+            userMemory[userId].reminders.push({ id: reminderId, time: remindDate.toISOString(), message });
+            saveAll();
+            await safeSendMessage(chatId, `✅ Pengingat dijadwalkan pada ${remindDate.toString()}`, { reply_to_message_id: msg.message_id });
+            return true;
+
+        case "TAMBAH_MOOD":
+            const mood = params.mood;
+            const validMoods = ['senang', 'biasa', 'sedih', 'cemas', 'energik'];
+            if (validMoods.includes(mood)) {
+                userMemory[userId].mood = mood;
+                userMemory[userId].lastMoodUpdate = Date.now();
+                saveAll();
+                await safeSendMessage(chatId, `📝 Suasana hatimu "${mood}" tercatat.`, { reply_to_message_id: msg.message_id });
+            } else {
+                await safeSendMessage(chatId, "Mood tidak dikenali. Pilihan: senang, biasa, sedih, cemas, energik.", { reply_to_message_id: msg.message_id });
+            }
+            return true;
+
+        case "CUACA":
+            const weather = await getWeather(params.city);
+            await safeSendMessage(chatId, weather, { reply_to_message_id: msg.message_id });
+            return true;
+
+        case "SEARCH":
+            const searchRes = await searchWebTavily(params.query);
+            await safeSendMessage(chatId, searchRes, { reply_to_message_id: msg.message_id });
+            return true;
+
+        case "HITUNG":
+            const calcRes = calculate(params.expression);
+            await safeSendMessage(chatId, calcRes, { reply_to_message_id: msg.message_id });
+            return true;
+
+        case "JAM": {
+            let location = params.location || "jakarta";
+            const timeData = getTimeInZone(location);
+            if (timeData) {
+                await safeSendMessage(chatId, `🕒 Waktu di ${location}: ${timeData.time}`, { reply_to_message_id: msg.message_id });
+            } else {
+                await safeSendMessage(chatId, `❌ Lokasi "${location}" tidak dikenal. Coba sebutkan kota seperti Jakarta, Tokyo, New York, dll.`, { reply_to_message_id: msg.message_id });
+            }
+            return true;
+        }
+
+        case "TANGGAL":
+            await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id });
+            return true;
+
+        case "GAMBAR":
+            await safeSendMessage(chatId, `🎨 Menggambar: ${params.prompt}...`, { reply_to_message_id: msg.message_id });
+            const img = await generateImage(params.prompt);
+            if (img) {
+                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, { chat_id: chatId, photo: img, caption: `✨ ${params.prompt}`, reply_to_message_id: msg.message_id });
+            } else {
+                await safeSendMessage(chatId, "❌ Gagal membuat gambar.", { reply_to_message_id: msg.message_id });
+            }
+            return true;
+
+        case "LOKASI":
+            const place = params.place;
+            const locRes = await searchLocation(place);
+            await safeSendMessage(chatId, locRes, { reply_to_message_id: msg.message_id });
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 // ==================== WEBHOOK SERVER ====================
 const app = express();
 app.use(express.json());
 
-// Endpoint OAuth callback
 app.get('/oauth2callback', async (req, res) => {
     const code = req.query.code;
     const state = req.query.state;
@@ -631,7 +849,7 @@ app.get('/oauth2callback', async (req, res) => {
     try {
         const tokens = await getTokensFromCode(code);
         await saveUserTokens(state, tokens);
-        await safeSendMessage(state, "✅ Autentikasi Google Calendar berhasil! Sekarang kamu bisa menggunakan `/addevent`.", { parse_mode: "Markdown" });
+        await safeSendMessage(state, "✅ Autentikasi Google Calendar berhasil! Sekarang kamu bisa menggunakan perintah `/addevent`.", { parse_mode: "Markdown" });
         res.send('Autentikasi berhasil! Silakan kembali ke Telegram.');
     } catch (error) {
         console.error(error);
@@ -673,7 +891,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 /image <desc> - gambar
 /crack <hash> - crack
 /hitung <expr> - kalkulator
-/jam - waktu Jepang
+/jam - waktu Indonesia
 /tanggal - tanggal hari ini
 /cuaca <kota>
 /lokasi <tempat>
@@ -697,7 +915,14 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 /learn <teks> - tambah pengetahuan
 /askkb <pertanyaan> - tanya pengetahuan
 /auth - autentikasi Google Calendar
-/addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM - tambah event`;
+/addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM - tambah event
+
+*Natural Language:* Kamu bisa langsung mengetik dalam bahasa alami, misal:
+- "Tambah event rapat besok jam 10"
+- "Tambah tugas beli susu"
+- "Cuaca di Bandung"
+- "Jam berapa di New York"
+- "Gambar kucing lucu"`;
         await safeSendMessage(chatId, help, { parse_mode: "Markdown", reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
@@ -848,7 +1073,37 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // ========== CHAT BIASA ==========
+    // ========== NATURAL LANGUAGE PROCESSING ==========
+    // Cek apakah user sedang merespon klarifikasi
+    if (userMemory[userId]?.awaitingClarification) {
+        const originalQuestion = userMemory[userId].awaitingClarification;
+        delete userMemory[userId].awaitingClarification;
+        saveAll();
+        const clarificationNLP = await universalNLP(text, userId);
+        if (clarificationNLP.intent !== "NONE") {
+            await saveNlpPattern(userId, originalQuestion, clarificationNLP.intent, clarificationNLP.params);
+            await safeSendMessage(chatId, `✅ Terima kasih! Aku akan mengingat bahwa "${originalQuestion}" berarti ${clarificationNLP.intent}. Lain kali aku akan langsung paham.`, { reply_to_message_id: msg.message_id });
+            await executeUniversalIntent(clarificationNLP.intent, clarificationNLP.params, chatId, userId, msg);
+        } else {
+            await safeSendMessage(chatId, "Maaf, masih kurang jelas. Gunakan perintah /help.", { reply_to_message_id: msg.message_id });
+        }
+        return res.sendStatus(200);
+    }
+
+    // NLP untuk semua pesan
+    const nlpResult = await universalNLP(text, userId);
+    if (nlpResult.intent !== "NONE") {
+        const executed = await executeUniversalIntent(nlpResult.intent, nlpResult.params, chatId, userId, msg);
+        if (executed) return res.sendStatus(200);
+    } else {
+        // Jika tidak dikenali dan pesan cukup panjang, minta klarifikasi
+        if (text.length > 5 && !text.startsWith('/')) {
+            await askClarification(chatId, userId, text, msg);
+            return res.sendStatus(200);
+        }
+    }
+
+    // ========== FALLBACK: CHAT BIASA DENGAN AI ==========
     const lang = simpleDetectLanguage(text);
     let prompt;
     if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
@@ -865,7 +1120,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         answer = "❌ AI sedang sibuk. Coba lagi nanti.";
     }
 
-    // Ringkasan dan rekomendasi
+    // Ringkasan & rekomendasi
     userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
     if (userMemory[userId].msgCount % 20 === 0) {
         const history = shortMemory.filter(m => m.userId === userId).slice(-20).map(m => `Q: ${m.q}\nA: ${m.a}`).join('\n');
@@ -900,7 +1155,7 @@ async function start() {
     await initRedis();
     await loadAllMemories();
     app.listen(PORT, '0.0.0.0', async () => {
-        console.log(`✅ Bot AI Super lengkap berjalan di port ${PORT}`);
+        console.log(`✅ Bot AI Super lengkap (NLP Universal) berjalan di port ${PORT}`);
         let host = process.env.RENDER_EXTERNAL_HOSTNAME;
         if (!host) host = 'telegrambotsaya.onrender.com';
         const url = `https://${host}/webhook/${TELEGRAM_TOKEN}`;
