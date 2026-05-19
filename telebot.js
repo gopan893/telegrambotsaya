@@ -1141,10 +1141,10 @@ function heuristicIntent(userMessage) {
     return { intent: 'TANGGAL', params: {} };
   }
 
-  // Jam
-  if (q.includes('jam') || q.includes('waktu')) {
+  // JAM - hanya jika ada kata tanya (berapa, sekarang, pukul)
+  if ((q.includes('jam') || q.includes('waktu')) && (q.includes('berapa') || q.includes('sekarang') || q.includes('pukul'))) {
     let location = q
-      .replace(/(jam|waktu|di|pukul|sekarang|berapa|di mana|dimana)/g, ' ')
+      .replace(/(jam|waktu|di|pukul|berapa|sekarang|di mana|dimana)/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     location = location || 'jakarta';
@@ -1546,7 +1546,11 @@ async function handleTools(msgText) {
     return getCurrentDate();
   }
 
-  if (low.includes('jam') || low.includes('waktu')) {
+  // Deteksi waktu hanya jika ada indikasi pertanyaan (berapa, sekarang, pukul)
+  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) && 
+    (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul') || 
+     low.match(/\b(jam|waktu)\b.*\b(berapa|sekarang|pukul)\b/));
+  if (isTimeQuestion) {
     let q = low
       .replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ')
       .replace(/\s+/g, ' ')
