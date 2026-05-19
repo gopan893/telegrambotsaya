@@ -18,11 +18,11 @@ if (!TELEGRAM_TOKEN) {
     process.exit(1);
 }
 if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
-    console.error("❌ Tidak ada API key (Mistral atau Groq)! Bot tidak bisa berfungsi.");
+    console.error("❌ Tidak ada API key AI (Mistral atau Groq)!");
     process.exit(1);
 }
 
-// ==================== MEMORI PERSISTEN (Redis fallback file) ====================
+// ==================== MEMORI PERSISTEN ====================
 let redisClient = null;
 let shortMemory = [];
 let lessons = { rules: [] };
@@ -88,7 +88,7 @@ setInterval(() => {
     }
 }, 60000);
 
-// ==================== FUNGSI AI (Mistral + Groq fallback) ====================
+// ==================== FUNGSI AI ====================
 async function askMistral(prompt) {
     if (!MISTRAL_API_KEY) throw new Error("MISTRAL_API_KEY tidak diset");
     const client = new Mistral({ apiKey: MISTRAL_API_KEY });
@@ -115,13 +115,13 @@ async function askGroq(prompt) {
     return res.data.choices[0].message.content;
 }
 
-async function askWithFallback(prompt) {
-    // Prioritas: Mistral dulu, lalu Groq
+async function askAI(prompt) {
+    // Prioritas Mistral, lalu Groq
     if (MISTRAL_API_KEY) {
         try {
-            console.log("🟢 Mencoba Mistral...");
+            console.log("🟢 Mistral...");
             const answer = await askMistral(prompt);
-            console.log("✅ Berhasil menggunakan Mistral");
+            console.log("✅ Mistral sukses");
             return answer;
         } catch (err) {
             console.error("Mistral gagal:", err.message);
@@ -129,9 +129,9 @@ async function askWithFallback(prompt) {
     }
     if (GROQ_API_KEY) {
         try {
-            console.log("🟡 Mencoba Groq...");
+            console.log("🟡 Groq...");
             const answer = await askGroq(prompt);
-            console.log("✅ Berhasil menggunakan Groq");
+            console.log("✅ Groq sukses");
             return answer;
         } catch (err) {
             console.error("Groq gagal:", err.message);
@@ -140,22 +140,35 @@ async function askWithFallback(prompt) {
     throw new Error("Semua AI gagal.");
 }
 
-// ==================== DETEKSI BAHASA ====================
-const langMap = { ja:'Jepang', my:'Myanmar', fil:'Filipina', ms:'Malaysia', ko:'Korea Selatan', ta:'India', ur:'Pakistan', vi:'Vietnam', en:'Inggris', id:'Indonesia' };
-async function detectLanguage(text) {
-    const prompt = `Deteksi bahasa dari teks berikut. Output hanya kode bahasa (id,en,ja,my,fil,ms,ko,ta,ur,vi). Teks: "${text}"`;
-    try {
-        const res = await askWithFallback(prompt);
-        const lang = res.trim().toLowerCase();
-        return langMap[lang] ? lang : 'id';
-    } catch { return 'id'; }
+// ==================== DETEKSI BAHASA (sederhana, tanpa panggil AI untuk efisiensi) ====================
+// Kita gunakan pendekatan sederhana: jika teks mengandung karakter Jepang, deteksi kasar.
+// Tapi untuk akurasi, kita tetap pakai AI hanya jika perlu. Namun untuk menghindari double call,
+// kita bisa lakukan deteksi dengan library 'franc'? Tidak, karena tidak ingin tambahan dependency.
+// Alternatif: deteksi bahasa menggunakan AI hanya sekali per pesan untuk keperluan jawaban.
+// Di sini, kita akan menggabungkan deteksi bahasa dengan jawaban utama (prompt bilingual) agar hanya 1 panggilan.
+// Namun agar sederhana, kita tetap pakai AI untuk deteksi hanya jika diperlukan.
+// Tapi untuk meminimalisir panggilan, kita gunakan pendekatan: jika teks mengandung huruf non-ASCII, coba deteksi dengan regex sederhana.
+// Berikut adalah fungsi deteksi bahasa sederhana tanpa AI (hanya untuk bahasa Indonesia/Inggris/Jepang).
+// Ini tidak 100% akurat tapi cukup untuk mengurangi panggilan AI.
+
+function simpleDetectLanguage(text) {
+    // Deteksi Jepang (Hiragana/Katakana/Kanji)
+    if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) return 'ja';
+    // Deteksi Myanmar (Burmese)
+    if (/[\u1000-\u109F]/.test(text)) return 'my';
+    // Deteksi Korea
+    if (/[\uAC00-\uD7AF]/.test(text)) return 'ko';
+    // Deteksi Vietnam (ada tanda diakritik)
+    if (/[ăâđêôơư]/.test(text)) return 'vi';
+    // Default Indonesia/Inggris
+    return 'id';
 }
 
 // ==================== RINGKASAN & REKOMENDASI ====================
 async function summarizeChat(userId, history) {
     if (history.length < 10) return;
     try {
-        const summary = await askWithFallback(`Ringkas percakapan ini (maks 100 kata):\n${history}`);
+        const summary = await askAI(`Ringkas percakapan ini (maks 100 kata):\n${history}`);
         if (!userMemory[userId]) userMemory[userId] = {};
         userMemory[userId].summary = summary;
         saveAll();
@@ -165,7 +178,7 @@ async function summarizeChat(userId, history) {
 async function getTopicSuggestion(question, answer) {
     try {
         const prompt = `Berdasarkan Q: "${question}" dan A: "${answer}", beri 2 pertanyaan lanjutan (format 1. ... 2. ...)`;
-        return await askWithFallback(prompt);
+        return await askAI(prompt);
     } catch { return null; }
 }
 
@@ -270,7 +283,7 @@ async function getAnswerWithAB(question, userId) {
     const prompt = chosen === 'santai' 
         ? `Jawab dengan santai (pake 'aku','kamu'): ${question}` 
         : `Jawab informatif: ${question}`;
-    const answer = await askWithFallback(prompt);
+    const answer = await askAI(prompt);
     abLog.push({ userId, question, chosen, answer, timestamp: Date.now() });
     if (abLog.length > 1000) abLog.shift();
     saveAll();
@@ -283,7 +296,7 @@ async function getSmartAnswer(question, userId) {
     if (needsFresh && TAVILY_API_KEY) {
         const searchRes = await searchWebTavily(question);
         if (searchRes && !searchRes.includes('Error')) {
-            const learned = await askWithFallback(`Berdasarkan pencarian: ${searchRes}\nJawab: ${question}`);
+            const learned = await askAI(`Berdasarkan pencarian: ${searchRes}\nJawab: ${question}`);
             lessons.rules.push({ trigger: question.slice(0,50), answer: learned, source:'auto', timestamp: Date.now() });
             if (lessons.rules.length > 200) lessons.rules.shift();
             saveAll();
@@ -306,7 +319,6 @@ app.get('/health', (req, res) => res.send('OK'));
 
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const update = req.body;
-    // Callback query (tombol 👍/👎)
     if (update.callback_query) {
         const cb = update.callback_query;
         const chatId = cb.message.chat.id;
@@ -324,32 +336,24 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const msg = update.message;
     const text = msg.text;
 
-    // Perintah dasar
+    // ========== PERINTAH ==========
     if (text === '/start') {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
             chat_id: chatId, 
             text: "🤖 Bot AI siap (Mistral + Groq). Ketik /help untuk perintah.",
-            reply_to_message_id: msg.message_id  // Auto reply ke pesan yang dibalas
+            reply_to_message_id: msg.message_id
         });
         return res.sendStatus(200);
     }
     if (text === '/help') {
         const help = `/start - mulai\n/help - bantuan\n/stats - statistik\n/rollback - hapus aturan\n/feedback - log A/B\n/image <desc> - gambar\n/crack <hash> - crack\n/hitung <expr> - kalkulator\n/jam - waktu Jepang\n/cuaca <kota>\n/lokasi <tempat>\n/cari <topik>\n/koreksi Q | A - ajari bot`;
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-            chat_id: chatId, 
-            text: help,
-            reply_to_message_id: msg.message_id
-        });
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: help, reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/stats') {
         const mem = process.memoryUsage();
         const msgText = `Uptime: ${Math.floor(process.uptime()/60)} menit\nMemory: ${(mem.heapUsed/1024/1024).toFixed(2)} MB\nAturan: ${lessons.rules.length}\nChats: ${shortMemory.length}`;
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-            chat_id: chatId, 
-            text: msgText,
-            reply_to_message_id: msg.message_id
-        });
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { chat_id: chatId, text: msgText, reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
     }
     if (text === '/rollback') {
@@ -404,7 +408,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // Tools (tidak butuh AI)
+    // ========== TOOLS ==========
     const toolRes = await handleTools(text);
     if (toolRes) {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
@@ -417,21 +421,31 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         return res.sendStatus(200);
     }
 
-    // Chat biasa (pakai AI dengan fallback)
-    const userLang = await detectLanguage(text);
-    let answer;
-    if (userLang !== 'id' && userLang !== 'en') {
-        const prompt = `Jawab dalam bahasa ${langMap[userLang]}: ${text}`;
-        try {
-            answer = await askWithFallback(prompt);
-        } catch (e) {
-            answer = "❌ AI sedang sibuk. Coba lagi nanti.";
-        }
+    // ========== CHAT BIASA ==========
+    // Deteksi bahasa sederhana tanpa panggil AI
+    let lang = simpleDetectLanguage(text);
+    let prompt;
+    if (lang === 'ja') {
+        prompt = `Jawab dalam bahasa Jepang: ${text}`;
+    } else if (lang === 'my') {
+        prompt = `Jawab dalam bahasa Myanmar: ${text}`;
+    } else if (lang === 'ko') {
+        prompt = `Jawab dalam bahasa Korea: ${text}`;
+    } else if (lang === 'vi') {
+        prompt = `Jawab dalam bahasa Vietnam: ${text}`;
     } else {
-        answer = await getSmartAnswer(text, userId);
+        // Default Indonesia/Inggris
+        prompt = text;
+    }
+    
+    let answer;
+    try {
+        answer = await getSmartAnswer(prompt, userId);
+    } catch (e) {
+        answer = "❌ AI sedang sibuk. Coba lagi nanti.";
     }
 
-    // Ringkasan dan rekomendasi
+    // Ringkasan & rekomendasi (opsional)
     if (!userMemory[userId]) userMemory[userId] = {};
     userMemory[userId].msgCount = (userMemory[userId].msgCount || 0) + 1;
     if (userMemory[userId].msgCount % 20 === 0) {
@@ -452,7 +466,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     }
     saveAll();
 
-    // Kirim jawaban dengan reply ke pesan asli
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
         chat_id: chatId,
         text: answer,
@@ -468,13 +481,24 @@ async function start() {
     await initRedis();
     await loadAllMemories();
     app.listen(PORT, '0.0.0.0', async () => {
-        console.log(`✅ Bot AI (Mistral + Grok fallback) siap di port ${PORT}`);
-        const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/webhook/${TELEGRAM_TOKEN}`;
+        console.log(`✅ Bot AI (Mistral + Groq fallback) siap di port ${PORT}`);
+        // Set webhook dengan hostname yang benar
+        let host = process.env.RENDER_EXTERNAL_HOSTNAME;
+        if (!host) {
+            // Fallback: gunakan nama service hardcode (ganti jika perlu)
+            host = 'telegrambotsaya.onrender.com';
+        }
+        const url = `https://${host}/webhook/${TELEGRAM_TOKEN}`;
+        console.log(`🔄 Mengatur webhook ke: ${url}`);
         try {
-            await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
-            console.log(`📂 Webhook diset ke ${url}`);
+            const result = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?url=${url}`);
+            if (result.data.ok) {
+                console.log(`✅ Webhook berhasil diset: ${url}`);
+            } else {
+                console.error(`❌ Gagal set webhook: ${result.data.description}`);
+            }
         } catch (e) {
-            console.error("Webhook error:", e.message);
+            console.error(`❌ Webhook error: ${e.message}`);
         }
     });
 }
