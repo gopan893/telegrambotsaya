@@ -77,7 +77,6 @@ async function loadAllMemories() {
     userMemory = await loadData('user_memory', {});
     abLog = await loadData('ab_log', []);
     knowledgeBase = await loadData('knowledge', []);
-    // Reschedule reminders (sederhana, tidak dipulihkan sepenuhnya untuk menghindari kompleksitas)
     console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
 
@@ -149,8 +148,9 @@ async function askAI(prompt) {
     throw new Error("Semua AI gagal.");
 }
 
-// ==================== DETEKSI BAHASA SEDERHANA ====================
+// ==================== DETEKSI BAHASA SEDERHANA (termasuk Jepang) ====================
 function simpleDetectLanguage(text) {
+    if (!text) return 'id';
     if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) return 'ja';
     if (/[\u1000-\u109F]/.test(text)) return 'my';
     if (/[\uAC00-\uD7AF]/.test(text)) return 'ko';
@@ -178,31 +178,14 @@ async function safeSendMessage(chatId, text, extra = {}) {
 // ==================== FUNGSI WAKTU MULTI-ZONA ====================
 function getTimeInZone(location) {
     const timezones = {
-        'jakarta': 'Asia/Jakarta',
-        'indonesia': 'Asia/Jakarta',
-        'jepang': 'Asia/Tokyo',
-        'tokyo': 'Asia/Tokyo',
-        'new york': 'America/New_York',
-        'london': 'Europe/London',
-        'paris': 'Europe/Paris',
-        'dubai': 'Asia/Dubai',
-        'riyadh': 'Asia/Riyadh',
-        'mekkah': 'Asia/Riyadh',
-        'singapore': 'Asia/Singapore',
-        'kuala lumpur': 'Asia/Kuala_Lumpur',
-        'bangkok': 'Asia/Bangkok',
-        'seoul': 'Asia/Seoul',
-        'beijing': 'Asia/Shanghai',
-        'sydney': 'Australia/Sydney',
-        'los angeles': 'America/Los_Angeles',
-        'chicago': 'America/Chicago',
-        'moscow': 'Europe/Moscow',
-        'berlin': 'Europe/Berlin',
-        'rome': 'Europe/Rome'
+        'jakarta': 'Asia/Jakarta', 'indonesia': 'Asia/Jakarta', 'jepang': 'Asia/Tokyo', 'tokyo': 'Asia/Tokyo',
+        'new york': 'America/New_York', 'london': 'Europe/London', 'paris': 'Europe/Paris', 'dubai': 'Asia/Dubai',
+        'riyadh': 'Asia/Riyadh', 'mekkah': 'Asia/Riyadh', 'singapore': 'Asia/Singapore', 'kuala lumpur': 'Asia/Kuala_Lumpur',
+        'bangkok': 'Asia/Bangkok', 'seoul': 'Asia/Seoul', 'beijing': 'Asia/Shanghai', 'sydney': 'Australia/Sydney',
+        'los angeles': 'America/Los_Angeles', 'chicago': 'America/Chicago', 'moscow': 'Europe/Moscow', 'berlin': 'Europe/Berlin'
     };
     let tz = timezones[location.toLowerCase()] || null;
     if (!tz) {
-        // Coba cari apakah lokasi mengandung kata kunci
         for (const [key, value] of Object.entries(timezones)) {
             if (location.toLowerCase().includes(key)) {
                 tz = value;
@@ -217,11 +200,6 @@ function getTimeInZone(location) {
     return { time: formatted, timezone: tz };
 }
 
-function getCurrentTimeDefault() {
-    return getTimeInZone('jakarta');
-}
-
-// ==================== TOOLS LAMA ====================
 function getCurrentTime() {
     const res = getTimeInZone('jakarta');
     return `🕒 Waktu Indonesia (WIB): ${res.time}`;
@@ -654,7 +632,7 @@ Intents yang tersedia:
 - CUACA: user ingin tahu cuaca di suatu kota. Parameter: city
 - SEARCH: user ingin mencari informasi di web. Parameter: query
 - HITUNG: user ingin melakukan perhitungan matematika. Parameter: expression
-- JAM: user ingin tahu waktu saat ini. Parameter: location (opsional, nama kota atau zona waktu)
+- JAM: user ingin tahu waktu saat ini. Parameter: location (opsional, nama kota)
 - TANGGAL: user ingin tahu tanggal hari ini (tanpa parameter)
 - GAMBAR: user ingin membuat gambar dari teks. Parameter: prompt
 - LOKASI: user ingin mencari alamat atau lokasi. Parameter: place
@@ -873,7 +851,14 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const chatId = update.message.chat.id;
     const userId = chatId.toString();
     const msg = update.message;
-    const text = msg.text;
+    // ========== PENTING: text bisa undefined jika bukan pesan teks ==========
+    const text = msg.text || '';
+    
+    // Jika tidak ada teks, beri tahu user (opsional)
+    if (!text) {
+        await safeSendMessage(chatId, "Maaf, saya hanya bisa membaca pesan teks biasa. Silakan kirim pesan dalam bentuk tulisan.");
+        return res.sendStatus(200);
+    }
 
     if (!userMemory[userId]) userMemory[userId] = { botName: "Bot Desa" };
 
