@@ -6,6 +6,7 @@ const fsp = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
 
+// Optional dependencies
 let scheduleLib = null;
 let googleLib = null;
 let sharpLib = null;
@@ -32,6 +33,7 @@ const {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
+  TELEGRAM_WEBHOOK_URL,
   PORT = 10000,
   RENDER_EXTERNAL_HOSTNAME,
   ADMIN_IDS = ''
@@ -144,10 +146,11 @@ function looksLikeIntentJSON(text) {
   return t.includes('"intent"') && t.includes('"params"');
 }
 
-function cleanAssistantText(text, { allowIntentJson = false } = {}) {
+function sanitizeOutgoingText(text) {
   let t = stripCodeFences(text);
 
-  if (!allowIntentJson && looksLikeIntentJSON(t)) {
+  // Jika model mengeluarkan JSON intent internal, jangan kirim ke user.
+  if (looksLikeIntentJSON(t)) {
     const parsed = extractJsonObject(t);
     if (parsed && parsed.intent) return '';
   }
@@ -706,7 +709,13 @@ async function safeSendMessage(chatId, text, extra = {}) {
 }
 
 async function sendChunkedMessage(chatId, text, extra = {}) {
-  const chunks = splitText(String(text || ''));
+  const clean = sanitizeOutgoingText(text);
+  if (!clean) {
+    await safeSendMessage(chatId, 'Maaf, aku gagal menyusun jawaban dengan benar.', extra);
+    return;
+  }
+
+  const chunks = splitText(clean);
   for (let i = 0; i < chunks.length; i++) {
     await safeSendMessage(chatId, chunks[i], i === 0 ? extra : {});
   }
@@ -739,8 +748,12 @@ async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = 
 }
 
 async function sendStreamingAnswer(chatId, text, extra = {}) {
-  const full = String(text || '').trim();
-  if (!full) return false;
+  const full = sanitizeOutgoingText(text);
+  if (!full) {
+    await safeSendMessage(chatId, 'Maaf, aku gagal menyusun jawaban dengan benar.', extra);
+    return false;
+  }
+
   const preview = full.length > 3900 ? `${full.slice(0, 3900)}…` : full;
 
   let sent;
@@ -863,8 +876,9 @@ Aturan:
 2. Jangan mengarang fakta.
 3. Kalau sumber kurang kuat, katakan sumber belum cukup.
 4. Buat ringkasan dalam bahasa Indonesia yang rapi dan singkat.
-5. Wajib akhiri dengan bagian "Referensi:" berisi daftar [1], [2], dst.
-6. Wajib sertakan tingkat keyakinan: tinggi/sedang/rendah.
+5. Jangan tampilkan JSON, intent, params, atau code fence.
+6. Wajib akhiri dengan bagian "Referensi:" berisi daftar [1], [2], dst.
+7. Wajib sertakan tingkat keyakinan: tinggi/sedang/rendah.
 
 Topik:
 ${query}
@@ -875,11 +889,17 @@ ${data.answer || '-'}
 Sumber:
 ${sources}`;
 
-  const summary = await askAI(
-    'Kamu hanya boleh menyusun ringkasan dari sumber yang diberikan. Jangan mengarang.',
+  let summary = await askAI(
+    'Kamu hanya boleh menyusun ringkasan dari sumber yang diberikan. Jangan mengarang. Jangan mengeluarkan JSON.',
     prompt,
     { userId, question: query, allowSearch: false, temperature: 0.2, maxTokens: 900 }
   );
+
+  summary = sanitizeOutgoingText(summary);
+
+  if (!summary) {
+    summary = 'Maaf, aku belum bisa menyusun ringkasan yang bersih dari sumber itu.';
+  }
 
   const refs = data.results.length
     ? ['Referensi:', ...data.results.map((item, i) => `[${i + 1}] ${String(item.title || `Sumber ${i + 1}`).trim()} — ${String(item.url || '').trim()}`)].join('\n')
@@ -949,7 +969,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
   const cacheKey = getCacheKey(userId, question);
   const cached = aiCache.get(cacheKey);
   if (allowCache && cached && nowMs() - cached.ts < 2 * 60 * 1000) {
-    return allowRawJson ? String(cached.answer || '').trim() : cleanAssistantText(cached.answer);
+    return allowRawJson ? String(cached.answer || '').trim() : sanitizeOutgoingText(cached.answer);
   }
 
   const modelOrder = chooseAIModel(question, intent) === 'mistral' ? ['mistral', 'groq'] : ['groq', 'mistral'];
@@ -961,7 +981,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
         ? await askMistral(systemPrompt, userPrompt, temperature, maxTokens)
         : await askGroq(systemPrompt, userPrompt, temperature, maxTokens);
 
-      const answer = allowRawJson ? String(raw || '').trim() : cleanAssistantText(raw);
+      const answer = allowRawJson ? String(raw || '').trim() : sanitizeOutgoingText(raw);
       if (answer && answer.trim()) {
         aiCache.set(cacheKey, { ts: nowMs(), answer });
         return answer;
@@ -982,7 +1002,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
           0.4,
           maxTokens
         );
-        const answer = allowRawJson ? String(raw || '').trim() : cleanAssistantText(raw);
+        const answer = allowRawJson ? String(raw || '').trim() : sanitizeOutgoingText(raw);
         aiCache.set(cacheKey, { ts: nowMs(), answer });
         return answer;
       }
@@ -1014,7 +1034,7 @@ async function getAnswerWithAB(question, userId, systemPrompt, intent = null) {
 
 async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
   const cached = getCachedAnswer(question);
-  if (cached) return cleanAssistantText(cached) || cached;
+  if (cached) return sanitizeOutgoingText(cached) || cached;
 
   const qLower = safeLower(question);
   const needsFresh = ['terbaru', 'berita', 'update', 'sekarang', 'harga', 'skor', 'trend'].some(k => qLower.includes(k));
@@ -1037,7 +1057,7 @@ async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
         if (lessons.rules.length > botSettings.maxRules) lessons.rules.shift();
         await persist();
 
-        const cleanedLearned = cleanAssistantText(learned);
+        const cleanedLearned = sanitizeOutgoingText(learned);
         return cleanedLearned || 'Maaf, aku belum bisa merangkum hasil itu dengan jelas.';
       }
     } catch (_) {}
@@ -1047,7 +1067,7 @@ async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
   if (shortMemory.length > botSettings.maxShortMemory) shortMemory.shift();
   await persist();
 
-  const cleaned = cleanAssistantText(answer);
+  const cleaned = sanitizeOutgoingText(answer);
   return cleaned || 'Maaf, aku belum bisa memproses itu.';
 }
 
@@ -2306,7 +2326,6 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
   }
 }
 
-// ==================== HELPERS ====================
 async function handlePluginsList(chatId, msg) {
   const list = pluginModules.length ? pluginModules.map(p => `- ${p.name}`).join('\n') : 'Belum ada plugin dimuat.';
   await safeSendMessage(chatId, `🔌 Plugin aktif:\n${list}`, { reply_to_message_id: msg.message_id });
@@ -2328,6 +2347,86 @@ async function handleSummary(chatId, userId, msg) {
 
 async function handleUnknownCommand(chatId, msg) {
   await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
+}
+
+async function handleFileCommands(chatId, userId, cmd, args, msg) {
+  if (cmd === '/ringkasfile') {
+    if (!msg.reply_to_message?.document) {
+      await safeSendMessage(
+        chatId,
+        'Balas pesan file lalu pakai /ringkasfile.',
+        { reply_to_message_id: msg.message_id }
+      );
+      return true;
+    }
+
+    if (typeof handleDocumentSmart !== 'function') {
+      await safeSendMessage(
+        chatId,
+        'Fitur baca file belum aktif di kode ini.',
+        { reply_to_message_id: msg.message_id }
+      );
+      return true;
+    }
+
+    return await handleDocumentSmart(chatId, userId, msg.reply_to_message);
+  }
+
+  if (cmd === '/tanyafile') {
+    const query = String(args || '').trim();
+
+    if (!query) {
+      await safeSendMessage(
+        chatId,
+        'Format: /tanyafile pertanyaan',
+        { reply_to_message_id: msg.message_id }
+      );
+      return true;
+    }
+
+    const u = ensureUser(userId);
+    const fileText = String(u.lastFileText || '').trim();
+
+    if (!fileText) {
+      await safeSendMessage(
+        chatId,
+        'Belum ada file yang tersimpan di sesi ini.',
+        { reply_to_message_id: msg.message_id }
+      );
+      return true;
+    }
+
+    try {
+      const answer = await askAI(
+        getSystemPrompt(userId),
+        `Jawab berdasarkan isi file berikut.\n\nPertanyaan: ${query}\n\nIsi file:\n${fileText.slice(0, 20000)}`,
+        {
+          userId,
+          question: query,
+          allowSearch: false,
+          temperature: 0.2,
+          maxTokens: 700
+        }
+      );
+
+      await sendChunkedMessage(
+        chatId,
+        `📄 Jawaban dari file:\n\n${answer}`,
+        { reply_to_message_id: msg.message_id }
+      );
+    } catch (err) {
+      console.error('handleFileCommands error:', err.message);
+      await safeSendMessage(
+        chatId,
+        '❌ Gagal memproses pertanyaan file.',
+        { reply_to_message_id: msg.message_id }
+      );
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 // ==================== WEBHOOK ====================
@@ -2414,6 +2513,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     const resolvedCmd = resolveAlias(userId, cmd);
 
+    // Commands
     if (resolvedCmd === '/start') {
       await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
@@ -2631,7 +2731,10 @@ async function start() {
   await restoreAllReminders();
   await restoreAllDigests();
 
-  const baseUrl = RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : null;
+  const baseUrl =
+    TELEGRAM_WEBHOOK_URL ||
+    (RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : null);
+
   const webhookUrl = baseUrl ? `${baseUrl}/webhook/${TELEGRAM_TOKEN}` : null;
 
   server = app.listen(PORT, '0.0.0.0', async () => {
@@ -2640,15 +2743,19 @@ async function start() {
 
     if (webhookUrl) {
       try {
-        await telegramPost('setWebhook', {
+        const result = await telegramPost('setWebhook', {
           url: webhookUrl,
           drop_pending_updates: false,
           allowed_updates: ['message', 'callback_query']
         });
-        console.log('✅ Webhook terpasang.');
+
+        if (result.data?.ok) console.log('✅ Webhook terpasang.');
+        else console.error('❌ Gagal set webhook:', result.data?.description || 'unknown');
       } catch (e) {
         console.error('❌ Gagal set webhook:', e.response?.data || e.message);
       }
+    } else {
+      console.warn('⚠️ Webhook URL belum diset. Isi TELEGRAM_WEBHOOK_URL atau RENDER_EXTERNAL_HOSTNAME.');
     }
   });
 }
