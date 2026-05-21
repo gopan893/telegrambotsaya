@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.txt
+*.log
+
+memory.json
+knowledge.json
+chat_history.json
+user_memory.json
+lessons.json
+ab_log.json
+bot_settings.json
