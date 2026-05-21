@@ -52,7 +52,7 @@ const FILE_DIR = process.cwd();
 const ADMIN_SET = new Set(String(ADMIN_IDS).split(',').map(s => s.trim()).filter(Boolean));
 
 const app = express();
-app.use(express.json({ limit: '3mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 let server = null;
 let redisClient = null;
@@ -66,12 +66,12 @@ let chatHistory = [];
 let quizState = {};
 let botSettings = {
   modelPreference: 'auto',
-  maxShortMemory: 120,
-  maxKnowledge: 150,
-  maxRules: 120,
-  maxAbLog: 100,
-  cooldownMs: 1500,
-  maxMessagesPerMinute: 20
+  maxShortMemory: 80,
+  maxKnowledge: 80,
+  maxRules: 100,
+  maxAbLog: 50,
+  cooldownMs: 2000,
+  maxMessagesPerMinute: 15
 };
 
 const reminderJobs = new Map();
@@ -920,18 +920,25 @@ ${sources}`;
 // ==================== AI ====================
 async function askMistral(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800) {
   if (!mistralClient) throw new Error('MISTRAL tidak diset atau package belum ada');
-  const response = await mistralClient.chat.complete({
-    model: 'mistral-large-latest',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    temperature,
-    max_tokens: maxTokens
-  });
-  const content = response?.choices?.[0]?.message?.content;
-  if (Array.isArray(content)) return content.map(x => x.text || x.content || '').join('');
-  return content || '';
+  try {
+    const response = await mistralClient.chat.complete({
+      model: 'mistral-small-latest',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature,
+      max_tokens: maxTokens
+    });
+    const content = response?.choices?.[0]?.message?.content;
+    if (Array.isArray(content)) return content.map(x => x.text || x.content || '').join('');
+    return content || '';
+  } catch (err) {
+    const status = err?.status || err?.response?.status || err?.body?.raw_status_code;
+    console.error('Mistral Error:', status, err.message);
+    if (status === 429) throw new Error('RATE_LIMIT');
+    throw err;
+  }
 }
 
 async function askGroq(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800, model = 'llama-3.3-70b-versatile') {
@@ -957,10 +964,10 @@ function chooseAIModel(question, intent = null) {
   if (intent === 'HITUNG' || intent === 'TANGGAL' || intent === 'JAM' || intent === 'CUACA' || intent === 'LOKASI') return 'groq';
   if (intent === 'SEARCH') return 'groq';
   if (intent === 'GAMBAR') return 'groq';
-  if (intent === 'TAMBAH_EVENT') return 'mistral';
+  if (intent === 'TAMBAH_EVENT') return 'groq';
   if (q.includes('kode') || q.includes('bug') || q.includes('error') || q.includes('javascript') || q.includes('node')) return 'mistral';
-  if (q.includes('ringkas') || q.includes('summary') || q.includes('jelaskan') || q.includes('mengapa')) return 'mistral';
-  return botSettings.modelPreference === 'auto' ? (MISTRAL_API_KEY ? 'mistral' : 'groq') : botSettings.modelPreference;
+  if (q.includes('ringkas') || q.includes('summary') || q.includes('jelaskan') || q.includes('mengapa') || q.includes('analisis')) return 'mistral';
+  return 'groq';
 }
 
 async function askAI(systemPrompt, userPrompt, opts = {}) {
@@ -996,6 +1003,10 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
         return answer;
       }
     } catch (err) {
+      if (err?.message === 'RATE_LIMIT' && m === 'mistral') {
+        lastErr = err;
+        continue;
+      }
       lastErr = err;
       console.error(`${m} gagal:`, err.message);
     }
@@ -1215,6 +1226,30 @@ async function restoreAllReminders() {
 }
 
 // ==================== FEATURE HANDLERS ====================
+async function handlePing(chatId, msg) {
+  await safeSendMessage(chatId, '🏓 Pong!', { reply_to_message_id: msg.message_id });
+}
+
+async function handleReset(chatId, userId, msg) {
+  const u = ensureUser(userId);
+  u.summary = '';
+  u.todos = [];
+  u.reminders = [];
+  u.tags = [];
+  u.preferences = {};
+  u.aliases = {};
+  u.nlpPatterns = [];
+  u.mood = null;
+  u.awaitingMood = false;
+  u.awaitingMoodAt = null;
+  u.awaitingClarification = null;
+  u.awaitingClarificationAt = null;
+  u.lastFileName = null;
+  u.lastFileText = null;
+  await persist();
+  await safeSendMessage(chatId, '🧹 Memory personal sudah direset.', { reply_to_message_id: msg.message_id });
+}
+
 async function handleSettings(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
 
@@ -1862,6 +1897,8 @@ async function handleDocumentSmart(chatId, userId, msg) {
 async function handleHelp(chatId, msg) {
   const help =
 `/start - mulai
+/ping - cek bot hidup
+/reset - reset memory pribadi
 /help - bantuan
 /stats - statistik
 /rollback - hapus aturan terakhir
@@ -1918,7 +1955,7 @@ Kamu juga bisa langsung pakai bahasa alami:
 
 function isUnknownCommand(cmd) {
   const known = new Set([
-    '/start', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
+    '/start', '/ping', '/reset', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
     '/jam', '/tanggal', '/cuaca', '/lokasi', '/cari', '/setname', '/koreksi',
     '/mood', '/remind', '/todo', '/add', '/done', '/cleartodo', '/quiz', '/poll',
     '/kick', '/pin', '/resize', '/sticker', '/learn', '/askkb', '/auth', '/addevent',
@@ -2412,6 +2449,7 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
 }
 
 // ==================== WEBHOOK ====================
+app.get('/', (req, res) => res.send('OK'));
 app.get('/health', (req, res) => res.send('OK'));
 
 app.get('/oauth2callback', async (req, res) => {
@@ -2434,6 +2472,7 @@ app.get('/oauth2callback', async (req, res) => {
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   try {
     const update = req.body;
+    if (!update || typeof update !== 'object') return res.sendStatus(200);
 
     if (update.callback_query) {
       const cb = update.callback_query;
@@ -2449,7 +2488,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     if (!update.message) return res.sendStatus(200);
     if (update.message.from?.is_bot) return res.sendStatus(200);
-    if (update.message.edited_message) return res.sendStatus(200);
+    if (update.edited_message) return res.sendStatus(200);
 
     const msg = update.message;
     const chatId = msg.chat.id;
@@ -2500,6 +2539,8 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       return res.sendStatus(200);
     }
 
+    if (resolvedCmd === '/ping') { await handlePing(chatId, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/reset') { await handleReset(chatId, userId, msg); return res.sendStatus(200); }
     if (resolvedCmd === '/help') { await handleHelp(chatId, msg); return res.sendStatus(200); }
     if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return res.sendStatus(200); }
     if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return res.sendStatus(200); }
@@ -2597,7 +2638,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const lang = simpleDetectLanguage(text);
     let prompt = text;
     if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
-    else if (lang === 'my') prompt = `Jawab dalam bahasa Myanmar: ${text}`;
     else if (lang === 'ko') prompt = `Jawab dalam bahasa Korea: ${text}`;
     else if (lang === 'vi') prompt = `Jawab dalam bahasa Vietnam: ${text}`;
 
