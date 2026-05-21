@@ -4048,7 +4048,50 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
       return false;
   }
 }
+async function handleTools(msgText, userId = '0') {
+  const low = safeLower(msgText);
 
+  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
+    return getCurrentDate();
+  }
+
+  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) &&
+    (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
+
+  if (isTimeQuestion) {
+    let q = low
+      .replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    q = q || 'jakarta';
+    return getCurrentTime(q);
+  }
+
+  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
+    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
+    if (expr) return calculate(expr);
+  }
+
+  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
+    const q = String(msgText || '').replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '').trim();
+    return q ? await searchLocation(q) : 'Sebutkan tempat';
+  }
+
+  if (low.includes('cuaca')) {
+    const city = String(msgText || '').replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '').trim();
+    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
+  }
+
+  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita', 'ringkas', 'rangkum', 'summary'];
+  if (searchKw.some(k => low.includes(k))) {
+    let q = String(msgText || '');
+    for (const k of searchKw) q = q.replace(new RegExp(escapeRegExp(k), 'gi'), ' ');
+    q = q.trim();
+    return q ? await summarizeSearchWithRefs(q, userId, getSystemPrompt(userId)) : 'Apa yang ingin dicari?';
+  }
+
+  return null;
+}
 // =====================================================
 // WEBHOOK
 // =====================================================
