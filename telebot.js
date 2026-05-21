@@ -1,3 +1,5 @@
+/* eslint-disable no-new-func */
+
 const express = require('express');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -11,6 +13,7 @@ let sharpLib = null;
 let FormDataLib = null;
 let MistralClass = null;
 let RedisClass = null;
+let pdfParseLib = null;
 
 try { scheduleLib = require('node-schedule'); } catch (_) {}
 try { ({ google: googleLib } = require('googleapis')); } catch (_) {}
@@ -18,6 +21,7 @@ try { sharpLib = require('sharp'); } catch (_) {}
 try { FormDataLib = require('form-data'); } catch (_) {}
 try { ({ Mistral: MistralClass } = require('@mistralai/mistralai')); } catch (_) {}
 try { RedisClass = require('ioredis'); } catch (_) {}
+try { pdfParseLib = require('pdf-parse'); } catch (_) {}
 
 const {
   TELEGRAM_TOKEN,
@@ -38,6 +42,7 @@ if (!TELEGRAM_TOKEN) {
   console.error('❌ TELEGRAM_TOKEN tidak ditemukan!');
   process.exit(1);
 }
+
 if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
   console.error('❌ Set minimal MISTRAL_API_KEY atau GROQ_API_KEY.');
   process.exit(1);
@@ -58,6 +63,7 @@ let lessons = { rules: [] };
 let userMemory = {};
 let abLog = [];
 let knowledgeBase = [];
+let chatHistory = [];
 let quizState = {};
 let botSettings = {
   modelPreference: 'auto',
@@ -70,6 +76,7 @@ let botSettings = {
 };
 
 const reminderJobs = new Map();
+const digestJobs = new Map();
 const rateBuckets = new Map();
 const aiCache = new Map();
 
@@ -87,20 +94,7 @@ function isValidDate(d) { return d instanceof Date && !isNaN(d.getTime()); }
 function safeLower(text) { return String(text || '').toLowerCase(); }
 function normalizeId(id) { return String(id || ''); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function getCommandBase(text) {
-  const t = String(text || '').trim();
-  if (!t.startsWith('/')) return null;
-  const first = t.split(/\s+/)[0];
-  return first.split('@')[0].toLowerCase();
-}
-
-function getCommandArgs(text) {
-  const t = String(text || '').trim();
-  if (!t.startsWith('/')) return '';
-  const i = t.indexOf(' ');
-  return i === -1 ? '' : t.slice(i + 1).trim();
-}
+function cleanupSpaces(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
 
 function splitText(text, maxLen = 3900) {
   const s = String(text || '');
@@ -117,8 +111,18 @@ function splitText(text, maxLen = 3900) {
   return chunks;
 }
 
-function cleanupSpaces(text) {
-  return String(text || '').replace(/\s+/g, ' ').trim();
+function getCommandBase(text) {
+  const t = String(text || '').trim();
+  if (!t.startsWith('/')) return null;
+  const first = t.split(/\s+/)[0];
+  return first.split('@')[0].toLowerCase();
+}
+
+function getCommandArgs(text) {
+  const t = String(text || '').trim();
+  if (!t.startsWith('/')) return '';
+  const i = t.indexOf(' ');
+  return i === -1 ? '' : t.slice(i + 1).trim();
 }
 
 function extractJsonObject(text) {
@@ -205,11 +209,316 @@ function rateLimit(userId) {
   return { ok: true };
 }
 
-function parseToQueryWords(text) {
-  return String(text || '').trim();
+function getCurrentDate() {
+  const formatter = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long'
+  });
+  return `📅 Hari ini: ${formatter.format(new Date())}`;
 }
 
-// ==================== STORAGE ====================
+function getTimeInZone(location) {
+  const timezones = {
+    jakarta: 'Asia/Jakarta',
+    indonesia: 'Asia/Jakarta',
+    jepang: 'Asia/Tokyo',
+    tokyo: 'Asia/Tokyo',
+    'new york': 'America/New_York',
+    london: 'Europe/London',
+    paris: 'Europe/Paris',
+    dubai: 'Asia/Dubai',
+    riyadh: 'Asia/Riyadh',
+    mekkah: 'Asia/Riyadh',
+    singapore: 'Asia/Singapore',
+    'kuala lumpur': 'Asia/Kuala_Lumpur',
+    bangkok: 'Asia/Bangkok',
+    seoul: 'Asia/Seoul',
+    beijing: 'Asia/Shanghai',
+    sydney: 'Australia/Sydney',
+    'los angeles': 'America/Los_Angeles',
+    chicago: 'America/Chicago',
+    moscow: 'Europe/Moscow',
+    berlin: 'Europe/Berlin'
+  };
+
+  if (!location) return null;
+  const q = String(location).toLowerCase().trim();
+  let tz = timezones[q] || null;
+  if (!tz) {
+    for (const [key, value] of Object.entries(timezones)) {
+      if (q.includes(key)) {
+        tz = value;
+        break;
+      }
+    }
+  }
+
+  if (!tz) return null;
+
+  const formatter = new Intl.DateTimeFormat('id-ID', {
+    timeZone: tz,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  return { time: formatter.format(new Date()), timezone: tz };
+}
+
+function getCurrentTime(location = 'jakarta') {
+  const res = getTimeInZone(location);
+  if (!res) return `❌ Lokasi "${location}" tidak dikenal. Coba Jakarta, Tokyo, New York, dll.`;
+  return `🕒 Waktu di ${location}: ${res.time}`;
+}
+
+function calculate(expr) {
+  try {
+    const clean = String(expr)
+      .replace(/[^0-9+\-*/().%\s]/g, '')
+      .replace(/\s+/g, '');
+    if (!clean || !/[0-9]/.test(clean)) return 'Format salah';
+    if (/\*\*|\/{2,}/.test(clean)) return 'Format matematika tidak aman';
+    const result = Function(`"use strict"; return (${clean})`)();
+    return `Hasil: ${expr} = ${result}`;
+  } catch {
+    return 'Error hitung';
+  }
+}
+
+function pushChatHistory(entry) {
+  chatHistory.push(entry);
+  if (chatHistory.length > 2000) chatHistory.shift();
+}
+
+function generateTagsFromText(text) {
+  const q = safeLower(text);
+  const tags = [];
+
+  const tagRules = [
+    ['coding', ['code', 'kode', 'bug', 'error', 'javascript', 'node', 'express', 'telegram bot']],
+    ['game', ['game', 'gaming', 'minecraft', 'roblox', 'steam']],
+    ['kerja', ['kerja', 'task', 'tugas', 'project', 'deadline', 'meeting']],
+    ['sekolah', ['sekolah', 'kelas', 'pelajaran', 'soal', 'ujian', 'pr']],
+    ['ai', ['ai', 'llm', 'model', 'prompt', 'rag', 'agent']],
+    ['belajar', ['belajar', 'tutorial', 'cara', 'apa itu', 'jelaskan']],
+    ['cuaca', ['cuaca', 'weather']],
+    ['jadwal', ['remind', 'ingatkan', 'jadwal', 'event', 'agenda']],
+    ['search', ['cari', 'search', 'rangkum', 'ringkas', 'referensi']]
+  ];
+
+  for (const [tag, kws] of tagRules) {
+    if (kws.some(k => q.includes(k))) tags.push(tag);
+  }
+
+  return [...new Set(tags)];
+}
+
+function updateUserTags(u, text) {
+  const tags = new Set(u.tags || []);
+  for (const tag of generateTagsFromText(text)) tags.add(tag);
+  u.tags = [...tags].slice(0, 20);
+}
+
+function scoreAnswerQuality(question, answer) {
+  const q = safeLower(question);
+  const a = safeLower(answer);
+
+  let score = 0.45;
+  if (a.length > 80) score += 0.15;
+  if (a.length > 250) score += 0.08;
+  if (a.includes('tidak tahu') || a.includes('kurang yakin') || a.includes('maaf')) score -= 0.15;
+  if (a.includes('http://') || a.includes('https://')) score += 0.08;
+  if (a.includes('referensi')) score += 0.08;
+  if (q && a.includes(q.slice(0, Math.min(18, q.length)))) score += 0.05;
+  return Math.max(0, Math.min(1, score));
+}
+
+function getModePrompt(mode) {
+  if (mode === 'kerja') {
+    return 'Jawab profesional, ringkas, terstruktur, dan langsung ke inti.';
+  }
+  if (mode === 'auto') {
+    return 'Sesuaikan gaya jawaban dengan konteks pertanyaan.';
+  }
+  return 'Jawab santai, ramah, natural, dan tidak kaku.';
+}
+
+function getUserSummary(userId) {
+  const u = ensureUser(userId);
+  const recent = (shortMemory || []).filter(m => normalizeId(m.userId) === normalizeId(userId)).slice(-5);
+  const moods = recent.map(x => x.mood).filter(Boolean);
+  const todos = (u.todos || []).filter(t => !t.done).slice(-5).map(t => t.text);
+  const reminders = (u.reminders || []).slice(-3).map(r => `${r.time} :: ${r.message}`);
+  return {
+    botName: u.botName,
+    summary: u.summary || '',
+    tags: u.tags || [],
+    recentMoods: moods,
+    openTodos: todos,
+    reminders
+  };
+}
+
+function buildContext(userId, question) {
+  const recent = (shortMemory || [])
+    .filter(m => normalizeId(m.userId) === normalizeId(userId))
+    .slice(-6)
+    .map(m => `Q: ${m.q}\nA: ${m.a}`)
+    .join('\n\n');
+
+  const summary = getUserSummary(userId);
+  const personal = [
+    summary.summary ? `Ringkasan user: ${summary.summary}` : '',
+    summary.tags?.length ? `Tag: ${summary.tags.join(', ')}` : '',
+    summary.openTodos?.length ? `Todo terbuka: ${summary.openTodos.join(' | ')}` : '',
+    summary.reminders?.length ? `Reminder aktif: ${summary.reminders.join(' | ')}` : ''
+  ].filter(Boolean).join('\n');
+
+  const mem = recent ? `Konteks percakapan terakhir:\n${recent}\n\n` : '';
+  const pers = personal ? `Memori personal:\n${personal}\n\n` : '';
+  return `${mem}${pers}Pertanyaan user:\n${question}`;
+}
+
+function getSystemPrompt(userId) {
+  const u = ensureUser(userId);
+  const botName = u.botName || 'Bot AI';
+  return `Kamu adalah asisten pribadi bernama "${botName}".
+Gunakan bahasa Indonesia.
+${getModePrompt(u.mode)}
+Kalau tidak tahu, bilang tidak tahu.
+Jangan mengaku sebagai manusia.`;
+}
+
+function resolveAlias(userId, cmd) {
+  const u = ensureUser(userId);
+  const aliased = u.aliases?.[cmd];
+  return aliased ? String(aliased).toLowerCase() : cmd;
+}
+
+function searchConversationHistory(userId, query) {
+  const q = safeLower(query);
+  const items = chatHistory
+    .filter(x => normalizeId(x.userId) === normalizeId(userId))
+    .filter(x => !q || safeLower(x.text || '').includes(q))
+    .slice(-15);
+
+  if (!items.length) return 'Tidak ada riwayat yang cocok.';
+
+  return items.map((x, i) => {
+    const who = x.role === 'assistant' ? 'Bot' : 'Kamu';
+    return `${i + 1}. [${who}] ${x.text}`;
+  }).join('\n');
+}
+
+async function generateDigestForUser(userId) {
+  const u = ensureUser(userId);
+  const recent = chatHistory
+    .filter(x => normalizeId(x.userId) === normalizeId(userId))
+    .slice(-40);
+
+  const todos = (u.todos || []).filter(t => !t.done).slice(-10).map(t => `- ${t.text}`).join('\n') || '-';
+  const reminders = (u.reminders || []).slice(-10).map(r => `- ${r.time} :: ${r.message}`).join('\n') || '-';
+  const historyText = recent.map(x => `${x.role}: ${x.text}`).join('\n');
+
+  const prompt = `Buat digest singkat untuk user.
+Isi:
+- ringkasan aktivitas terakhir
+- todo aktif
+- reminder aktif
+- 2 hal penting yang perlu diperhatikan
+
+Data:
+Riwayat:
+${historyText}
+
+Todo:
+${todos}
+
+Reminder:
+${reminders}`;
+
+  return askAI(
+    'Kamu membuat digest singkat, rapi, dan tidak mengarang.',
+    prompt,
+    { userId, question: 'digest', allowSearch: false, temperature: 0.2, maxTokens: 250 }
+  );
+}
+
+function scheduleDigestJob(userId) {
+  if (!scheduleLib) return false;
+
+  const u = ensureUser(userId);
+  const time = String(u.digest?.time || '20:00');
+  const m = time.match(/^(\d{2}):(\d{2})$/);
+  if (!m) return false;
+
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+
+  if (digestJobs.has(userId)) {
+    try { digestJobs.get(userId).cancel(); } catch (_) {}
+    digestJobs.delete(userId);
+  }
+
+  const rule = new scheduleLib.RecurrenceRule();
+  rule.tz = 'Asia/Jakarta';
+  rule.hour = hh;
+  rule.minute = mm;
+  rule.second = 0;
+
+  const job = scheduleLib.scheduleJob(rule, async () => {
+    const summary = await generateDigestForUser(userId);
+    const chatId = ensureUser(userId).lastChatId || userId;
+    await sendChunkedMessage(chatId, `🧾 Digest harian:\n\n${summary}`);
+  });
+
+  if (job) digestJobs.set(userId, job);
+  return !!job;
+}
+
+async function restoreAllDigests() {
+  for (const job of digestJobs.values()) {
+    try { job.cancel(); } catch (_) {}
+  }
+  digestJobs.clear();
+
+  for (const [userId, u] of Object.entries(userMemory)) {
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+  }
+}
+
+function moderationCheckIncoming(msg) {
+  if (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup') return false;
+
+  const text = String(msg.text || msg.caption || '');
+  const u = ensureUser(msg.from.id);
+
+  if (msg.new_chat_members?.length && u.moderation?.welcome) {
+    return {
+      type: 'welcome',
+      text: `👋 Selamat datang ${msg.new_chat_members.map(x => x.first_name).join(', ')}!`
+    };
+  }
+
+  if (u.moderation?.antispam) {
+    const q = safeLower(text);
+    const spammy = q.includes('http://') || q.includes('https://') || q.includes('t.me/') || q.includes('bit.ly/');
+    if (spammy && !isAdmin(msg.from.id)) {
+      return { type: 'delete', text: null };
+    }
+  }
+
+  return false;
+}
+
+// ==================== REDIS / STORAGE ====================
 async function initRedis() {
   if (!REDIS_URL || !RedisClass) return;
   try {
@@ -268,7 +577,8 @@ async function saveAll() {
     saveData('user_memory', userMemory),
     saveData('ab_log', abLog.slice(-botSettings.maxAbLog)),
     saveData('knowledge', knowledgeBase.slice(-botSettings.maxKnowledge)),
-    saveData('bot_settings', botSettings)
+    saveData('bot_settings', botSettings),
+    saveData('chat_history', chatHistory.slice(-2000))
   ]);
 }
 
@@ -280,9 +590,13 @@ function persist() {
 
 function ensureUser(userId) {
   const id = normalizeId(userId);
+
   if (!userMemory[id]) {
     userMemory[id] = {
       botName: 'Bot AI',
+      mode: 'santai',
+      aliases: {},
+
       todos: [],
       reminders: [],
       nlpPatterns: [],
@@ -290,6 +604,17 @@ function ensureUser(userId) {
       summary: '',
       tags: [],
       preferences: {},
+
+      digest: {
+        enabled: false,
+        time: '20:00'
+      },
+
+      moderation: {
+        antispam: false,
+        welcome: false
+      },
+
       lastSeen: nowMs(),
       awaitingMood: false,
       awaitingMoodAt: null,
@@ -297,27 +622,39 @@ function ensureUser(userId) {
       awaitingClarificationAt: null,
       calendarTokens: null,
       lastSummaryMsgCount: 0,
-      lastSummaryAt: 0
+      lastSummaryAt: 0,
+      lastChatId: null,
+      lastFileName: null,
+      lastFileText: null
     };
-  } else {
-    userMemory[id].botName ||= 'Bot AI';
-    userMemory[id].todos ||= [];
-    userMemory[id].reminders ||= [];
-    userMemory[id].nlpPatterns ||= [];
-    userMemory[id].msgCount ||= 0;
-    userMemory[id].summary ||= '';
-    userMemory[id].tags ||= [];
-    userMemory[id].preferences ||= {};
-    userMemory[id].lastSeen ||= nowMs();
-    userMemory[id].awaitingMood ||= false;
-    userMemory[id].awaitingMoodAt ||= null;
-    userMemory[id].awaitingClarification ||= null;
-    userMemory[id].awaitingClarificationAt ||= null;
-    userMemory[id].calendarTokens ||= null;
-    userMemory[id].lastSummaryMsgCount ||= 0;
-    userMemory[id].lastSummaryAt ||= 0;
   }
-  return userMemory[id];
+
+  const u = userMemory[id];
+  u.botName ||= 'Bot AI';
+  u.mode ||= 'santai';
+  u.aliases ||= {};
+  u.todos ||= [];
+  u.reminders ||= [];
+  u.nlpPatterns ||= [];
+  u.msgCount ||= 0;
+  u.summary ||= '';
+  u.tags ||= [];
+  u.preferences ||= {};
+  u.digest ||= { enabled: false, time: '20:00' };
+  u.moderation ||= { antispam: false, welcome: false };
+  u.lastSeen ||= nowMs();
+  u.awaitingMood ||= false;
+  u.awaitingMoodAt ||= null;
+  u.awaitingClarification ||= null;
+  u.awaitingClarificationAt ||= null;
+  u.calendarTokens ||= null;
+  u.lastSummaryMsgCount ||= 0;
+  u.lastSummaryAt ||= 0;
+  u.lastChatId ||= null;
+  u.lastFileName ||= null;
+  u.lastFileText ||= null;
+
+  return u;
 }
 
 function cleanupStaleUserState(u) {
@@ -338,6 +675,7 @@ async function loadAllMemories() {
   userMemory = await loadData('user_memory', {});
   abLog = await loadData('ab_log', []);
   knowledgeBase = await loadData('knowledge', []);
+  chatHistory = await loadData('chat_history', []);
   botSettings = { ...botSettings, ...(await loadData('bot_settings', {})) };
   console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
@@ -445,79 +783,17 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
 }
 
 // ==================== BASIC TOOLS ====================
-function getTimeInZone(location) {
-  const timezones = {
-    jakarta: 'Asia/Jakarta',
-    indonesia: 'Asia/Jakarta',
-    jepang: 'Asia/Tokyo',
-    tokyo: 'Asia/Tokyo',
-    'new york': 'America/New_York',
-    london: 'Europe/London',
-    paris: 'Europe/Paris',
-    dubai: 'Asia/Dubai',
-    riyadh: 'Asia/Riyadh',
-    mekkah: 'Asia/Riyadh',
-    singapore: 'Asia/Singapore',
-    'kuala lumpur': 'Asia/Kuala_Lumpur',
-    bangkok: 'Asia/Bangkok',
-    seoul: 'Asia/Seoul',
-    beijing: 'Asia/Shanghai',
-    sydney: 'Australia/Sydney',
-    'los angeles': 'America/Los_Angeles',
-    chicago: 'America/Chicago',
-    moscow: 'Europe/Moscow',
-    berlin: 'Europe/Berlin'
-  };
-  if (!location) return null;
-  const q = String(location).toLowerCase().trim();
-  let tz = timezones[q] || null;
-  if (!tz) {
-    for (const [key, value] of Object.entries(timezones)) {
-      if (q.includes(key)) { tz = value; break; }
-    }
-  }
-  if (!tz) return null;
-  const formatter = new Intl.DateTimeFormat('id-ID', {
-    timeZone: tz,
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
-  return { time: formatter.format(new Date()), timezone: tz };
-}
-
-function getCurrentTime(location = 'jakarta') {
-  const res = getTimeInZone(location);
-  if (!res) return `❌ Lokasi "${location}" tidak dikenal. Coba Jakarta, Tokyo, New York, dll.`;
-  return `🕒 Waktu di ${location}: ${res.time}`;
-}
-
-function getCurrentDate() {
-  const formatter = new Intl.DateTimeFormat('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long'
-  });
-  return `📅 Hari ini: ${formatter.format(new Date())}`;
-}
-
-function calculate(expr) {
+async function getWeather(city) {
+  if (!OPENWEATHER_API_KEY) return 'API key cuaca tidak ada';
   try {
-    const clean = String(expr)
-      .replace(/[^0-9+\-*/().%\s]/g, '')
-      .replace(/\s+/g, '');
-    if (!clean || !/[0-9]/.test(clean)) return 'Format salah';
-    if (/\*\*|\/{2,}/.test(clean)) return 'Format matematika tidak aman';
-    const result = Function(`"use strict"; return (${clean})`)();
-    return `Hasil: ${expr} = ${result}`;
+    const res = await axios.get(
+      `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=id`,
+      { timeout: 15000 }
+    );
+    const d = res.data;
+    return `🌤️ Cuaca ${d.name}: ${d.main.temp}°C, ${d.weather[0].description}`;
   } catch {
-    return 'Error hitung';
+    return `Kota ${city} tidak ditemukan`;
   }
 }
 
@@ -535,18 +811,8 @@ async function searchLocation(query) {
   }
 }
 
-async function getWeather(city) {
-  if (!OPENWEATHER_API_KEY) return 'API key cuaca tidak ada';
-  try {
-    const res = await axios.get(
-      `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=id`,
-      { timeout: 15000 }
-    );
-    const d = res.data;
-    return `🌤️ Cuaca ${d.name}: ${d.main.temp}°C, ${d.weather[0].description}`;
-  } catch {
-    return `Kota ${city} tidak ditemukan`;
-  }
+async function generateImage(prompt) {
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
 }
 
 async function searchWebTavilyRaw(query, maxResults = 6) {
@@ -628,15 +894,6 @@ async function generateImage(prompt) {
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
 }
 
-function getSystemPrompt(userId) {
-  const botName = ensureUser(userId).botName || 'Bot AI';
-  return `Kamu adalah asisten pribadi bernama "${botName}".
-Gunakan bahasa Indonesia santai, pakai "aku" dan "kamu".
-Jawab singkat, jelas, dan maksimal 3 kalimat kecuali diminta panjang.
-Kalau tidak tahu, bilang tidak tahu.
-Jangan mengaku sebagai manusia.`;
-}
-
 function getCachedAnswer(question) {
   const q = safeLower(question);
   const sortedRules = [...(lessons.rules || [])].sort((a, b) => String(b.trigger || '').length - String(a.trigger || '').length);
@@ -645,42 +902,6 @@ function getCachedAnswer(question) {
     return trig && q.includes(trig);
   });
   return match ? match.answer : null;
-}
-
-function getUserSummary(userId) {
-  const u = ensureUser(userId);
-  const recent = (shortMemory || []).filter(m => normalizeId(m.userId) === normalizeId(userId)).slice(-5);
-  const moods = recent.map(x => x.mood).filter(Boolean);
-  const todos = (u.todos || []).filter(t => !t.done).slice(-5).map(t => t.text);
-  const reminders = (u.reminders || []).slice(-3).map(r => `${r.time} :: ${r.message}`);
-  return {
-    botName: u.botName,
-    summary: u.summary || '',
-    tags: u.tags || [],
-    recentMoods: moods,
-    openTodos: todos,
-    reminders
-  };
-}
-
-function buildContext(userId, question) {
-  const recent = (shortMemory || [])
-    .filter(m => normalizeId(m.userId) === normalizeId(userId))
-    .slice(-6)
-    .map(m => `Q: ${m.q}\nA: ${m.a}`)
-    .join('\n\n');
-
-  const summary = getUserSummary(userId);
-  const personal = [
-    summary.summary ? `Ringkasan user: ${summary.summary}` : '',
-    summary.tags?.length ? `Tag: ${summary.tags.join(', ')}` : '',
-    summary.openTodos?.length ? `Todo terbuka: ${summary.openTodos.join(' | ')}` : '',
-    summary.reminders?.length ? `Reminder aktif: ${summary.reminders.join(' | ')}` : ''
-  ].filter(Boolean).join('\n');
-
-  const mem = recent ? `Konteks percakapan terakhir:\n${recent}\n\n` : '';
-  const pers = personal ? `Memori personal:\n${personal}\n\n` : '';
-  return `${mem}${pers}Pertanyaan user:\n${question}`;
 }
 
 async function askMistral(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800) {
@@ -765,8 +986,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     try {
       const searchRes = await searchWebTavily(question);
       if (searchRes && !searchRes.includes('Error')) {
-        const learnedPrompt = `${question}\n\nHasil pencarian web:\n${searchRes}\n\nJawab singkat berdasarkan data di atas.`;
-        const learned = await askGroq(systemPrompt, learnedPrompt, 0.4, maxTokens);
+        const learned = await askGroq(systemPrompt, `${question}\n\nHasil pencarian web:\n${searchRes}\n\nJawab singkat, akurat, dan sebutkan poin penting.`, 0.4, maxTokens);
         aiCache.set(cacheKey, { ts: nowMs(), answer: learned });
         return learned;
       }
@@ -778,7 +998,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
   throw lastErr || new Error('Semua AI gagal.');
 }
 
-async function getAnswerWithAB(question, userId, systemPrompt) {
+async function getAnswerWithAB(question, userId, systemPrompt, intent = null) {
   const chosen = Math.random() > 0.5 ? 'santai' : 'formal';
   const stylePrompt = chosen === 'santai'
     ? 'Jawab dengan santai, gunakan "aku" dan "kamu".'
@@ -787,13 +1007,49 @@ async function getAnswerWithAB(question, userId, systemPrompt) {
   const answer = await askAI(
     systemPrompt,
     `${stylePrompt}\n\nPertanyaan user:\n${question}`,
-    { userId, question, allowSearch: true }
+    { userId, question, intent, allowSearch: true }
   );
 
   abLog.push({ userId, question, chosen, answer, timestamp: nowMs() });
   if (abLog.length > botSettings.maxAbLog) abLog.shift();
   await persist();
   return { answer, style: chosen };
+}
+
+function getUserSummary(userId) {
+  const u = ensureUser(userId);
+  const recent = (shortMemory || []).filter(m => normalizeId(m.userId) === normalizeId(userId)).slice(-5);
+  const moods = recent.map(x => x.mood).filter(Boolean);
+  const todos = (u.todos || []).filter(t => !t.done).slice(-5).map(t => t.text);
+  const reminders = (u.reminders || []).slice(-3).map(r => `${r.time} :: ${r.message}`);
+  return {
+    botName: u.botName,
+    summary: u.summary || '',
+    tags: u.tags || [],
+    recentMoods: moods,
+    openTodos: todos,
+    reminders
+  };
+}
+
+function buildContext(userId, question) {
+  const recent = (shortMemory || [])
+    .filter(m => normalizeId(m.userId) === normalizeId(userId))
+    .slice(-6)
+    .map(m => `Q: ${m.q}\nA: ${m.a}`)
+    .join('\n\n');
+
+  const summary = getUserSummary(userId);
+  const personal = [
+    summary.summary ? `Ringkasan user: ${summary.summary}` : '',
+    summary.tags?.length ? `Tag: ${summary.tags.join(', ')}` : '',
+    summary.openTodos?.length ? `Todo terbuka: ${summary.openTodos.join(' | ')}` : '',
+    summary.reminders?.length ? `Reminder aktif: ${summary.reminders.join(' | ')}` : ''
+  ].filter(Boolean).join('\n');
+
+  const mem = recent ? `Konteks percakapan terakhir:\n${recent}\n\n` : '';
+  const pers = personal ? `Memori personal:\n${personal}\n\n` : '';
+  return `${mem}${pers}Pertanyaan user:\n${question}`;
 }
 
 async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
@@ -947,7 +1203,6 @@ async function restoreAllReminders() {
 
   let changed = false;
   const now = new Date();
-
   for (const [userId, u] of Object.entries(userMemory)) {
     const reminders = Array.isArray(u.reminders) ? u.reminders : [];
     const keep = [];
@@ -962,11 +1217,10 @@ async function restoreAllReminders() {
     }
     u.reminders = keep;
   }
-
   if (changed) await persist();
 }
 
-// ==================== HELPERS / FEATURES ====================
+// ==================== FEATURE HELPERS ====================
 async function handleMood(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
   cleanupStaleUserState(u);
@@ -1130,11 +1384,13 @@ async function handleQuizPoll(chatId, cmd, args, msg) {
   if (quizState[chatId] && !cmd) {
     const state = quizState[chatId];
     const options = String(msg.text || '').split(',').map(o => o.trim()).filter(Boolean);
+
     if (options.length < 2) {
       await safeSendMessage(chatId, 'Minimal 2 opsi.', { reply_to_message_id: msg.message_id });
       delete quizState[chatId];
       return true;
     }
+
     if (options.length > 10) {
       await safeSendMessage(chatId, 'Maksimal 10 opsi.', { reply_to_message_id: msg.message_id });
       delete quizState[chatId];
@@ -1265,7 +1521,725 @@ async function handleKnowledge(chatId, cmd, args, msg) {
   return false;
 }
 
-// ==================== NLP ====================
+async function handleMode(chatId, userId, cmd, args, msg) {
+  if (cmd !== '/mode') return false;
+
+  const u = ensureUser(userId);
+  const mode = safeLower(args).trim();
+
+  if (['kerja', 'santai', 'auto'].includes(mode)) {
+    u.mode = mode;
+    await persist();
+    await safeSendMessage(chatId, `✅ Mode disetel ke "${mode}".`, { reply_to_message_id: msg.message_id });
+  } else {
+    await safeSendMessage(chatId, 'Format: /mode kerja | santai | auto', { reply_to_message_id: msg.message_id });
+  }
+
+  return true;
+}
+
+async function handleAlias(chatId, userId, cmd, args, msg) {
+  if (cmd !== '/alias') return false;
+
+  const u = ensureUser(userId);
+
+  if (safeLower(args).trim() === 'list') {
+    const list = Object.entries(u.aliases || {}).map(([k, v]) => `${k} => ${v}`).join('\n');
+    await safeSendMessage(chatId, list ? `Alias kamu:\n${list}` : 'Belum ada alias.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  const parts = args.split('=');
+  if (parts.length < 2) {
+    await safeSendMessage(chatId, 'Format: /alias nama_alias = /command', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  const alias = parts[0].trim().toLowerCase();
+  const target = parts[1].trim().toLowerCase();
+
+  if (!alias || !target.startsWith('/')) {
+    await safeSendMessage(chatId, 'Format: /alias nama_alias = /command', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  u.aliases[alias] = target;
+  await persist();
+  await safeSendMessage(chatId, `✅ Alias "${alias}" disimpan ke "${target}".`, { reply_to_message_id: msg.message_id });
+  return true;
+}
+
+async function handleRiwayat(chatId, userId, cmd, args, msg) {
+  if (cmd !== '/riwayat') return false;
+  const result = searchConversationHistory(userId, args);
+  await sendChunkedMessage(chatId, `🧾 Riwayat percakapan:\n\n${result}`, { reply_to_message_id: msg.message_id });
+  return true;
+}
+
+async function handleDigest(chatId, userId, cmd, args, msg) {
+  if (cmd !== '/digest') return false;
+
+  const u = ensureUser(userId);
+  const parts = cleanupSpaces(args).split(' ').filter(Boolean);
+  const action = safeLower(parts[0] || '');
+
+  if (action === 'on') {
+    u.digest.enabled = true;
+    if (parts[1] && /^\d{2}:\d{2}$/.test(parts[1])) u.digest.time = parts[1];
+    await persist();
+    scheduleDigestJob(userId);
+    await safeSendMessage(chatId, `✅ Digest diaktifkan. Jam: ${u.digest.time}`, { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  if (action === 'off') {
+    u.digest.enabled = false;
+    if (digestJobs.has(userId)) {
+      try { digestJobs.get(userId).cancel(); } catch (_) {}
+      digestJobs.delete(userId);
+    }
+    await persist();
+    await safeSendMessage(chatId, '✅ Digest dimatikan.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  if (action === 'now') {
+    const summary = await generateDigestForUser(userId);
+    await sendChunkedMessage(chatId, `🧾 Digest sekarang:\n\n${summary}`, { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  if (/^\d{2}:\d{2}$/.test(action)) {
+    u.digest.enabled = true;
+    u.digest.time = action;
+    await persist();
+    scheduleDigestJob(userId);
+    await safeSendMessage(chatId, `✅ Jam digest disetel ke ${action}.`, { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  await safeSendMessage(chatId, 'Format: /digest on [HH:MM] | off | HH:MM | now', { reply_to_message_id: msg.message_id });
+  return true;
+}
+
+async function handleModeration(chatId, userId, cmd, args, msg) {
+  if (cmd === '/antispam') {
+    const u = ensureUser(userId);
+    const v = safeLower(args).trim();
+    if (v === 'on' || v === 'off') {
+      u.moderation.antispam = v === 'on';
+      await persist();
+      await safeSendMessage(chatId, `✅ Antispam: ${v}`, { reply_to_message_id: msg.message_id });
+    } else {
+      await safeSendMessage(chatId, 'Format: /antispam on | off', { reply_to_message_id: msg.message_id });
+    }
+    return true;
+  }
+
+  if (cmd === '/welcome') {
+    const u = ensureUser(userId);
+    const v = safeLower(args).trim();
+    if (v === 'on' || v === 'off') {
+      u.moderation.welcome = v === 'on';
+      await persist();
+      await safeSendMessage(chatId, `✅ Welcome message: ${v}`, { reply_to_message_id: msg.message_id });
+    } else {
+      await safeSendMessage(chatId, 'Format: /welcome on | off', { reply_to_message_id: msg.message_id });
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function handleFileCommands(chatId, userId, cmd, args, msg) {
+  if (cmd === '/ringkasfile') {
+    if (!msg.reply_to_message?.document) {
+      await safeSendMessage(chatId, 'Balas pesan file lalu pakai /ringkasfile.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+    return await handleDocumentSmart(chatId, userId, msg.reply_to_message);
+  }
+
+  if (cmd === '/tanyafile') {
+    const query = args.trim();
+    if (!query) {
+      await safeSendMessage(chatId, 'Format: /tanyafile pertanyaan', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+
+    const fileText = ensureUser(userId).lastFileText;
+    if (!fileText) {
+      await safeSendMessage(chatId, 'Belum ada file yang tersimpan di sesi ini.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+
+    const answer = await askAI(
+      getSystemPrompt(userId),
+      `Jawab berdasarkan isi file berikut.\n\nPertanyaan: ${query}\n\nIsi file:\n${fileText.slice(0, 20000)}`,
+      { userId, question: query, allowSearch: false, temperature: 0.2, maxTokens: 700 }
+    );
+
+    await sendChunkedMessage(chatId, `📄 Jawaban dari file:\n\n${answer}`, { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  return false;
+}
+
+async function handleDocumentSmart(chatId, userId, msg) {
+  const doc = msg.document;
+  if (!doc) return false;
+
+  const fileName = String(doc.file_name || 'file').toLowerCase();
+  const mime = String(doc.mime_type || '');
+
+  const fileInfo = await telegramPost('getFile', { file_id: doc.file_id });
+  const filePath = fileInfo.data?.result?.file_path;
+  if (!filePath) {
+    await safeSendMessage(chatId, 'Gagal mengambil file dari Telegram.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+  const fileRes = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 });
+  const buffer = Buffer.from(fileRes.data);
+
+  let text = '';
+
+  if (mime === 'application/pdf' || fileName.endsWith('.pdf')) {
+    if (pdfParseLib) {
+      try {
+        const data = await pdfParseLib(buffer);
+        text = String(data.text || '');
+      } catch (e) {
+        text = '';
+      }
+    }
+  } else if (
+    mime.startsWith('text/') ||
+    fileName.endsWith('.txt') ||
+    fileName.endsWith('.md') ||
+    fileName.endsWith('.json') ||
+    fileName.endsWith('.csv') ||
+    fileName.endsWith('.xml') ||
+    fileName.endsWith('.log') ||
+    fileName.endsWith('.js') ||
+    fileName.endsWith('.ts') ||
+    fileName.endsWith('.py') ||
+    fileName.endsWith('.html') ||
+    fileName.endsWith('.css')
+  ) {
+    text = buffer.toString('utf-8');
+  }
+
+  const u = ensureUser(userId);
+  u.lastFileName = fileName;
+  u.lastFileText = text ? text.slice(0, 50000) : '';
+  await persist();
+
+  const caption = String(msg.caption || '').toLowerCase();
+  const wantsSummary = caption.includes('ringkas') || caption.includes('summary') || caption.includes('tanya') || caption.includes('jelaskan');
+
+  if (!text.trim()) {
+    await safeSendMessage(
+      chatId,
+      `Aku menerima file "${fileName}", tapi belum bisa membaca isinya otomatis.\nCoba PDF/text biasa, atau tambahkan caption seperti "ringkas" lalu kirim lagi.`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return true;
+  }
+
+  if (wantsSummary) {
+    const summary = await askAI(
+      getSystemPrompt(userId),
+      `Ringkas isi file ini dalam bahasa Indonesia yang jelas dan singkat.\n\nNama file: ${fileName}\nIsi:\n${text.slice(0, 15000)}`,
+      { userId, question: `ringkas file ${fileName}`, allowSearch: false, temperature: 0.2, maxTokens: 700 }
+    );
+    await sendChunkedMessage(chatId, `📄 Ringkasan file:\n\n${summary}`, { reply_to_message_id: msg.message_id });
+  } else {
+    await safeSendMessage(
+      chatId,
+      `File "${fileName}" sudah kubaca.\nKalau mau, balas file itu dengan /ringkasfile atau /tanyafile pertanyaan.`,
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+
+  return true;
+}
+
+async function handleHelp(chatId, msg) {
+  const help =
+`/start - mulai
+/help - bantuan
+/stats - statistik
+/rollback - hapus aturan terakhir
+/feedback - log A/B
+/plugins - daftar plugin
+/reloadplugins - muat ulang plugin
+/summary atau /memori - ringkasan memori
+/image <deskripsi> - buat gambar
+/hitung <expr> - kalkulator
+/jam [lokasi]
+/tanggal - tanggal hari ini
+/cuaca <kota>
+/lokasi <tempat>
+/cari <topik>
+/setname <nama> - ganti nama bot
+/savepref k = v - simpan preferensi
+/mode kerja | santai | auto
+/alias nama_alias = /command
+/riwayat kata
+/digest on [HH:MM] | off | now
+/antispam on | off
+/welcome on | off
+/koreksi Q | A - ajari bot
+
+Fitur:
+- /mood
+- /remind YYYY-MM-DD HH:MM pesan
+- /todo
+- /add <tugas>
+- /done <nomor>
+- /cleartodo
+- /quiz <pertanyaan>
+- /poll <pertanyaan>
+- /kick (balas pesan) [grup]
+- /pin (balas pesan) [grup]
+- /resize widthxheight (balas foto)
+- /sticker (balas foto)
+- /learn <teks>
+- /askkb <pertanyaan>
+- /auth
+- /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM
+- /ringkasfile (balas file)
+- /tanyafile pertanyaan
+
+Kamu juga bisa langsung pakai bahasa alami:
+- "Tambah event rapat besok jam 10"
+- "Tambah tugas beli susu"
+- "Cuaca di Bandung"
+- "Jam berapa di New York"
+- "Gambar kucing lucu"
+- "Cari lalu rangkum tentang AI terbaru"`;
+  await sendChunkedMessage(chatId, help, { reply_to_message_id: msg.message_id });
+}
+
+function isUnknownCommand(cmd) {
+  const known = new Set([
+    '/start', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
+    '/jam', '/tanggal', '/cuaca', '/lokasi', '/cari', '/setname', '/koreksi',
+    '/mood', '/remind', '/todo', '/add', '/done', '/cleartodo', '/quiz', '/poll',
+    '/kick', '/pin', '/resize', '/sticker', '/learn', '/askkb', '/auth', '/addevent',
+    '/savepref', '/plugins', '/summary', '/memori', '/reloadplugins',
+    '/mode', '/alias', '/riwayat', '/digest', '/antispam', '/welcome',
+    '/ringkasfile', '/tanyafile'
+  ]);
+  return cmd && !known.has(cmd);
+}
+
+async function handleTools(msgText, userId = '0') {
+  const low = safeLower(msgText);
+  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) && (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
+
+  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
+    return getCurrentDate();
+  }
+
+  if (isTimeQuestion) {
+    let q = low.replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ').replace(/\s+/g, ' ').trim();
+    q = q || 'jakarta';
+    return getCurrentTime(q);
+  }
+
+  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
+    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
+    if (expr) return calculate(expr);
+  }
+
+  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
+    const q = String(msgText || '').replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '').trim();
+    return q ? await searchLocation(q) : 'Sebutkan tempat';
+  }
+
+  if (low.includes('cuaca')) {
+    const city = String(msgText || '').replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '').trim();
+    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
+  }
+
+  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita', 'ringkas', 'rangkum', 'summary'];
+  if (searchKw.some(k => low.includes(k))) {
+    let q = String(msgText || '');
+    searchKw.forEach(k => {
+      q = q.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
+    });
+    q = q.trim();
+    return q ? await summarizeSearchWithRefs(q, userId, getSystemPrompt(userId)) : 'Apa yang ingin dicari?';
+  }
+
+  return null;
+}
+
+async function handleSettings(chatId, userId, cmd, args, msg) {
+  const u = ensureUser(userId);
+
+  if (cmd === '/setname') {
+    const newName = args.trim();
+    if (newName && newName.length < 50) {
+      u.botName = newName;
+      await persist();
+      await safeSendMessage(chatId, `✅ Namaku sekarang "${newName}".`, { reply_to_message_id: msg.message_id });
+    } else {
+      await safeSendMessage(chatId, '❌ Nama tidak valid.', { reply_to_message_id: msg.message_id });
+    }
+    return true;
+  }
+
+  if (cmd === '/savepref') {
+    const [k, ...rest] = args.split('=').map(s => s.trim());
+    const v = rest.join('=').trim();
+    if (!k || !v) {
+      await safeSendMessage(chatId, 'Format: /savepref kunci = nilai', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+    u.preferences[k] = v;
+    await persist();
+    await safeSendMessage(chatId, `✅ Preferensi disimpan: ${k} = ${v}`, { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  return false;
+}
+
+async function handleCalibration(chatId, userId, cmd, args, msg) {
+  if (cmd === '/koreksi') {
+    const parts = args.split('|');
+    if (parts.length < 2) {
+      await safeSendMessage(chatId, 'Format: /koreksi pertanyaan | jawaban_benar', { reply_to_message_id: msg.message_id });
+    } else {
+      const trigger = parts[0].trim();
+      const answer = parts.slice(1).join('|').trim();
+      if (!answer || answer.length < 3) {
+        await safeSendMessage(chatId, '❌ Jawaban terlalu pendek.', { reply_to_message_id: msg.message_id });
+      } else {
+        lessons.rules.push({ trigger, answer, source: 'user', timestamp: nowMs() });
+        if (lessons.rules.length > botSettings.maxRules) lessons.rules.shift();
+        await persist();
+        await saveNlpPattern(userId, trigger, 'CUSTOM_RULE', { answer });
+        await safeSendMessage(chatId, '✅ Terima kasih, saya belajar.', { reply_to_message_id: msg.message_id });
+      }
+    }
+    return true;
+  }
+
+  if (cmd === '/rollback') {
+    if (lessons.rules.length) {
+      lessons.rules.pop();
+      await persist();
+      await safeSendMessage(chatId, '🗑️ Aturan terakhir dihapus.', { reply_to_message_id: msg.message_id });
+    } else {
+      await safeSendMessage(chatId, 'Tidak ada aturan.', { reply_to_message_id: msg.message_id });
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function handleStats(chatId, userId, msg) {
+  const mem = process.memoryUsage();
+  const u = ensureUser(userId);
+  const msgText =
+`Uptime: ${Math.floor(process.uptime() / 60)} menit
+Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB
+Aturan: ${lessons.rules.length}
+Histori chat: ${shortMemory.length}
+Pengetahuan: ${knowledgeBase.length}
+Reminder aktif: ${(u.reminders || []).length}
+Todo aktif: ${(u.todos || []).filter(x => !x.done).length}
+Plugin aktif: ${pluginModules.length}`;
+  await safeSendMessage(chatId, msgText, { reply_to_message_id: msg.message_id });
+}
+
+async function handleFeedback(chatId, msg) {
+  const last = abLog.slice(-5).map(l => `${l.style}: ${String(l.question || '').slice(0, 30)}...`).join('\n');
+  await safeSendMessage(chatId, `Feedback terakhir:\n${last || 'Belum ada'}`, { reply_to_message_id: msg.message_id });
+}
+
+async function handleImage(chatId, args, msg) {
+  const prompt = args.trim();
+  if (!prompt) {
+    await safeSendMessage(chatId, 'Tulis deskripsi gambarnya dulu.', { reply_to_message_id: msg.message_id });
+    return;
+  }
+  const img = await generateImage(prompt);
+  const ok = await sendPhotoUrl(chatId, img, `✨ ${prompt}`);
+  if (!ok) await safeSendMessage(chatId, '❌ Gagal membuat gambar.', { reply_to_message_id: msg.message_id });
+}
+
+async function handleAuth(chatId, userId, msg) {
+  if (msg.chat.type !== 'private') {
+    await safeSendMessage(chatId, 'Untuk keamanan, gunakan /auth di chat pribadi dengan bot ini.');
+    return;
+  }
+  if (!googleLib || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    await safeSendMessage(chatId, '❌ Fitur Google Calendar belum dikonfigurasi atau package googleapis belum terpasang.');
+    return;
+  }
+  const authUrl = getAuthUrl(userId);
+  if (!authUrl) {
+    await safeSendMessage(chatId, '❌ Gagal membuat link autentikasi.');
+    return;
+  }
+  await safeSendMessage(chatId, `🔐 Klik tautan untuk autentikasi Google Calendar:\n${authUrl}\n\nSetelah login, kamu akan diarahkan kembali.`);
+}
+
+async function handleAddEvent(chatId, userId, args, msg) {
+  const calendar = await getCalendarClient(userId);
+  if (!calendar) {
+    await safeSendMessage(chatId, '❌ Belum autentikasi. Gunakan /auth dulu.', { reply_to_message_id: msg.message_id });
+    return;
+  }
+  const parts = args.split('|');
+  if (parts.length < 3) {
+    await safeSendMessage(chatId, 'Format: /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM', { reply_to_message_id: msg.message_id });
+    return;
+  }
+  const summary = parts[0].trim();
+  const startDateTime = parseFlexibleDateTime(parts[1].trim(), '09:00');
+  const endDateTime = parseFlexibleDateTime(parts[2].trim(), '10:00');
+  if (!isValidDate(startDateTime) || !isValidDate(endDateTime)) {
+    await safeSendMessage(chatId, 'Format tanggal/waktu salah.', { reply_to_message_id: msg.message_id });
+    return;
+  }
+  try {
+    await calendar.events.insert({
+      calendarId: 'primary',
+      resource: {
+        summary,
+        start: { dateTime: startDateTime.toISOString(), timeZone: 'Asia/Jakarta' },
+        end: { dateTime: endDateTime.toISOString(), timeZone: 'Asia/Jakarta' }
+      }
+    });
+    await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    await safeSendMessage(chatId, '❌ Gagal menambahkan event.', { reply_to_message_id: msg.message_id });
+  }
+}
+
+async function handleHelp(chatId, msg) {
+  const help =
+`/start - mulai
+/help - bantuan
+/stats - statistik
+/rollback - hapus aturan terakhir
+/feedback - log A/B
+/plugins - daftar plugin
+/reloadplugins - muat ulang plugin
+/summary atau /memori - ringkasan memori
+/image <deskripsi> - buat gambar
+/hitung <expr> - kalkulator
+/jam [lokasi]
+/tanggal - tanggal hari ini
+/cuaca <kota>
+/lokasi <tempat>
+/cari <topik>
+/setname <nama> - ganti nama bot
+/savepref k = v - simpan preferensi
+/mode kerja | santai | auto
+/alias nama_alias = /command
+/riwayat kata
+/digest on [HH:MM] | off | now
+/antispam on | off
+/welcome on | off
+/koreksi Q | A - ajari bot
+
+Fitur:
+- /mood
+- /remind YYYY-MM-DD HH:MM pesan
+- /todo
+- /add <tugas>
+- /done <nomor>
+- /cleartodo
+- /quiz <pertanyaan>
+- /poll <pertanyaan>
+- /kick (balas pesan) [grup]
+- /pin (balas pesan) [grup]
+- /resize widthxheight (balas foto)
+- /sticker (balas foto)
+- /learn <teks>
+- /askkb <pertanyaan>
+- /auth
+- /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM
+- /ringkasfile (balas file)
+- /tanyafile pertanyaan
+
+Kamu juga bisa langsung pakai bahasa alami:
+- "Tambah event rapat besok jam 10"
+- "Tambah tugas beli susu"
+- "Cuaca di Bandung"
+- "Jam berapa di New York"
+- "Gambar kucing lucu"
+- "Cari lalu rangkum tentang AI terbaru"`;
+  await sendChunkedMessage(chatId, help, { reply_to_message_id: msg.message_id });
+}
+
+function isUnknownCommand(cmd) {
+  const known = new Set([
+    '/start', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
+    '/jam', '/tanggal', '/cuaca', '/lokasi', '/cari', '/setname', '/koreksi',
+    '/mood', '/remind', '/todo', '/add', '/done', '/cleartodo', '/quiz', '/poll',
+    '/kick', '/pin', '/resize', '/sticker', '/learn', '/askkb', '/auth', '/addevent',
+    '/savepref', '/plugins', '/summary', '/memori', '/reloadplugins',
+    '/mode', '/alias', '/riwayat', '/digest', '/antispam', '/welcome',
+    '/ringkasfile', '/tanyafile'
+  ]);
+  return cmd && !known.has(cmd);
+}
+
+async function handleTools(msgText, userId = '0') {
+  const low = safeLower(msgText);
+  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) && (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
+
+  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
+    return getCurrentDate();
+  }
+
+  if (isTimeQuestion) {
+    let q = low.replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ').replace(/\s+/g, ' ').trim();
+    q = q || 'jakarta';
+    return getCurrentTime(q);
+  }
+
+  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
+    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
+    if (expr) return calculate(expr);
+  }
+
+  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
+    const q = String(msgText || '').replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '').trim();
+    return q ? await searchLocation(q) : 'Sebutkan tempat';
+  }
+
+  if (low.includes('cuaca')) {
+    const city = String(msgText || '').replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '').trim();
+    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
+  }
+
+  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita', 'ringkas', 'rangkum', 'summary'];
+  if (searchKw.some(k => low.includes(k))) {
+    let q = String(msgText || '');
+    searchKw.forEach(k => {
+      q = q.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
+    });
+    q = q.trim();
+    return q ? await summarizeSearchWithRefs(q, userId, getSystemPrompt(userId)) : 'Apa yang ingin dicari?';
+  }
+
+  return null;
+}
+
+async function loadPlugins() {
+  pluginModules = [];
+  pluginCommandMap = new Map();
+  pluginMessageHooks = [];
+
+  const pluginDir = path.join(FILE_DIR, 'plugins');
+  if (!fs.existsSync(pluginDir)) return { count: 0 };
+
+  const files = fs.readdirSync(pluginDir).filter(f => f.endsWith('.js'));
+  for (const file of files) {
+    const pluginPath = path.join(pluginDir, file);
+    try {
+      delete require.cache[require.resolve(pluginPath)];
+      const plugin = require(pluginPath);
+      if (!plugin) continue;
+
+      const name = plugin.name || path.basename(file, '.js');
+      pluginModules.push({ name, ...plugin });
+
+      if (plugin.commands && typeof plugin.commands === 'object') {
+        for (const [cmd, handler] of Object.entries(plugin.commands)) {
+          pluginCommandMap.set(String(cmd).toLowerCase(), { plugin: name, handler });
+        }
+      }
+
+      if (typeof plugin.onMessage === 'function') {
+        pluginMessageHooks.push({ plugin: name, handler: plugin.onMessage });
+      }
+    } catch (err) {
+      console.error(`Plugin gagal dimuat ${file}:`, err.message);
+    }
+  }
+
+  return { count: pluginModules.length };
+}
+
+async function handlePluginCommand(chatId, userId, cmd, args, msg, text) {
+  const found = pluginCommandMap.get(String(cmd || '').toLowerCase());
+  if (!found) return false;
+
+  try {
+    const result = await found.handler({
+      chatId,
+      userId,
+      cmd,
+      args,
+      msg,
+      text,
+      bot: {
+        telegramPost,
+        safeSendMessage,
+        sendChunkedMessage,
+        sendStreamingAnswer,
+        askAI,
+        searchWebTavily,
+        searchWebTavilyRaw,
+        summarizeSearchWithRefs,
+        getWeather,
+        searchLocation,
+        generateImage,
+        ensureUser,
+        persist,
+        getSystemPrompt
+      }
+    });
+
+    if (typeof result === 'string' && result.trim()) {
+      await sendChunkedMessage(chatId, result, { reply_to_message_id: msg.message_id });
+    } else if (result && typeof result === 'object' && result.text) {
+      await sendChunkedMessage(chatId, result.text, { reply_to_message_id: msg.message_id });
+    }
+
+    return true;
+  } catch (err) {
+    console.error(`Plugin command error [${found.plugin} ${cmd}]:`, err.message);
+    await safeSendMessage(chatId, '❌ Plugin error.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+}
+
+async function saveNlpPattern(userId, originalQuestion, correctedIntent, correctedParams) {
+  const u = ensureUser(userId);
+  u.nlpPatterns.push({
+    question: String(originalQuestion || '').toLowerCase(),
+    intent: correctedIntent,
+    params: correctedParams,
+    timestamp: nowMs()
+  });
+  if (u.nlpPatterns.length > 100) u.nlpPatterns.shift();
+  await persist();
+}
+
+async function askClarification(chatId, userId, originalText, msg) {
+  await safeSendMessage(chatId, `🤔 Maaf, aku kurang paham dengan:\n"${originalText}"\n\nCoba tulis lebih jelas, misalnya:\n- Cari dan rangkum AI agent terbaru\n- Tambah event rapat besok jam 10\n- Tambah tugas beli susu\n- Cuaca di Bandung\n- Ingatkan saya besok jam 8\n- Hitung 25*4\n- Jam berapa di New York\n- Gambar kucing lucu`, { reply_to_message_id: msg.message_id });
+  const u = ensureUser(userId);
+  u.awaitingClarification = originalText;
+  u.awaitingClarificationAt = nowMs();
+  await persist();
+}
+
 function heuristicIntent(userMessage) {
   const q = safeLower(userMessage).trim();
   if (!q) return { intent: 'NONE', params: {} };
@@ -1394,26 +2368,6 @@ Contoh:
   }
 }
 
-async function saveNlpPattern(userId, originalQuestion, correctedIntent, correctedParams) {
-  const u = ensureUser(userId);
-  u.nlpPatterns.push({
-    question: String(originalQuestion || '').toLowerCase(),
-    intent: correctedIntent,
-    params: correctedParams,
-    timestamp: nowMs()
-  });
-  if (u.nlpPatterns.length > 100) u.nlpPatterns.shift();
-  await persist();
-}
-
-async function askClarification(chatId, userId, originalText, msg) {
-  await safeSendMessage(chatId, `🤔 Maaf, aku kurang paham dengan:\n"${originalText}"\n\nCoba tulis lebih jelas, misalnya:\n- Cari dan rangkum AI agent terbaru\n- Tambah event rapat besok jam 10\n- Tambah tugas beli susu\n- Cuaca di Bandung\n- Ingatkan saya besok jam 8\n- Hitung 25*4\n- Jam berapa di New York\n- Gambar kucing lucu`, { reply_to_message_id: msg.message_id });
-  const u = ensureUser(userId);
-  u.awaitingClarification = originalText;
-  u.awaitingClarificationAt = nowMs();
-  await persist();
-}
-
 async function executeUniversalIntent(intent, params, chatId, userId, msg, systemPrompt = getSystemPrompt(userId)) {
   const u = ensureUser(userId);
 
@@ -1535,332 +2489,6 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
   }
 }
 
-// ==================== COMMANDS ====================
-async function handleSettings(chatId, userId, cmd, args, msg) {
-  const u = ensureUser(userId);
-
-  if (cmd === '/setname') {
-    const newName = args.trim();
-    if (newName && newName.length < 50) {
-      u.botName = newName;
-      await persist();
-      await safeSendMessage(chatId, `✅ Namaku sekarang "${newName}".`, { reply_to_message_id: msg.message_id });
-    } else {
-      await safeSendMessage(chatId, '❌ Nama tidak valid.', { reply_to_message_id: msg.message_id });
-    }
-    return true;
-  }
-
-  if (cmd === '/savepref') {
-    const [k, ...rest] = args.split('=').map(s => s.trim());
-    const v = rest.join('=').trim();
-    if (!k || !v) {
-      await safeSendMessage(chatId, 'Format: /savepref kunci = nilai', { reply_to_message_id: msg.message_id });
-      return true;
-    }
-    u.preferences[k] = v;
-    await persist();
-    await safeSendMessage(chatId, `✅ Preferensi disimpan: ${k} = ${v}`, { reply_to_message_id: msg.message_id });
-    return true;
-  }
-
-  return false;
-}
-
-async function handleCalibration(chatId, userId, cmd, args, msg) {
-  if (cmd === '/koreksi') {
-    const parts = args.split('|');
-    if (parts.length < 2) {
-      await safeSendMessage(chatId, 'Format: /koreksi pertanyaan | jawaban_benar', { reply_to_message_id: msg.message_id });
-    } else {
-      const trigger = parts[0].trim();
-      const answer = parts.slice(1).join('|').trim();
-      if (!answer || answer.length < 3) {
-        await safeSendMessage(chatId, '❌ Jawaban terlalu pendek.', { reply_to_message_id: msg.message_id });
-      } else {
-        lessons.rules.push({ trigger, answer, source: 'user', timestamp: nowMs() });
-        if (lessons.rules.length > botSettings.maxRules) lessons.rules.shift();
-        await persist();
-        await saveNlpPattern(userId, trigger, 'CUSTOM_RULE', { answer });
-        await safeSendMessage(chatId, '✅ Terima kasih, saya belajar.', { reply_to_message_id: msg.message_id });
-      }
-    }
-    return true;
-  }
-
-  if (cmd === '/rollback') {
-    if (lessons.rules.length) {
-      lessons.rules.pop();
-      await persist();
-      await safeSendMessage(chatId, '🗑️ Aturan terakhir dihapus.', { reply_to_message_id: msg.message_id });
-    } else {
-      await safeSendMessage(chatId, 'Tidak ada aturan.', { reply_to_message_id: msg.message_id });
-    }
-    return true;
-  }
-
-  return false;
-}
-
-async function handleStats(chatId, userId, msg) {
-  const mem = process.memoryUsage();
-  const u = ensureUser(userId);
-  const msgText =
-`Uptime: ${Math.floor(process.uptime() / 60)} menit
-Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB
-Aturan: ${lessons.rules.length}
-Histori chat: ${shortMemory.length}
-Pengetahuan: ${knowledgeBase.length}
-Reminder aktif: ${(u.reminders || []).length}
-Todo aktif: ${(u.todos || []).filter(x => !x.done).length}`;
-  await safeSendMessage(chatId, msgText, { reply_to_message_id: msg.message_id });
-}
-
-async function handleFeedback(chatId, msg) {
-  const last = abLog.slice(-5).map(l => `${l.style}: ${String(l.question || '').slice(0, 30)}...`).join('\n');
-  await safeSendMessage(chatId, `Feedback terakhir:\n${last || 'Belum ada'}`, { reply_to_message_id: msg.message_id });
-}
-
-async function handleImage(chatId, args, msg) {
-  const prompt = args.trim();
-  if (!prompt) {
-    await safeSendMessage(chatId, 'Tulis deskripsi gambarnya dulu.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const img = await generateImage(prompt);
-  const ok = await sendPhotoUrl(chatId, img, `✨ ${prompt}`);
-  if (!ok) await safeSendMessage(chatId, '❌ Gagal membuat gambar.', { reply_to_message_id: msg.message_id });
-}
-
-async function handleAuth(chatId, userId, msg) {
-  if (msg.chat.type !== 'private') {
-    await safeSendMessage(chatId, 'Untuk keamanan, gunakan /auth di chat pribadi dengan bot ini.');
-    return;
-  }
-  if (!googleLib || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-    await safeSendMessage(chatId, '❌ Fitur Google Calendar belum dikonfigurasi atau package googleapis belum terpasang.');
-    return;
-  }
-  const authUrl = getAuthUrl(userId);
-  if (!authUrl) {
-    await safeSendMessage(chatId, '❌ Gagal membuat link autentikasi.');
-    return;
-  }
-  await safeSendMessage(chatId, `🔐 Klik tautan untuk autentikasi Google Calendar:\n${authUrl}\n\nSetelah login, kamu akan diarahkan kembali.`);
-}
-
-async function handleAddEvent(chatId, userId, args, msg) {
-  const calendar = await getCalendarClient(userId);
-  if (!calendar) {
-    await safeSendMessage(chatId, '❌ Belum autentikasi. Gunakan /auth dulu.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const parts = args.split('|');
-  if (parts.length < 3) {
-    await safeSendMessage(chatId, 'Format: /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const summary = parts[0].trim();
-  const startDateTime = parseFlexibleDateTime(parts[1].trim(), '09:00');
-  const endDateTime = parseFlexibleDateTime(parts[2].trim(), '10:00');
-  if (!isValidDate(startDateTime) || !isValidDate(endDateTime)) {
-    await safeSendMessage(chatId, 'Format tanggal/waktu salah.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  try {
-    await calendar.events.insert({
-      calendarId: 'primary',
-      resource: {
-        summary,
-        start: { dateTime: startDateTime.toISOString(), timeZone: 'Asia/Jakarta' },
-        end: { dateTime: endDateTime.toISOString(), timeZone: 'Asia/Jakarta' }
-      }
-    });
-    await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
-  } catch (err) {
-    console.error(err.response?.data || err.message);
-    await safeSendMessage(chatId, '❌ Gagal menambahkan event.', { reply_to_message_id: msg.message_id });
-  }
-}
-
-async function handleHelp(chatId, msg) {
-  const help =
-`/start - mulai
-/help - bantuan
-/stats - statistik
-/rollback - hapus aturan terakhir
-/feedback - log A/B
-/image <deskripsi> - buat gambar
-/hitung <expr> - kalkulator
-/jam [lokasi]
-/tanggal - tanggal hari ini
-/cuaca <kota>
-/lokasi <tempat>
-/cari <topik>
-/setname <nama> - ganti nama bot
-/koreksi Q | A - ajari bot
-
-Fitur:
-- /mood
-- /remind YYYY-MM-DD HH:MM pesan
-- /todo
-- /add <tugas>
-- /done <nomor>
-- /cleartodo
-- /quiz <pertanyaan>
-- /poll <pertanyaan>
-- /kick (balas pesan) [grup]
-- /pin (balas pesan) [grup]
-- /resize widthxheight (balas foto)
-- /sticker (balas foto)
-- /learn <teks>
-- /askkb <pertanyaan>
-- /auth
-- /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM
-
-Kamu juga bisa langsung pakai bahasa alami:
-- "Tambah event rapat besok jam 10"
-- "Tambah tugas beli susu"
-- "Cuaca di Bandung"
-- "Jam berapa di New York"
-- "Gambar kucing lucu"`;
-  await sendChunkedMessage(chatId, help, { reply_to_message_id: msg.message_id });
-}
-
-function isUnknownCommand(cmd) {
-  const known = new Set([
-    '/start', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
-    '/jam', '/tanggal', '/cuaca', '/lokasi', '/cari', '/setname', '/koreksi',
-    '/mood', '/remind', '/todo', '/add', '/done', '/cleartodo', '/quiz', '/poll',
-    '/kick', '/pin', '/resize', '/sticker', '/learn', '/askkb', '/auth', '/addevent',
-    '/savepref', '/plugins', '/summary', '/memori', '/reloadplugins'
-  ]);
-  return cmd && !known.has(cmd);
-}
-
-async function handleTools(msgText, userId = '0') {
-  const low = safeLower(msgText);
-  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) && (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
-
-  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
-    return getCurrentDate();
-  }
-
-  if (isTimeQuestion) {
-    let q = low.replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ').replace(/\s+/g, ' ').trim();
-    q = q || 'jakarta';
-    return getCurrentTime(q);
-  }
-
-  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
-    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
-    if (expr) return calculate(expr);
-  }
-
-  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
-    const q = String(msgText || '').replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '').trim();
-    return q ? await searchLocation(q) : 'Sebutkan tempat';
-  }
-
-  if (low.includes('cuaca')) {
-    const city = String(msgText || '').replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '').trim();
-    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
-  }
-
-  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita', 'ringkas', 'rangkum', 'summary'];
-  if (searchKw.some(k => low.includes(k))) {
-    let q = String(msgText || '');
-    searchKw.forEach(k => {
-      q = q.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
-    });
-    q = q.trim();
-    return q ? await summarizeSearchWithRefs(q, userId, getSystemPrompt(userId)) : 'Apa yang ingin dicari?';
-  }
-
-  return null;
-}
-
-// ==================== PLUGINS ====================
-async function loadPlugins() {
-  pluginModules = [];
-  pluginCommandMap = new Map();
-  pluginMessageHooks = [];
-
-  const pluginDir = path.join(FILE_DIR, 'plugins');
-  if (!fs.existsSync(pluginDir)) return { count: 0 };
-
-  const files = fs.readdirSync(pluginDir).filter(f => f.endsWith('.js'));
-  for (const file of files) {
-    const pluginPath = path.join(pluginDir, file);
-    try {
-      delete require.cache[require.resolve(pluginPath)];
-      const plugin = require(pluginPath);
-      if (!plugin) continue;
-
-      const name = plugin.name || path.basename(file, '.js');
-      pluginModules.push({ name, ...plugin });
-
-      if (plugin.commands && typeof plugin.commands === 'object') {
-        for (const [cmd, handler] of Object.entries(plugin.commands)) {
-          pluginCommandMap.set(String(cmd).toLowerCase(), { plugin: name, handler });
-        }
-      }
-
-      if (typeof plugin.onMessage === 'function') {
-        pluginMessageHooks.push({ plugin: name, handler: plugin.onMessage });
-      }
-    } catch (err) {
-      console.error(`Plugin gagal dimuat ${file}:`, err.message);
-    }
-  }
-
-  return { count: pluginModules.length };
-}
-
-async function handlePluginCommand(chatId, userId, cmd, args, msg, text) {
-  const found = pluginCommandMap.get(String(cmd || '').toLowerCase());
-  if (!found) return false;
-
-  try {
-    const result = await found.handler({
-      chatId,
-      userId,
-      cmd,
-      args,
-      msg,
-      text,
-      bot: {
-        telegramPost,
-        safeSendMessage,
-        sendChunkedMessage,
-        sendStreamingAnswer,
-        askAI,
-        searchWebTavily,
-        searchWebTavilyRaw,
-        summarizeSearchWithRefs,
-        getWeather,
-        searchLocation,
-        generateImage,
-        ensureUser,
-        persist,
-        getSystemPrompt
-      }
-    });
-
-    if (typeof result === 'string' && result.trim()) {
-      await sendChunkedMessage(chatId, result, { reply_to_message_id: msg.message_id });
-    } else if (result && typeof result === 'object' && result.text) {
-      await sendChunkedMessage(chatId, result.text, { reply_to_message_id: msg.message_id });
-    }
-
-    return true;
-  } catch (err) {
-    console.error(`Plugin command error [${found.plugin} ${cmd}]:`, err.message);
-    await safeSendMessage(chatId, '❌ Plugin error.', { reply_to_message_id: msg.message_id });
-    return true;
-  }
-}
-
 // ==================== WEBHOOK ====================
 app.get('/health', (req, res) => res.send('OK'));
 
@@ -1920,28 +2548,50 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     }
 
     const u = ensureUser(userId);
+    u.lastChatId = chatId;
     u.msgCount += 1;
     u.lastSeen = nowMs();
     cleanupStaleUserState(u);
+
+    pushChatHistory({ userId, chatId, role: 'user', text: text || msg.caption || '', timestamp: nowMs() });
+    updateUserTags(u, text || msg.caption || '');
+
+    if (!text && msg.document) {
+      const handledDoc = await handleDocumentSmart(chatId, userId, msg);
+      if (handledDoc) return res.sendStatus(200);
+    }
+
+    const modAction = moderationCheckIncoming(msg);
+    if (modAction?.type === 'delete') {
+      try { await telegramPost('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch (_) {}
+      return res.sendStatus(200);
+    }
+    if (modAction?.type === 'welcome') {
+      await safeSendMessage(chatId, modAction.text);
+      return res.sendStatus(200);
+    }
+
     if (u.msgCount % 10 === 0) await persist();
 
-    // Commands
-    if (cmd === '/start') {
+    const resolvedCmd = resolveAlias(userId, cmd);
+
+    if (resolvedCmd === '/start') {
       await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
-    if (cmd === '/help') { await handleHelp(chatId, msg); return res.sendStatus(200); }
-    if (cmd === '/stats') { await handleStats(chatId, userId, msg); return res.sendStatus(200); }
-    if (cmd === '/plugins') {
+
+    if (resolvedCmd === '/help') { await handleHelp(chatId, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/plugins') {
       const list = pluginModules.length ? pluginModules.map(p => `- ${p.name}`).join('\n') : 'Belum ada plugin dimuat.';
       await safeSendMessage(chatId, `🔌 Plugin aktif:\n${list}`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
-    if (cmd === '/summary' || cmd === '/memori') {
+    if (resolvedCmd === '/summary' || resolvedCmd === '/memori') {
       await safeSendMessage(chatId, u.summary ? `🧠 Ringkasan memori:\n${u.summary}` : 'Belum ada ringkasan memori.', { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
-    if (cmd === '/reloadplugins') {
+    if (resolvedCmd === '/reloadplugins') {
       if (!isAdmin(userId)) {
         await safeSendMessage(chatId, '❌ Hanya admin yang boleh reload plugin.', { reply_to_message_id: msg.message_id });
         return res.sendStatus(200);
@@ -1950,33 +2600,45 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       await safeSendMessage(chatId, `✅ Plugin dimuat ulang. Total: ${result.count}`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
     }
-    if (cmd === '/feedback') { await handleFeedback(chatId, msg); return res.sendStatus(200); }
-    if (cmd === '/image') { await handleImage(chatId, args, msg); return res.sendStatus(200); }
-    if (cmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
-    if (cmd === '/jam') { await safeSendMessage(chatId, getCurrentTime(args || 'jakarta'), { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
-    if (cmd === '/hitung') { await safeSendMessage(chatId, args ? calculate(args) : 'Contoh: /hitung 25*4', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
-    if (cmd === '/cuaca') { await safeSendMessage(chatId, args ? await getWeather(args) : 'Contoh: /cuaca Bandung', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
-    if (cmd === '/lokasi') { await safeSendMessage(chatId, args ? await searchLocation(args) : 'Contoh: /lokasi Monas', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
-    if (cmd === '/cari') { await sendChunkedMessage(chatId, args ? await summarizeSearchWithRefs(args, userId, getSystemPrompt(userId)) : 'Contoh: /cari sejarah Jakarta', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
+    if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
+    if (resolvedCmd === '/jam') { await safeSendMessage(chatId, getCurrentTime(args || 'jakarta'), { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
+    if (resolvedCmd === '/hitung') { await safeSendMessage(chatId, args ? calculate(args) : 'Contoh: /hitung 25*4', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
+    if (resolvedCmd === '/cuaca') { await safeSendMessage(chatId, args ? await getWeather(args) : 'Contoh: /cuaca Bandung', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
+    if (resolvedCmd === '/lokasi') { await safeSendMessage(chatId, args ? await searchLocation(args) : 'Contoh: /lokasi Monas', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
+    if (resolvedCmd === '/cari') { await sendChunkedMessage(chatId, args ? await summarizeSearchWithRefs(args, userId, getSystemPrompt(userId)) : 'Contoh: /cari sejarah Jakarta', { reply_to_message_id: msg.message_id }); return res.sendStatus(200); }
 
-    if (await handleSettings(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleCalibration(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleMood(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleReminder(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleTodo(chatId, userId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleQuizPoll(chatId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleGroupManagement(chatId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleImageEdit(chatId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleStickerHint(chatId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handleKnowledge(chatId, cmd, args, msg)) return res.sendStatus(200);
-    if (await handlePluginCommand(chatId, userId, cmd, args, msg, text)) return res.sendStatus(200);
+    if (await handleSettings(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleCalibration(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleMood(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleReminder(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleTodo(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleQuizPoll(chatId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleGroupManagement(chatId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleImageEdit(chatId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleStickerHint(chatId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleKnowledge(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleMode(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleAlias(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleRiwayat(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleDigest(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleModeration(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handleFileCommands(chatId, userId, resolvedCmd, args, msg)) return res.sendStatus(200);
+    if (await handlePluginCommand(chatId, userId, resolvedCmd, args, msg, text)) return res.sendStatus(200);
 
-    if (cmd === '/auth') { await handleAuth(chatId, userId, msg); return res.sendStatus(200); }
-    if (cmd === '/addevent') { await handleAddEvent(chatId, userId, args, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/auth') { await handleAuth(chatId, userId, msg); return res.sendStatus(200); }
+    if (resolvedCmd === '/addevent') { await handleAddEvent(chatId, userId, args, msg); return res.sendStatus(200); }
 
-    if (isUnknownCommand(cmd)) {
+    if (isUnknownCommand(resolvedCmd)) {
       await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
+    }
+
+    if (u.awaitingClarification && !resolvedCmd) {
+      delete u.awaitingClarification;
+      delete u.awaitingClarificationAt;
+      await persist();
     }
 
     const toolRes = await handleTools(text, userId);
@@ -1989,6 +2651,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     }
 
     const nlpResult = await universalNLP(text, userId);
+
     if (nlpResult.intent && nlpResult.intent !== 'NONE') {
       const executed = await executeUniversalIntent(nlpResult.intent, nlpResult.params || {}, chatId, userId, msg);
       if (executed) return res.sendStatus(200);
@@ -2016,6 +2679,17 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (!answer || !String(answer).trim()) answer = 'Maaf, aku belum bisa memproses itu.';
     if (calcEntropyScore(answer) < 0.01) answer = 'Maaf, aku belum mendapat jawaban yang cukup jelas.';
 
+    let quality = scoreAnswerQuality(text, answer);
+    if (quality < 0.45 && TAVILY_API_KEY && !resolvedCmd) {
+      try {
+        const webVersion = await summarizeSearchWithRefs(text, userId, systemPrompt);
+        if (webVersion && webVersion.length > answer.length * 0.6) {
+          answer = webVersion;
+          quality = scoreAnswerQuality(text, answer);
+        }
+      } catch (_) {}
+    }
+
     await sendStreamingAnswer(chatId, answer, {
       reply_to_message_id: msg.message_id,
       disable_web_page_preview: true,
@@ -2027,7 +2701,12 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       }
     });
 
+    pushChatHistory({ userId, chatId, role: 'assistant', text: answer, timestamp: nowMs() });
+    updateUserTags(u, answer);
+
     await autoSummarizeMemory(userId);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+
     return res.sendStatus(200);
   } catch (error) {
     console.error('Webhook error:', error);
@@ -2035,23 +2714,139 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   }
 });
 
+// ==================== FILE SMART ====================
+async function handleDocumentSmart(chatId, userId, msg) {
+  const doc = msg.document;
+  if (!doc) return false;
+
+  const fileName = String(doc.file_name || 'file').toLowerCase();
+  const mime = String(doc.mime_type || '');
+
+  const fileInfo = await telegramPost('getFile', { file_id: doc.file_id });
+  const filePath = fileInfo.data?.result?.file_path;
+  if (!filePath) {
+    await safeSendMessage(chatId, 'Gagal mengambil file dari Telegram.', { reply_to_message_id: msg.message_id });
+    return true;
+  }
+
+  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+  const fileRes = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 });
+  const buffer = Buffer.from(fileRes.data);
+
+  let text = '';
+
+  if (mime === 'application/pdf' || fileName.endsWith('.pdf')) {
+    if (pdfParseLib) {
+      try {
+        const data = await pdfParseLib(buffer);
+        text = String(data.text || '');
+      } catch (e) {
+        text = '';
+      }
+    }
+  } else if (
+    mime.startsWith('text/') ||
+    fileName.endsWith('.txt') ||
+    fileName.endsWith('.md') ||
+    fileName.endsWith('.json') ||
+    fileName.endsWith('.csv') ||
+    fileName.endsWith('.xml') ||
+    fileName.endsWith('.log') ||
+    fileName.endsWith('.js') ||
+    fileName.endsWith('.ts') ||
+    fileName.endsWith('.py') ||
+    fileName.endsWith('.html') ||
+    fileName.endsWith('.css')
+  ) {
+    text = buffer.toString('utf-8');
+  }
+
+  const u = ensureUser(userId);
+  u.lastFileName = fileName;
+  u.lastFileText = text ? text.slice(0, 50000) : '';
+  await persist();
+
+  const caption = String(msg.caption || '').toLowerCase();
+  const wantsSummary = caption.includes('ringkas') || caption.includes('summary') || caption.includes('tanya') || caption.includes('jelaskan');
+
+  if (!text.trim()) {
+    await safeSendMessage(
+      chatId,
+      `Aku menerima file "${fileName}", tapi belum bisa membaca isinya otomatis.\nCoba PDF/text biasa, atau tambahkan caption seperti "ringkas" lalu kirim lagi.`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return true;
+  }
+
+  if (wantsSummary) {
+    const summary = await askAI(
+      getSystemPrompt(userId),
+      `Ringkas isi file ini dalam bahasa Indonesia yang jelas dan singkat.\n\nNama file: ${fileName}\nIsi:\n${text.slice(0, 15000)}`,
+      { userId, question: `ringkas file ${fileName}`, allowSearch: false, temperature: 0.2, maxTokens: 700 }
+    );
+    await sendChunkedMessage(chatId, `📄 Ringkasan file:\n\n${summary}`, { reply_to_message_id: msg.message_id });
+  } else {
+    await safeSendMessage(
+      chatId,
+      `File "${fileName}" sudah kubaca.\nKalau mau, balas file itu dengan /ringkasfile atau /tanyafile pertanyaan.`,
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+
+  return true;
+}
+
+// ==================== ERROR HANDLER ====================
+process.on('unhandledRejection', (err) => {
+  console.error('UnhandledRejection:', err);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('UncaughtException:', err);
+});
+
+async function shutdown() {
+  try {
+    console.log('🛑 Shutdown...');
+    await persist().catch(() => {});
+    if (redisClient) {
+      try { await redisClient.quit(); } catch (_) {}
+    }
+    if (server) {
+      try {
+        await new Promise(resolve => server.close(resolve));
+      } catch (_) {}
+    }
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
 // ==================== STARTUP ====================
 async function start() {
   await initRedis();
   await loadAllMemories();
   await loadPlugins();
   await restoreAllReminders();
+  await restoreAllDigests();
 
   const baseUrl = RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : null;
   const webhookUrl = baseUrl ? `${baseUrl}/webhook/${TELEGRAM_TOKEN}` : null;
 
-  server = app.listen(PORT, async () => {
+  server = app.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Server berjalan di port ${PORT}`);
     if (webhookUrl) console.log(`🔗 Webhook URL: ${webhookUrl}`);
 
     if (webhookUrl) {
       try {
-        await telegramPost('setWebhook', { url: webhookUrl, drop_pending_updates: false, allowed_updates: ['message', 'callback_query'] });
+        await telegramPost('setWebhook', {
+          url: webhookUrl,
+          drop_pending_updates: false,
+          allowed_updates: ['message', 'callback_query']
+        });
         console.log('✅ Webhook terpasang.');
       } catch (e) {
         console.error('❌ Gagal set webhook:', e.response?.data || e.message);
@@ -2071,19 +2866,6 @@ setInterval(() => {
     console.warn(`⚠️ Memory tinggi: ${(ratio * 100).toFixed(1)}%`);
   }
 }, 60000);
-
-process.on('unhandledRejection', (err) => console.error('UnhandledRejection:', err));
-process.on('uncaughtException', (err) => console.error('UncaughtException:', err));
-
-process.on('SIGINT', async () => {
-  try { await persist(); } catch (_) {}
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  try { await persist(); } catch (_) {}
-  process.exit(0);
-});
 
 start().catch(err => {
   console.error('❌ Startup gagal:', err);
