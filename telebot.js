@@ -86,7 +86,7 @@ const mistralClient = (MISTRAL_API_KEY && MistralClass)
   ? new MistralClass({ apiKey: MISTRAL_API_KEY })
   : null;
 
-// ==================== UTILS ====================
+// ==================== UTIL ====================
 function nowMs() { return Date.now(); }
 function isValidDate(d) { return d instanceof Date && !isNaN(d.getTime()); }
 function safeLower(text) { return String(text || '').toLowerCase(); }
@@ -124,12 +124,35 @@ function getCommandArgs(text) {
   return i === -1 ? '' : t.slice(i + 1).trim();
 }
 
+function stripCodeFences(text) {
+  return String(text || '')
+    .replace(/```json\s*/gi, '')
+    .replace(/```/g, '')
+    .trim();
+}
+
 function extractJsonObject(text) {
   if (!text) return null;
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) return null;
   try { return JSON.parse(text.slice(start, end + 1)); } catch (_) { return null; }
+}
+
+function looksLikeIntentJSON(text) {
+  const t = String(text || '');
+  return t.includes('"intent"') && t.includes('"params"');
+}
+
+function cleanAssistantText(text, { allowIntentJson = false } = {}) {
+  let t = stripCodeFences(text);
+
+  if (!allowIntentJson && looksLikeIntentJSON(t)) {
+    const parsed = extractJsonObject(t);
+    if (parsed && parsed.intent) return '';
+  }
+
+  return t.trim();
 }
 
 function simpleDetectLanguage(text) {
@@ -383,7 +406,8 @@ function getSystemPrompt(userId) {
 Gunakan bahasa Indonesia.
 ${getModePrompt(u.mode)}
 Kalau tidak tahu, bilang tidak tahu.
-Jangan mengaku sebagai manusia.`;
+Jangan mengaku sebagai manusia.
+Jangan menampilkan JSON internal, intent, params, atau format sistem ke user.`;
 }
 
 function resolveAlias(userId, cmd) {
@@ -864,20 +888,7 @@ ${sources}`;
   return `${summary}\n\n${refs}`;
 }
 
-async function generateImage(prompt) {
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
-}
-
-function getCachedAnswer(question) {
-  const q = safeLower(question);
-  const sortedRules = [...(lessons.rules || [])].sort((a, b) => String(b.trigger || '').length - String(a.trigger || '').length);
-  const match = sortedRules.find(r => {
-    const trig = safeLower(r.trigger || '').trim();
-    return trig && q.includes(trig);
-  });
-  return match ? match.answer : null;
-}
-
+// ==================== AI ====================
 async function askMistral(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800) {
   if (!mistralClient) throw new Error('MISTRAL tidak diset atau package belum ada');
   const response = await mistralClient.chat.complete({
@@ -931,21 +942,26 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     temperature = 0.7,
     maxTokens = 800,
     allowSearch = false,
-    allowCache = true
+    allowCache = true,
+    allowRawJson = false
   } = opts;
 
   const cacheKey = getCacheKey(userId, question);
   const cached = aiCache.get(cacheKey);
-  if (allowCache && cached && nowMs() - cached.ts < 2 * 60 * 1000) return cached.answer;
+  if (allowCache && cached && nowMs() - cached.ts < 2 * 60 * 1000) {
+    return allowRawJson ? String(cached.answer || '').trim() : cleanAssistantText(cached.answer);
+  }
 
   const modelOrder = chooseAIModel(question, intent) === 'mistral' ? ['mistral', 'groq'] : ['groq', 'mistral'];
   let lastErr = null;
 
   for (const m of modelOrder) {
     try {
-      const answer = m === 'mistral'
+      const raw = m === 'mistral'
         ? await askMistral(systemPrompt, userPrompt, temperature, maxTokens)
         : await askGroq(systemPrompt, userPrompt, temperature, maxTokens);
+
+      const answer = allowRawJson ? String(raw || '').trim() : cleanAssistantText(raw);
       if (answer && answer.trim()) {
         aiCache.set(cacheKey, { ts: nowMs(), answer });
         return answer;
@@ -960,9 +976,15 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     try {
       const searchRes = await searchWebTavily(question);
       if (searchRes && !searchRes.includes('Error')) {
-        const learned = await askGroq(systemPrompt, `${question}\n\nHasil pencarian web:\n${searchRes}\n\nJawab singkat, akurat, dan sebutkan poin penting.`, 0.4, maxTokens);
-        aiCache.set(cacheKey, { ts: nowMs(), answer: learned });
-        return learned;
+        const raw = await askGroq(
+          systemPrompt,
+          `${question}\n\nHasil pencarian web:\n${searchRes}\n\nJawab singkat, akurat, dan sebutkan poin penting.`,
+          0.4,
+          maxTokens
+        );
+        const answer = allowRawJson ? String(raw || '').trim() : cleanAssistantText(raw);
+        aiCache.set(cacheKey, { ts: nowMs(), answer });
+        return answer;
       }
     } catch (e) {
       lastErr = e;
@@ -992,7 +1014,7 @@ async function getAnswerWithAB(question, userId, systemPrompt, intent = null) {
 
 async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
   const cached = getCachedAnswer(question);
-  if (cached) return cached;
+  if (cached) return cleanAssistantText(cached) || cached;
 
   const qLower = safeLower(question);
   const needsFresh = ['terbaru', 'berita', 'update', 'sekarang', 'harga', 'skor', 'trend'].some(k => qLower.includes(k));
@@ -1010,10 +1032,13 @@ async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
           `${question}\n\nHasil pencarian web:\n${searchRes}\n\nJawab singkat, akurat, dan sebutkan poin penting.`,
           { userId, question, intent, allowSearch: false, temperature: 0.4 }
         );
+
         lessons.rules.push({ trigger: question.slice(0, 50), answer: learned, source: 'auto', timestamp: nowMs() });
         if (lessons.rules.length > botSettings.maxRules) lessons.rules.shift();
         await persist();
-        return learned;
+
+        const cleanedLearned = cleanAssistantText(learned);
+        return cleanedLearned || 'Maaf, aku belum bisa merangkum hasil itu dengan jelas.';
       }
     } catch (_) {}
   }
@@ -1021,7 +1046,9 @@ async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
   shortMemory.push({ userId, q: question, a: answer, timestamp: nowMs() });
   if (shortMemory.length > botSettings.maxShortMemory) shortMemory.shift();
   await persist();
-  return answer;
+
+  const cleaned = cleanAssistantText(answer);
+  return cleaned || 'Maaf, aku belum bisa memproses itu.';
 }
 
 async function autoSummarizeMemory(userId, force = false) {
@@ -1734,41 +1761,6 @@ async function handleModeration(chatId, userId, cmd, args, msg) {
   return false;
 }
 
-async function handleFileCommands(chatId, userId, cmd, args, msg) {
-  if (cmd === '/ringkasfile') {
-    if (!msg.reply_to_message?.document) {
-      await safeSendMessage(chatId, 'Balas pesan file lalu pakai /ringkasfile.', { reply_to_message_id: msg.message_id });
-      return true;
-    }
-    return await handleDocumentSmart(chatId, userId, msg.reply_to_message);
-  }
-
-  if (cmd === '/tanyafile') {
-    const query = args.trim();
-    if (!query) {
-      await safeSendMessage(chatId, 'Format: /tanyafile pertanyaan', { reply_to_message_id: msg.message_id });
-      return true;
-    }
-
-    const fileText = ensureUser(userId).lastFileText;
-    if (!fileText) {
-      await safeSendMessage(chatId, 'Belum ada file yang tersimpan di sesi ini.', { reply_to_message_id: msg.message_id });
-      return true;
-    }
-
-    const answer = await askAI(
-      getSystemPrompt(userId),
-      `Jawab berdasarkan isi file berikut.\n\nPertanyaan: ${query}\n\nIsi file:\n${fileText.slice(0, 20000)}`,
-      { userId, question: query, allowSearch: false, temperature: 0.2, maxTokens: 700 }
-    );
-
-    await sendChunkedMessage(chatId, `📄 Jawaban dari file:\n\n${answer}`, { reply_to_message_id: msg.message_id });
-    return true;
-  }
-
-  return false;
-}
-
 async function handleDocumentSmart(chatId, userId, msg) {
   const doc = msg.document;
   if (!doc) return false;
@@ -1948,6 +1940,7 @@ async function handleTools(msgText, userId = '0') {
   return null;
 }
 
+// ==================== PLUGINS ====================
 async function loadPlugins() {
   pluginModules = [];
   pluginCommandMap = new Map();
@@ -2138,7 +2131,11 @@ Intent yang tersedia:
 Pesan user:
 "${userMessage}"${patternHint}
 
-Output harus JSON saja, tanpa teks lain.
+Aturan:
+- Output harus JSON saja.
+- Jangan tambahkan markdown, penjelasan, atau teks lain.
+- Jangan tampilkan code fence.
+
 Contoh:
 {"intent":"TAMBAH_TUGAS","params":{"task":"beli susu"}}
 {"intent":"CUACA","params":{"city":"Bandung"}}
@@ -2146,11 +2143,13 @@ Contoh:
 
   try {
     const response = await askAI(
-      'Kamu hanya boleh mengeluarkan JSON valid untuk klasifikasi intent.',
+      'Kamu hanya boleh mengeluarkan JSON valid untuk klasifikasi intent. Tidak boleh ada teks lain.',
       prompt,
-      { userId, question: userMessage, allowSearch: false, temperature: 0.2, maxTokens: 300 }
+      { userId, question: userMessage, allowSearch: false, temperature: 0.2, maxTokens: 300, allowCache: false, allowRawJson: true }
     );
-    const parsed = extractJsonObject(response);
+
+    const cleaned = stripCodeFences(response);
+    const parsed = extractJsonObject(cleaned);
     if (!parsed || !parsed.intent) return { intent: 'NONE', params: {} };
 
     const validIntents = [
@@ -2307,7 +2306,7 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
   }
 }
 
-// ==================== HELPERS FOR COMMAND HANDLERS ====================
+// ==================== HELPERS ====================
 async function handlePluginsList(chatId, msg) {
   const list = pluginModules.length ? pluginModules.map(p => `- ${p.name}`).join('\n') : 'Belum ada plugin dimuat.';
   await safeSendMessage(chatId, `🔌 Plugin aktif:\n${list}`, { reply_to_message_id: msg.message_id });
@@ -2415,7 +2414,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     const resolvedCmd = resolveAlias(userId, cmd);
 
-    // Commands
     if (resolvedCmd === '/start') {
       await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
@@ -2507,7 +2505,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     const nlpResult = await universalNLP(text, userId);
 
-    if (nlpResult.intent && nlpResult.intent !== 'NONE') {
+    if (nlpResult && nlpResult.intent && nlpResult.intent !== 'NONE') {
       const executed = await executeUniversalIntent(nlpResult.intent, nlpResult.params || {}, chatId, userId, msg);
       if (executed) return res.sendStatus(200);
     } else if (isLikelyActionRequest(text)) {
