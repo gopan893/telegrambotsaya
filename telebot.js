@@ -6,7 +6,6 @@ const fsp = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
 
-// Optional dependencies
 let scheduleLib = null;
 let googleLib = null;
 let sharpLib = null;
@@ -148,13 +147,10 @@ function looksLikeIntentJSON(text) {
 
 function sanitizeOutgoingText(text) {
   let t = stripCodeFences(text);
-
-  // Jika model mengeluarkan JSON intent internal, jangan kirim ke user.
   if (looksLikeIntentJSON(t)) {
     const parsed = extractJsonObject(t);
     if (parsed && parsed.intent) return '';
   }
-
   return t.trim();
 }
 
@@ -529,6 +525,22 @@ function moderationCheckIncoming(msg) {
   return false;
 }
 
+function getCachedAnswer(question) {
+  const q = String(question || '').toLowerCase().trim();
+  if (!q) return null;
+
+  const sortedRules = [...(lessons.rules || [])].sort(
+    (a, b) => String(b.trigger || '').length - String(a.trigger || '').length
+  );
+
+  const match = sortedRules.find((r) => {
+    const trig = String(r.trigger || '').toLowerCase().trim();
+    return trig && q.includes(trig);
+  });
+
+  return match ? match.answer : null;
+}
+
 // ==================== STORAGE ====================
 async function initRedis() {
   if (!REDIS_URL || !RedisClass) return;
@@ -896,10 +908,7 @@ ${sources}`;
   );
 
   summary = sanitizeOutgoingText(summary);
-
-  if (!summary) {
-    summary = 'Maaf, aku belum bisa menyusun ringkasan yang bersih dari sumber itu.';
-  }
+  if (!summary) summary = 'Maaf, aku belum bisa menyusun ringkasan yang bersih dari sumber itu.';
 
   const refs = data.results.length
     ? ['Referensi:', ...data.results.map((item, i) => `[${i + 1}] ${String(item.title || `Sumber ${i + 1}`).trim()} — ${String(item.url || '').trim()}`)].join('\n')
@@ -2053,6 +2062,82 @@ async function runPluginMessageHooks(ctx) {
   return null;
 }
 
+async function handlePluginsList(chatId, msg) {
+  const list = pluginModules.length ? pluginModules.map(p => `- ${p.name}`).join('\n') : 'Belum ada plugin dimuat.';
+  await safeSendMessage(chatId, `🔌 Plugin aktif:\n${list}`, { reply_to_message_id: msg.message_id });
+}
+
+async function handleReloadPlugins(chatId, userId, msg) {
+  if (!isAdmin(userId)) {
+    await safeSendMessage(chatId, '❌ Hanya admin yang boleh reload plugin.', { reply_to_message_id: msg.message_id });
+    return;
+  }
+  const result = await loadPlugins();
+  await safeSendMessage(chatId, `✅ Plugin dimuat ulang. Total: ${result.count}`, { reply_to_message_id: msg.message_id });
+}
+
+async function handleSummary(chatId, userId, msg) {
+  const u = ensureUser(userId);
+  await safeSendMessage(chatId, u.summary ? `🧠 Ringkasan memori:\n${u.summary}` : 'Belum ada ringkasan memori.', { reply_to_message_id: msg.message_id });
+}
+
+async function handleUnknownCommand(chatId, msg) {
+  await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
+}
+
+async function handleFileCommands(chatId, userId, cmd, args, msg) {
+  if (cmd === '/ringkasfile') {
+    if (!msg.reply_to_message?.document) {
+      await safeSendMessage(chatId, 'Balas pesan file lalu pakai /ringkasfile.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+    if (typeof handleDocumentSmart !== 'function') {
+      await safeSendMessage(chatId, 'Fitur baca file belum aktif di kode ini.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+    return await handleDocumentSmart(chatId, userId, msg.reply_to_message);
+  }
+
+  if (cmd === '/tanyafile') {
+    const query = String(args || '').trim();
+    if (!query) {
+      await safeSendMessage(chatId, 'Format: /tanyafile pertanyaan', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+
+    const u = ensureUser(userId);
+    const fileText = String(u.lastFileText || '').trim();
+
+    if (!fileText) {
+      await safeSendMessage(chatId, 'Belum ada file yang tersimpan di sesi ini.', { reply_to_message_id: msg.message_id });
+      return true;
+    }
+
+    try {
+      const answer = await askAI(
+        getSystemPrompt(userId),
+        `Jawab berdasarkan isi file berikut.\n\nPertanyaan: ${query}\n\nIsi file:\n${fileText.slice(0, 20000)}`,
+        {
+          userId,
+          question: query,
+          allowSearch: false,
+          temperature: 0.2,
+          maxTokens: 700
+        }
+      );
+
+      await sendChunkedMessage(chatId, `📄 Jawaban dari file:\n\n${answer}`, { reply_to_message_id: msg.message_id });
+    } catch (err) {
+      console.error('handleFileCommands error:', err.message);
+      await safeSendMessage(chatId, '❌ Gagal memproses pertanyaan file.', { reply_to_message_id: msg.message_id });
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 // ==================== NLP ====================
 function heuristicIntent(userMessage) {
   const q = safeLower(userMessage).trim();
@@ -2326,109 +2411,6 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
   }
 }
 
-async function handlePluginsList(chatId, msg) {
-  const list = pluginModules.length ? pluginModules.map(p => `- ${p.name}`).join('\n') : 'Belum ada plugin dimuat.';
-  await safeSendMessage(chatId, `🔌 Plugin aktif:\n${list}`, { reply_to_message_id: msg.message_id });
-}
-
-async function handleReloadPlugins(chatId, userId, msg) {
-  if (!isAdmin(userId)) {
-    await safeSendMessage(chatId, '❌ Hanya admin yang boleh reload plugin.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const result = await loadPlugins();
-  await safeSendMessage(chatId, `✅ Plugin dimuat ulang. Total: ${result.count}`, { reply_to_message_id: msg.message_id });
-}
-
-async function handleSummary(chatId, userId, msg) {
-  const u = ensureUser(userId);
-  await safeSendMessage(chatId, u.summary ? `🧠 Ringkasan memori:\n${u.summary}` : 'Belum ada ringkasan memori.', { reply_to_message_id: msg.message_id });
-}
-
-async function handleUnknownCommand(chatId, msg) {
-  await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
-}
-
-async function handleFileCommands(chatId, userId, cmd, args, msg) {
-  if (cmd === '/ringkasfile') {
-    if (!msg.reply_to_message?.document) {
-      await safeSendMessage(
-        chatId,
-        'Balas pesan file lalu pakai /ringkasfile.',
-        { reply_to_message_id: msg.message_id }
-      );
-      return true;
-    }
-
-    if (typeof handleDocumentSmart !== 'function') {
-      await safeSendMessage(
-        chatId,
-        'Fitur baca file belum aktif di kode ini.',
-        { reply_to_message_id: msg.message_id }
-      );
-      return true;
-    }
-
-    return await handleDocumentSmart(chatId, userId, msg.reply_to_message);
-  }
-
-  if (cmd === '/tanyafile') {
-    const query = String(args || '').trim();
-
-    if (!query) {
-      await safeSendMessage(
-        chatId,
-        'Format: /tanyafile pertanyaan',
-        { reply_to_message_id: msg.message_id }
-      );
-      return true;
-    }
-
-    const u = ensureUser(userId);
-    const fileText = String(u.lastFileText || '').trim();
-
-    if (!fileText) {
-      await safeSendMessage(
-        chatId,
-        'Belum ada file yang tersimpan di sesi ini.',
-        { reply_to_message_id: msg.message_id }
-      );
-      return true;
-    }
-
-    try {
-      const answer = await askAI(
-        getSystemPrompt(userId),
-        `Jawab berdasarkan isi file berikut.\n\nPertanyaan: ${query}\n\nIsi file:\n${fileText.slice(0, 20000)}`,
-        {
-          userId,
-          question: query,
-          allowSearch: false,
-          temperature: 0.2,
-          maxTokens: 700
-        }
-      );
-
-      await sendChunkedMessage(
-        chatId,
-        `📄 Jawaban dari file:\n\n${answer}`,
-        { reply_to_message_id: msg.message_id }
-      );
-    } catch (err) {
-      console.error('handleFileCommands error:', err.message);
-      await safeSendMessage(
-        chatId,
-        '❌ Gagal memproses pertanyaan file.',
-        { reply_to_message_id: msg.message_id }
-      );
-    }
-
-    return true;
-  }
-
-  return false;
-}
-
 // ==================== WEBHOOK ====================
 app.get('/health', (req, res) => res.send('OK'));
 
@@ -2513,7 +2495,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     const resolvedCmd = resolveAlias(userId, cmd);
 
-    // Commands
     if (resolvedCmd === '/start') {
       await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
