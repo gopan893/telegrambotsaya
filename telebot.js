@@ -42,7 +42,6 @@ if (!TELEGRAM_TOKEN) {
   console.error('❌ TELEGRAM_TOKEN tidak ditemukan!');
   process.exit(1);
 }
-
 if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
   console.error('❌ Set minimal MISTRAL_API_KEY atau GROQ_API_KEY.');
   process.exit(1);
@@ -518,7 +517,7 @@ function moderationCheckIncoming(msg) {
   return false;
 }
 
-// ==================== REDIS / STORAGE ====================
+// ==================== STORAGE ====================
 async function initRedis() {
   if (!REDIS_URL || !RedisClass) return;
   try {
@@ -1016,42 +1015,6 @@ async function getAnswerWithAB(question, userId, systemPrompt, intent = null) {
   return { answer, style: chosen };
 }
 
-function getUserSummary(userId) {
-  const u = ensureUser(userId);
-  const recent = (shortMemory || []).filter(m => normalizeId(m.userId) === normalizeId(userId)).slice(-5);
-  const moods = recent.map(x => x.mood).filter(Boolean);
-  const todos = (u.todos || []).filter(t => !t.done).slice(-5).map(t => t.text);
-  const reminders = (u.reminders || []).slice(-3).map(r => `${r.time} :: ${r.message}`);
-  return {
-    botName: u.botName,
-    summary: u.summary || '',
-    tags: u.tags || [],
-    recentMoods: moods,
-    openTodos: todos,
-    reminders
-  };
-}
-
-function buildContext(userId, question) {
-  const recent = (shortMemory || [])
-    .filter(m => normalizeId(m.userId) === normalizeId(userId))
-    .slice(-6)
-    .map(m => `Q: ${m.q}\nA: ${m.a}`)
-    .join('\n\n');
-
-  const summary = getUserSummary(userId);
-  const personal = [
-    summary.summary ? `Ringkasan user: ${summary.summary}` : '',
-    summary.tags?.length ? `Tag: ${summary.tags.join(', ')}` : '',
-    summary.openTodos?.length ? `Todo terbuka: ${summary.openTodos.join(' | ')}` : '',
-    summary.reminders?.length ? `Reminder aktif: ${summary.reminders.join(' | ')}` : ''
-  ].filter(Boolean).join('\n');
-
-  const mem = recent ? `Konteks percakapan terakhir:\n${recent}\n\n` : '';
-  const pers = personal ? `Memori personal:\n${personal}\n\n` : '';
-  return `${mem}${pers}Pertanyaan user:\n${question}`;
-}
-
 async function getSmartAnswer(question, userId, systemPrompt, intent = null) {
   const cached = getCachedAnswer(question);
   if (cached) return cached;
@@ -1203,6 +1166,7 @@ async function restoreAllReminders() {
 
   let changed = false;
   const now = new Date();
+
   for (const [userId, u] of Object.entries(userMemory)) {
     const reminders = Array.isArray(u.reminders) ? u.reminders : [];
     const keep = [];
@@ -1217,10 +1181,11 @@ async function restoreAllReminders() {
     }
     u.reminders = keep;
   }
+
   if (changed) await persist();
 }
 
-// ==================== FEATURE HELPERS ====================
+// ==================== FEATURES ====================
 async function handleMood(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
   cleanupStaleUserState(u);
@@ -1488,7 +1453,7 @@ async function handleStickerHint(chatId, cmd, args, msg) {
   return false;
 }
 
-async function handleKnowledge(chatId, cmd, args, msg) {
+async function handleKnowledge(chatId, userId, cmd, args, msg) {
   if (cmd === '/learn') {
     const content = args.trim();
     if (!content) {
@@ -1880,266 +1845,7 @@ async function handleTools(msgText, userId = '0') {
   return null;
 }
 
-async function handleSettings(chatId, userId, cmd, args, msg) {
-  const u = ensureUser(userId);
-
-  if (cmd === '/setname') {
-    const newName = args.trim();
-    if (newName && newName.length < 50) {
-      u.botName = newName;
-      await persist();
-      await safeSendMessage(chatId, `✅ Namaku sekarang "${newName}".`, { reply_to_message_id: msg.message_id });
-    } else {
-      await safeSendMessage(chatId, '❌ Nama tidak valid.', { reply_to_message_id: msg.message_id });
-    }
-    return true;
-  }
-
-  if (cmd === '/savepref') {
-    const [k, ...rest] = args.split('=').map(s => s.trim());
-    const v = rest.join('=').trim();
-    if (!k || !v) {
-      await safeSendMessage(chatId, 'Format: /savepref kunci = nilai', { reply_to_message_id: msg.message_id });
-      return true;
-    }
-    u.preferences[k] = v;
-    await persist();
-    await safeSendMessage(chatId, `✅ Preferensi disimpan: ${k} = ${v}`, { reply_to_message_id: msg.message_id });
-    return true;
-  }
-
-  return false;
-}
-
-async function handleCalibration(chatId, userId, cmd, args, msg) {
-  if (cmd === '/koreksi') {
-    const parts = args.split('|');
-    if (parts.length < 2) {
-      await safeSendMessage(chatId, 'Format: /koreksi pertanyaan | jawaban_benar', { reply_to_message_id: msg.message_id });
-    } else {
-      const trigger = parts[0].trim();
-      const answer = parts.slice(1).join('|').trim();
-      if (!answer || answer.length < 3) {
-        await safeSendMessage(chatId, '❌ Jawaban terlalu pendek.', { reply_to_message_id: msg.message_id });
-      } else {
-        lessons.rules.push({ trigger, answer, source: 'user', timestamp: nowMs() });
-        if (lessons.rules.length > botSettings.maxRules) lessons.rules.shift();
-        await persist();
-        await saveNlpPattern(userId, trigger, 'CUSTOM_RULE', { answer });
-        await safeSendMessage(chatId, '✅ Terima kasih, saya belajar.', { reply_to_message_id: msg.message_id });
-      }
-    }
-    return true;
-  }
-
-  if (cmd === '/rollback') {
-    if (lessons.rules.length) {
-      lessons.rules.pop();
-      await persist();
-      await safeSendMessage(chatId, '🗑️ Aturan terakhir dihapus.', { reply_to_message_id: msg.message_id });
-    } else {
-      await safeSendMessage(chatId, 'Tidak ada aturan.', { reply_to_message_id: msg.message_id });
-    }
-    return true;
-  }
-
-  return false;
-}
-
-async function handleStats(chatId, userId, msg) {
-  const mem = process.memoryUsage();
-  const u = ensureUser(userId);
-  const msgText =
-`Uptime: ${Math.floor(process.uptime() / 60)} menit
-Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB
-Aturan: ${lessons.rules.length}
-Histori chat: ${shortMemory.length}
-Pengetahuan: ${knowledgeBase.length}
-Reminder aktif: ${(u.reminders || []).length}
-Todo aktif: ${(u.todos || []).filter(x => !x.done).length}
-Plugin aktif: ${pluginModules.length}`;
-  await safeSendMessage(chatId, msgText, { reply_to_message_id: msg.message_id });
-}
-
-async function handleFeedback(chatId, msg) {
-  const last = abLog.slice(-5).map(l => `${l.style}: ${String(l.question || '').slice(0, 30)}...`).join('\n');
-  await safeSendMessage(chatId, `Feedback terakhir:\n${last || 'Belum ada'}`, { reply_to_message_id: msg.message_id });
-}
-
-async function handleImage(chatId, args, msg) {
-  const prompt = args.trim();
-  if (!prompt) {
-    await safeSendMessage(chatId, 'Tulis deskripsi gambarnya dulu.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const img = await generateImage(prompt);
-  const ok = await sendPhotoUrl(chatId, img, `✨ ${prompt}`);
-  if (!ok) await safeSendMessage(chatId, '❌ Gagal membuat gambar.', { reply_to_message_id: msg.message_id });
-}
-
-async function handleAuth(chatId, userId, msg) {
-  if (msg.chat.type !== 'private') {
-    await safeSendMessage(chatId, 'Untuk keamanan, gunakan /auth di chat pribadi dengan bot ini.');
-    return;
-  }
-  if (!googleLib || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-    await safeSendMessage(chatId, '❌ Fitur Google Calendar belum dikonfigurasi atau package googleapis belum terpasang.');
-    return;
-  }
-  const authUrl = getAuthUrl(userId);
-  if (!authUrl) {
-    await safeSendMessage(chatId, '❌ Gagal membuat link autentikasi.');
-    return;
-  }
-  await safeSendMessage(chatId, `🔐 Klik tautan untuk autentikasi Google Calendar:\n${authUrl}\n\nSetelah login, kamu akan diarahkan kembali.`);
-}
-
-async function handleAddEvent(chatId, userId, args, msg) {
-  const calendar = await getCalendarClient(userId);
-  if (!calendar) {
-    await safeSendMessage(chatId, '❌ Belum autentikasi. Gunakan /auth dulu.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const parts = args.split('|');
-  if (parts.length < 3) {
-    await safeSendMessage(chatId, 'Format: /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  const summary = parts[0].trim();
-  const startDateTime = parseFlexibleDateTime(parts[1].trim(), '09:00');
-  const endDateTime = parseFlexibleDateTime(parts[2].trim(), '10:00');
-  if (!isValidDate(startDateTime) || !isValidDate(endDateTime)) {
-    await safeSendMessage(chatId, 'Format tanggal/waktu salah.', { reply_to_message_id: msg.message_id });
-    return;
-  }
-  try {
-    await calendar.events.insert({
-      calendarId: 'primary',
-      resource: {
-        summary,
-        start: { dateTime: startDateTime.toISOString(), timeZone: 'Asia/Jakarta' },
-        end: { dateTime: endDateTime.toISOString(), timeZone: 'Asia/Jakarta' }
-      }
-    });
-    await safeSendMessage(chatId, `✅ Event "${summary}" ditambahkan ke Google Calendar.`, { reply_to_message_id: msg.message_id });
-  } catch (err) {
-    console.error(err.response?.data || err.message);
-    await safeSendMessage(chatId, '❌ Gagal menambahkan event.', { reply_to_message_id: msg.message_id });
-  }
-}
-
-async function handleHelp(chatId, msg) {
-  const help =
-`/start - mulai
-/help - bantuan
-/stats - statistik
-/rollback - hapus aturan terakhir
-/feedback - log A/B
-/plugins - daftar plugin
-/reloadplugins - muat ulang plugin
-/summary atau /memori - ringkasan memori
-/image <deskripsi> - buat gambar
-/hitung <expr> - kalkulator
-/jam [lokasi]
-/tanggal - tanggal hari ini
-/cuaca <kota>
-/lokasi <tempat>
-/cari <topik>
-/setname <nama> - ganti nama bot
-/savepref k = v - simpan preferensi
-/mode kerja | santai | auto
-/alias nama_alias = /command
-/riwayat kata
-/digest on [HH:MM] | off | now
-/antispam on | off
-/welcome on | off
-/koreksi Q | A - ajari bot
-
-Fitur:
-- /mood
-- /remind YYYY-MM-DD HH:MM pesan
-- /todo
-- /add <tugas>
-- /done <nomor>
-- /cleartodo
-- /quiz <pertanyaan>
-- /poll <pertanyaan>
-- /kick (balas pesan) [grup]
-- /pin (balas pesan) [grup]
-- /resize widthxheight (balas foto)
-- /sticker (balas foto)
-- /learn <teks>
-- /askkb <pertanyaan>
-- /auth
-- /addevent Judul | YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM
-- /ringkasfile (balas file)
-- /tanyafile pertanyaan
-
-Kamu juga bisa langsung pakai bahasa alami:
-- "Tambah event rapat besok jam 10"
-- "Tambah tugas beli susu"
-- "Cuaca di Bandung"
-- "Jam berapa di New York"
-- "Gambar kucing lucu"
-- "Cari lalu rangkum tentang AI terbaru"`;
-  await sendChunkedMessage(chatId, help, { reply_to_message_id: msg.message_id });
-}
-
-function isUnknownCommand(cmd) {
-  const known = new Set([
-    '/start', '/help', '/stats', '/rollback', '/feedback', '/image', '/hitung',
-    '/jam', '/tanggal', '/cuaca', '/lokasi', '/cari', '/setname', '/koreksi',
-    '/mood', '/remind', '/todo', '/add', '/done', '/cleartodo', '/quiz', '/poll',
-    '/kick', '/pin', '/resize', '/sticker', '/learn', '/askkb', '/auth', '/addevent',
-    '/savepref', '/plugins', '/summary', '/memori', '/reloadplugins',
-    '/mode', '/alias', '/riwayat', '/digest', '/antispam', '/welcome',
-    '/ringkasfile', '/tanyafile'
-  ]);
-  return cmd && !known.has(cmd);
-}
-
-async function handleTools(msgText, userId = '0') {
-  const low = safeLower(msgText);
-  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) && (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
-
-  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
-    return getCurrentDate();
-  }
-
-  if (isTimeQuestion) {
-    let q = low.replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ').replace(/\s+/g, ' ').trim();
-    q = q || 'jakarta';
-    return getCurrentTime(q);
-  }
-
-  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
-    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
-    if (expr) return calculate(expr);
-  }
-
-  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
-    const q = String(msgText || '').replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '').trim();
-    return q ? await searchLocation(q) : 'Sebutkan tempat';
-  }
-
-  if (low.includes('cuaca')) {
-    const city = String(msgText || '').replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '').trim();
-    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
-  }
-
-  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita', 'ringkas', 'rangkum', 'summary'];
-  if (searchKw.some(k => low.includes(k))) {
-    let q = String(msgText || '');
-    searchKw.forEach(k => {
-      q = q.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), ' ');
-    });
-    q = q.trim();
-    return q ? await summarizeSearchWithRefs(q, userId, getSystemPrompt(userId)) : 'Apa yang ingin dicari?';
-  }
-
-  return null;
-}
-
+// ==================== PLUGINS ====================
 async function loadPlugins() {
   pluginModules = [];
   pluginCommandMap = new Map();
@@ -2220,26 +1926,7 @@ async function handlePluginCommand(chatId, userId, cmd, args, msg, text) {
   }
 }
 
-async function saveNlpPattern(userId, originalQuestion, correctedIntent, correctedParams) {
-  const u = ensureUser(userId);
-  u.nlpPatterns.push({
-    question: String(originalQuestion || '').toLowerCase(),
-    intent: correctedIntent,
-    params: correctedParams,
-    timestamp: nowMs()
-  });
-  if (u.nlpPatterns.length > 100) u.nlpPatterns.shift();
-  await persist();
-}
-
-async function askClarification(chatId, userId, originalText, msg) {
-  await safeSendMessage(chatId, `🤔 Maaf, aku kurang paham dengan:\n"${originalText}"\n\nCoba tulis lebih jelas, misalnya:\n- Cari dan rangkum AI agent terbaru\n- Tambah event rapat besok jam 10\n- Tambah tugas beli susu\n- Cuaca di Bandung\n- Ingatkan saya besok jam 8\n- Hitung 25*4\n- Jam berapa di New York\n- Gambar kucing lucu`, { reply_to_message_id: msg.message_id });
-  const u = ensureUser(userId);
-  u.awaitingClarification = originalText;
-  u.awaitingClarificationAt = nowMs();
-  await persist();
-}
-
+// ==================== NLP ====================
 function heuristicIntent(userMessage) {
   const q = safeLower(userMessage).trim();
   if (!q) return { intent: 'NONE', params: {} };
@@ -2366,6 +2053,26 @@ Contoh:
     console.error('NLP error:', e.message);
     return { intent: 'NONE', params: {} };
   }
+}
+
+async function saveNlpPattern(userId, originalQuestion, correctedIntent, correctedParams) {
+  const u = ensureUser(userId);
+  u.nlpPatterns.push({
+    question: String(originalQuestion || '').toLowerCase(),
+    intent: correctedIntent,
+    params: correctedParams,
+    timestamp: nowMs()
+  });
+  if (u.nlpPatterns.length > 100) u.nlpPatterns.shift();
+  await persist();
+}
+
+async function askClarification(chatId, userId, originalText, msg) {
+  await safeSendMessage(chatId, `🤔 Maaf, aku kurang paham dengan:\n"${originalText}"\n\nCoba tulis lebih jelas, misalnya:\n- Cari dan rangkum AI agent terbaru\n- Tambah event rapat besok jam 10\n- Tambah tugas beli susu\n- Cuaca di Bandung\n- Ingatkan saya besok jam 8\n- Hitung 25*4\n- Jam berapa di New York\n- Gambar kucing lucu`, { reply_to_message_id: msg.message_id });
+  const u = ensureUser(userId);
+  u.awaitingClarification = originalText;
+  u.awaitingClarificationAt = nowMs();
+  await persist();
 }
 
 async function executeUniversalIntent(intent, params, chatId, userId, msg, systemPrompt = getSystemPrompt(userId)) {
@@ -2556,11 +2263,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     pushChatHistory({ userId, chatId, role: 'user', text: text || msg.caption || '', timestamp: nowMs() });
     updateUserTags(u, text || msg.caption || '');
 
-    if (!text && msg.document) {
-      const handledDoc = await handleDocumentSmart(chatId, userId, msg);
-      if (handledDoc) return res.sendStatus(200);
-    }
-
     const modAction = moderationCheckIncoming(msg);
     if (modAction?.type === 'delete') {
       try { await telegramPost('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch (_) {}
@@ -2569,6 +2271,11 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (modAction?.type === 'welcome') {
       await safeSendMessage(chatId, modAction.text);
       return res.sendStatus(200);
+    }
+
+    if (msg.document) {
+      const handledDoc = await handleDocumentSmart(chatId, userId, msg);
+      if (handledDoc) return res.sendStatus(200);
     }
 
     if (u.msgCount % 10 === 0) await persist();
@@ -2633,12 +2340,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (isUnknownCommand(resolvedCmd)) {
       await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
       return res.sendStatus(200);
-    }
-
-    if (u.awaitingClarification && !resolvedCmd) {
-      delete u.awaitingClarification;
-      delete u.awaitingClarificationAt;
-      await persist();
     }
 
     const toolRes = await handleTools(text, userId);
