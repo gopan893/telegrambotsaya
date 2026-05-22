@@ -84,6 +84,64 @@ const digestJobs = new Map();
 const rateBuckets = new Map();
 const aiCache = new Map();
 
+const processedUpdates = new Map();
+const processedMessageKeys = new Map();
+const userActionLocks = new Map();
+
+function rememberWithTTL(map, key, ttlMs) {
+  if (!key) return false;
+  const now = nowMs();
+  const prev = map.get(key);
+  if (prev && now - prev < ttlMs) return false;
+  map.set(key, now);
+  return true;
+}
+
+function cleanupMapTTL(map, ttlMs) {
+  const now = nowMs();
+  for (const [key, ts] of map.entries()) {
+    if (now - ts > ttlMs) map.delete(key);
+  }
+}
+
+function getMessageKey(update) {
+  const msg = update?.message || update?.edited_message;
+  const chatId = msg?.chat?.id ?? update?.callback_query?.message?.chat?.id ?? '0';
+  const msgId = msg?.message_id ?? update?.callback_query?.id ?? update?.update_id ?? nowMs();
+  return `${chatId}:${msgId}`;
+}
+
+function isDuplicateIncomingUpdate(update) {
+  const updateId = update?.update_id;
+  if (updateId === undefined || updateId === null) return false;
+  return !rememberWithTTL(processedUpdates, String(updateId), 10 * 60 * 1000);
+}
+
+async function withUserActionLock(userId, fn) {
+  const key = normalizeId(userId);
+  const prev = userActionLocks.get(key) || Promise.resolve();
+
+  let release;
+  const next = new Promise(resolve => { release = resolve; });
+  userActionLocks.set(key, prev.then(() => next));
+
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    release();
+    if (userActionLocks.get(key) === next) {
+      userActionLocks.delete(key);
+    }
+  }
+}
+
+function cleanupPatch4State() {
+  cleanupMapTTL(processedUpdates, 10 * 60 * 1000);
+  cleanupMapTTL(processedMessageKeys, 10 * 60 * 1000);
+  cleanupMapTTL(userActionLocks, 10 * 60 * 1000);
+}
+
 let pluginModules = [];
 let pluginCommandMap = new Map();
 let pluginMessageHooks = [];
