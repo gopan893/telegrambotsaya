@@ -4178,6 +4178,9 @@ app.get('/oauth2callback', async (req, res) => {
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   try {
     const update = req.body;
+    if (isDuplicateIncomingUpdate(update)) {
+  return res.sendStatus(200);
+}
     if (!update || typeof update !== 'object') return res.sendStatus(200);
 
     if (update.callback_query) {
