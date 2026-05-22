@@ -253,13 +253,15 @@ async function answerUser(ctx, messageText) {
   const chat = getChatState(chatId);
   const modeKey = profile.mode || 'balanced';
   const mode = MODES[modeKey] || MODES.balanced;
+  const replyLanguage = detectReplyLanguage(messageText);
   const localKnowledge = await retrieveLocalKnowledge(messageText);
   const imageContent = await buildImageContent(ctx);
 
   const userInput = [
-    `Pesan user:\n${messageText || '[User mengirim gambar tanpa teks]'}`,
-    localKnowledge ? `\nKnowledge base relevan:\n${localKnowledge}` : '',
-    chat.recent.length ? `\nRingkasan pesan terakhir di chat ini:\n${formatRecent(chat.recent)}` : ''
+    `Mandatory reply language:\n${replyLanguage.instruction}`,
+    `User message:\n${messageText || '[User sent an image without text]'}`,
+    localKnowledge ? `\nRelevant local knowledge:\n${localKnowledge}` : '',
+    chat.recent.length ? `\nRecent conversation summary:\n${formatRecent(chat.recent)}` : ''
   ].filter(Boolean).join('\n\n');
 
   const input = imageContent
@@ -268,7 +270,7 @@ async function answerUser(ctx, messageText) {
 
   const request = {
     model: config.model,
-    instructions: buildInstructions(profile, mode),
+    instructions: buildInstructions(profile, mode, replyLanguage),
     input,
     previous_response_id: chat.lastResponseId || undefined,
     tools: buildTools(),
@@ -296,7 +298,7 @@ async function answerUser(ctx, messageText) {
   return answer;
 }
 
-function buildInstructions(profile, mode) {
+function buildInstructions(profile, mode, replyLanguage) {
   const memoryLines = profile.memories
     .slice(-30)
     .map((memory) => `- ${memory.text}`)
@@ -305,9 +307,205 @@ function buildInstructions(profile, mode) {
   return [
     SYSTEM_CORE,
     `Mode aktif: ${mode.label}. ${mode.instruction}`,
+    `Language rule for this response: ${replyLanguage.instruction}`,
     memoryLines ? `Memori user:\n${memoryLines}` : 'Belum ada memori user.',
-    'Format jawaban: pakai bahasa user secara natural, ringkas bila bisa, dan beri langkah konkret saat user meminta aksi.'
+    'Format jawaban: gunakan satu bahasa yang sama dengan pesan user. Jangan mencampur bahasa Indonesia, Inggris, atau bahasa lain kecuali user memintanya.'
   ].join('\n\n');
+}
+
+function detectReplyLanguage(text) {
+  const value = String(text || '');
+  const hasJapanese = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(value);
+  const hasHangul = /[\uac00-\ud7af]/u.test(value);
+  const hasThai = /[\u0e00-\u0e7f]/u.test(value);
+  const hasArabic = /[\u0600-\u06ff]/u.test(value);
+  const hasCyrillic = /[\u0400-\u04ff]/u.test(value);
+  const hasHebrew = /[\u0590-\u05ff]/u.test(value);
+  const hasGreek = /[\u0370-\u03ff]/u.test(value);
+  const hasDevanagari = /[\u0900-\u097f]/u.test(value);
+  const hasBengali = /[\u0980-\u09ff]/u.test(value);
+  const hasGurmukhi = /[\u0a00-\u0a7f]/u.test(value);
+  const hasGujarati = /[\u0a80-\u0aff]/u.test(value);
+  const hasTamil = /[\u0b80-\u0bff]/u.test(value);
+  const hasTelugu = /[\u0c00-\u0c7f]/u.test(value);
+  const hasKannada = /[\u0c80-\u0cff]/u.test(value);
+  const hasMalayalam = /[\u0d00-\u0d7f]/u.test(value);
+  const hasSinhala = /[\u0d80-\u0dff]/u.test(value);
+  const hasLao = /[\u0e80-\u0eff]/u.test(value);
+  const hasTibetan = /[\u0f00-\u0fff]/u.test(value);
+  const hasMyanmar = /[\u1000-\u109f]/u.test(value);
+  const hasGeorgian = /[\u10a0-\u10ff]/u.test(value);
+  const hasEthiopic = /[\u1200-\u137f]/u.test(value);
+  const hasKhmer = /[\u1780-\u17ff]/u.test(value);
+  const hasLatin = /[a-z]/iu.test(value);
+
+  const strictSameLanguage = 'Reply entirely in the user message primary language. Do not mix Indonesian, English, or any other language unless the user explicitly asks for translation, comparison, or mixed-language output.';
+
+  if (hasJapanese) {
+    return {
+      code: 'ja',
+      instruction: `Japanese. ${strictSameLanguage} Use natural Japanese only.`
+    };
+  }
+
+  if (hasHangul) {
+    return {
+      code: 'ko',
+      instruction: `Korean. ${strictSameLanguage} Use natural Korean only.`
+    };
+  }
+
+  if (hasThai) {
+    return {
+      code: 'th',
+      instruction: `Thai. ${strictSameLanguage} Use natural Thai only.`
+    };
+  }
+
+  if (hasArabic) {
+    return {
+      code: 'ar',
+      instruction: `Arabic. ${strictSameLanguage} Use natural Arabic only.`
+    };
+  }
+
+  if (hasCyrillic) {
+    return {
+      code: 'cyrillic',
+      instruction: `Use the same Cyrillic-script language used by the user. ${strictSameLanguage}`
+    };
+  }
+
+  if (hasHebrew) {
+    return {
+      code: 'he',
+      instruction: `Hebrew. ${strictSameLanguage} Use natural Hebrew only.`
+    };
+  }
+
+  if (hasGreek) {
+    return {
+      code: 'el',
+      instruction: `Greek. ${strictSameLanguage} Use natural Greek only.`
+    };
+  }
+
+  if (hasDevanagari) {
+    return {
+      code: 'devanagari',
+      instruction: `Use the same Devanagari-script language used by the user. ${strictSameLanguage}`
+    };
+  }
+
+  if (hasBengali) {
+    return {
+      code: 'bengali',
+      instruction: `Use the same Bengali-script language used by the user. ${strictSameLanguage}`
+    };
+  }
+
+  if (hasGurmukhi) {
+    return {
+      code: 'gurmukhi',
+      instruction: `Use the same Gurmukhi-script language used by the user. ${strictSameLanguage}`
+    };
+  }
+
+  if (hasGujarati) {
+    return {
+      code: 'gujarati',
+      instruction: `Gujarati. ${strictSameLanguage} Use natural Gujarati only.`
+    };
+  }
+
+  if (hasTamil) {
+    return {
+      code: 'ta',
+      instruction: `Tamil. ${strictSameLanguage} Use natural Tamil only.`
+    };
+  }
+
+  if (hasTelugu) {
+    return {
+      code: 'te',
+      instruction: `Telugu. ${strictSameLanguage} Use natural Telugu only.`
+    };
+  }
+
+  if (hasKannada) {
+    return {
+      code: 'kn',
+      instruction: `Kannada. ${strictSameLanguage} Use natural Kannada only.`
+    };
+  }
+
+  if (hasMalayalam) {
+    return {
+      code: 'ml',
+      instruction: `Malayalam. ${strictSameLanguage} Use natural Malayalam only.`
+    };
+  }
+
+  if (hasSinhala) {
+    return {
+      code: 'si',
+      instruction: `Sinhala. ${strictSameLanguage} Use natural Sinhala only.`
+    };
+  }
+
+  if (hasLao) {
+    return {
+      code: 'lo',
+      instruction: `Lao. ${strictSameLanguage} Use natural Lao only.`
+    };
+  }
+
+  if (hasTibetan) {
+    return {
+      code: 'bo',
+      instruction: `Tibetan. ${strictSameLanguage} Use natural Tibetan only.`
+    };
+  }
+
+  if (hasMyanmar) {
+    return {
+      code: 'my',
+      instruction: `Myanmar/Burmese. ${strictSameLanguage} Use natural Burmese only.`
+    };
+  }
+
+  if (hasGeorgian) {
+    return {
+      code: 'ka',
+      instruction: `Georgian. ${strictSameLanguage} Use natural Georgian only.`
+    };
+  }
+
+  if (hasEthiopic) {
+    return {
+      code: 'ethiopic',
+      instruction: `Use the same Ethiopic-script language used by the user. ${strictSameLanguage}`
+    };
+  }
+
+  if (hasKhmer) {
+    return {
+      code: 'km',
+      instruction: `Khmer. ${strictSameLanguage} Use natural Khmer only.`
+    };
+  }
+
+  if (hasLatin) {
+    return {
+      code: 'latin',
+      instruction: `Use the same Latin-script language used by the user, such as Indonesian, English, Malay, Spanish, French, German, Portuguese, Italian, Dutch, Turkish, Vietnamese, or another Latin-script language. ${strictSameLanguage}`
+    };
+  }
+
+  return {
+    code: 'auto',
+    instruction: strictSameLanguage
+  };
 }
 
 function buildTools() {
