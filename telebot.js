@@ -4417,8 +4417,10 @@ await withUserActionLock(userId, async () => {
   await autoSummarizeMemory(userId);
   if (u.digest?.enabled) scheduleDigestJob(userId);
 });
+if (!text && !msg.photo && !msg.document && !msg.voice) {
+      await safeSendMessage(chatId, 'Maaf, saya hanya bisa membaca pesan teks biasa saat ini.');
+      return res.sendStatus(200);
     }
-
     const rl = rateLimit(userId);
     if (!rl.ok) {
       await safeSendMessage(chatId, 'Terlalu cepat. Coba sebentar lagi ya.', { reply_to_message_id: msg.message_id });
