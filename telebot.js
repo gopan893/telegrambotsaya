@@ -123,6 +123,16 @@ function cleanupSpaces(text) {
     .trim();
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : {};
+}
+
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -654,33 +664,62 @@ function getModePrompt(mode) {
   return 'Jawab santai, ramah, natural.';
 }
 
+function createDefaultUser() {
+  return {
+    botName: 'Bot AI',
+    mode: 'santai',
+    aliases: {},
+    todos: [],
+    reminders: [],
+    nlpPatterns: [],
+    msgCount: 0,
+    summary: '',
+    tags: [],
+    preferences: {},
+    digest: {
+      enabled: false,
+      time: '20:00'
+    },
+    moderation: {
+      antispam: false,
+      welcome: false
+    },
+    lastSeen: nowMs(),
+    lastChatId: null
+  };
+}
+
 function ensureUser(userId) {
   const id = normalizeId(userId);
+  const defaults = createDefaultUser();
+  const existing = asPlainObject(userMemory[id]);
 
-  if (!userMemory[id]) {
-    userMemory[id] = {
-      botName: 'Bot AI',
-      mode: 'santai',
-      aliases: {},
-      todos: [],
-      reminders: [],
-      nlpPatterns: [],
-      msgCount: 0,
-      summary: '',
-      tags: [],
-      preferences: {},
-      digest: {
-        enabled: false,
-        time: '20:00'
-      },
-      moderation: {
-        antispam: false,
-        welcome: false
-      },
-      lastSeen: nowMs(),
-      lastChatId: null
-    };
-  }
+  userMemory[id] = {
+    ...defaults,
+    ...existing,
+    aliases: asPlainObject(existing.aliases),
+    todos: asArray(existing.todos),
+    reminders: asArray(existing.reminders),
+    nlpPatterns: asArray(existing.nlpPatterns),
+    tags: asArray(existing.tags),
+    preferences: asPlainObject(existing.preferences),
+    digest: {
+      ...defaults.digest,
+      ...asPlainObject(existing.digest)
+    },
+    moderation: {
+      ...defaults.moderation,
+      ...asPlainObject(existing.moderation)
+    },
+    msgCount: Number.isFinite(Number(existing.msgCount))
+      ? Number(existing.msgCount)
+      : defaults.msgCount,
+    summary: String(existing.summary || defaults.summary),
+    mode: ['kerja', 'santai', 'auto'].includes(existing.mode)
+      ? existing.mode
+      : defaults.mode,
+    botName: String(existing.botName || defaults.botName).slice(0, 80)
+  };
 
   return userMemory[id];
 }
@@ -1027,13 +1066,23 @@ function cleanupStaleUserState(u) {
 }
 
 async function loadAllMemories() {
-  shortMemory = await loadData('memory', []);
-  lessons = await loadData('lessons', { rules: [] });
-  userMemory = await loadData('user_memory', {});
-  abLog = await loadData('ab_log', []);
-  knowledgeBase = await loadData('knowledge', []);
-  chatHistory = await loadData('chat_history', []);
-  botSettings = { ...botSettings, ...(await loadData('bot_settings', {})) };
+  shortMemory = asArray(await loadData('memory', []));
+
+  lessons = asPlainObject(await loadData('lessons', { rules: [] }));
+  lessons.rules = asArray(lessons.rules);
+
+  userMemory = asPlainObject(await loadData('user_memory', {}));
+  for (const userId of Object.keys(userMemory)) {
+    ensureUser(userId);
+  }
+
+  abLog = asArray(await loadData('ab_log', []));
+  knowledgeBase = asArray(await loadData('knowledge', []));
+  chatHistory = asArray(await loadData('chat_history', []));
+  botSettings = {
+    ...botSettings,
+    ...asPlainObject(await loadData('bot_settings', {}))
+  };
 
   console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
@@ -1159,6 +1208,8 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
   }
 
   const stepSize = Math.max(80, Math.floor(preview.length / 4));
+  const editExtra = { ...extra };
+  delete editExtra.reply_to_message_id;
 
   for (let i = stepSize; i < preview.length; i += stepSize) {
     try {
@@ -1167,7 +1218,7 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
         chat_id: chatId,
         message_id: messageId,
         text: preview.slice(0, i),
-        ...extra
+        ...editExtra
       });
     } catch (_) {}
   }
@@ -1177,7 +1228,7 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
       chat_id: chatId,
       message_id: messageId,
       text: preview,
-      ...extra
+      ...editExtra
     });
   } catch (_) {
     await sendChunkedMessage(chatId, full, extra);
@@ -1232,6 +1283,43 @@ async function searchLocation(query) {
 
 async function generateImage(prompt) {
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&width=1024&height=768`;
+}
+
+async function handleTools(text, userId) {
+  const q = String(text || '').trim();
+
+  if (!q) {
+    return null;
+  }
+
+  const intent = heuristicIntent(q);
+
+  if (!intent || !intent.intent || intent.intent === 'NONE') {
+    return null;
+  }
+
+  switch (intent.intent) {
+    case 'HITUNG':
+      return calculate(intent.params?.expression || q);
+
+    case 'TANGGAL':
+      return getCurrentDate();
+
+    case 'JAM':
+      return getCurrentTime(intent.params?.location || 'jakarta');
+
+    case 'CUACA':
+      return getWeather(intent.params?.city || 'jakarta');
+
+    case 'LOKASI':
+      if (!intent.params?.place) {
+        return null;
+      }
+      return searchLocation(intent.params.place);
+
+    default:
+      return null;
+  }
 }
 
 async function searchWebTavilyRaw(query, maxResults = 6) {
@@ -3722,7 +3810,7 @@ function heuristicIntent(userMessage) {
 
     let location = q
       .replace(
-        /(jam|waktu|di|pukul|sekarang|berapa|di mana|dimana)/g,
+        /\b(jam|waktu|di|pukul|sekarang|berapa|dimana)\b|\bdi\s+mana\b/g,
         ' '
       )
       .replace(/\s+/g, ' ')
@@ -3745,7 +3833,7 @@ function heuristicIntent(userMessage) {
 
     let city = q
       .replace(
-        /(cuaca|weather|di|kota|bagaimana|sekarang|bagaimanakah)/g,
+        /\b(cuaca|weather|di|kota|bagaimana|sekarang|bagaimanakah)\b/g,
         ' '
       )
       .replace(/\s+/g, ' ')
@@ -3770,7 +3858,7 @@ function heuristicIntent(userMessage) {
 
     let place = q
       .replace(
-        /(cari|lokasi|alamat|dimana|di mana|tempat|tunjukkan|lihat|di|adalah)/g,
+        /\b(cari|lokasi|alamat|dimana|tempat|tunjukkan|lihat|di|adalah)\b|\bdi\s+mana\b/g,
         ' '
       )
       .replace(/\s+/g, ' ')
