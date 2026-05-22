@@ -197,6 +197,16 @@ bot.command('forget', async (ctx) => {
   await ctx.reply('Konteks percakapan chat ini sudah direset.');
 });
 
+bot.command('restart', async (ctx) => {
+  touchUser(ctx);
+  if (!isAdmin(ctx)) {
+    await ctx.reply('Command ini khusus admin.');
+    return;
+  }
+  await ctx.reply('Bot akan restart dalam 2 detik...');
+  setTimeout(() => process.exit(0), 2000);
+});
+
 bot.command('stats', async (ctx) => {
   touchUser(ctx);
   if (!isAdmin(ctx)) {
@@ -258,11 +268,51 @@ bot.catch(async (error, ctx) => {
   }
 });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// ── Graceful shutdown ──────────────────────────────────────────────────────
+// Wajib di Render: SIGTERM dikirim sebelum instance baru naik.
+// Tanpa ini, instance lama masih polling → instance baru dapat 409 Conflict.
+process.once('SIGINT', async () => {
+  console.log('SIGINT diterima, menghentikan bot...');
+  await bot.stop('SIGINT');
+  process.exit(0);
+});
+process.once('SIGTERM', async () => {
+  console.log('SIGTERM diterima, menghentikan bot...');
+  await bot.stop('SIGTERM');
+  process.exit(0);
+});
 
-await bot.launch();
-console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
+// ── Hapus webhook & pending updates sebelum polling ────────────────────────
+// Ini mencegah 409 Conflict jika sebelumnya pernah pakai webhook,
+// atau jika Render spin-up instance baru sebelum instance lama mati.
+try {
+  await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+  console.log('Webhook dihapus, pending updates dibersihkan.');
+} catch (err) {
+  console.warn('deleteWebhook gagal (tidak fatal):', err.message);
+}
+
+// ── Launch dengan retry otomatis jika masih 409 ────────────────────────────
+async function launchWithRetry(maxRetries = 5, delayMs = 3000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await bot.launch({ dropPendingUpdates: true });
+      console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
+      return;
+    } catch (err) {
+      const is409 = err?.response?.error_code === 409 || String(err?.message).includes('409');
+      if (is409 && attempt < maxRetries) {
+        console.warn(`409 Conflict (percobaan ${attempt}/${maxRetries}), mencoba lagi dalam ${delayMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } else {
+        console.error('Gagal launch bot:', err.message);
+        process.exit(1);
+      }
+    }
+  }
+}
+
+await launchWithRetry();
 
 async function answerUser(ctx, messageText) {
   const userId = getUserId(ctx);
@@ -543,7 +593,7 @@ function buildTools() {
   const tools = [];
 
   if (config.aiProvider === 'openai' && config.enableWebSearch) {
-    tools.push({ type: 'web_search' });
+    tools.push({ type: 'web_search_preview' });
   }
 
   if (config.aiProvider === 'openai' && config.vectorStoreId) {
