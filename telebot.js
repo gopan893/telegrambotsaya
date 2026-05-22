@@ -249,6 +249,13 @@ function simpleDetectLanguage(text) {
     return 'vi';
   }
 
+  // Detect English: mostly ASCII letters with common English stopwords
+  const enWords = ['the', 'is', 'are', 'was', 'were', 'what', 'how', 'why', 'who', 'when', 'where', 'can', 'could', 'please', 'help', 'tell', 'give', 'make', 'with', 'about', 'have', 'this', 'that', 'your', 'you'];
+  const lower = s.toLowerCase();
+  if (enWords.some(w => new RegExp(`\\b${w}\\b`).test(lower))) {
+    return 'en';
+  }
+
   return 'id';
 }
 
@@ -1160,6 +1167,10 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
 
   const stepSize = Math.max(80, Math.floor(preview.length / 4));
 
+  // editMessageText does not support reply_to_message_id — strip it out
+  const editExtra = { ...extra };
+  delete editExtra.reply_to_message_id;
+
   for (let i = stepSize; i < preview.length; i += stepSize) {
     try {
       await sleep(120);
@@ -1167,7 +1178,7 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
         chat_id: chatId,
         message_id: messageId,
         text: preview.slice(0, i),
-        ...extra
+        ...editExtra
       });
     } catch (_) {}
   }
@@ -1177,7 +1188,7 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
       chat_id: chatId,
       message_id: messageId,
       text: preview,
-      ...extra
+      ...editExtra
     });
   } catch (_) {
     await sendChunkedMessage(chatId, full, extra);
@@ -1239,23 +1250,28 @@ async function searchWebTavilyRaw(query, maxResults = 6) {
     return { answer: null, results: [] };
   }
 
-  const res = await axios.post(
-    'https://api.tavily.com/search',
-    {
-      api_key: TAVILY_API_KEY,
-      query,
-      search_depth: 'advanced',
-      max_results: maxResults,
-      include_answer: true,
-      include_raw_content: false
-    },
-    { timeout: 25000 }
-  );
+  try {
+    const res = await axios.post(
+      'https://api.tavily.com/search',
+      {
+        api_key: TAVILY_API_KEY,
+        query,
+        search_depth: 'advanced',
+        max_results: maxResults,
+        include_answer: true,
+        include_raw_content: false
+      },
+      { timeout: 25000 }
+    );
 
-  return {
-    answer: res.data.answer || null,
-    results: Array.isArray(res.data.results) ? res.data.results : []
-  };
+    return {
+      answer: res.data.answer || null,
+      results: Array.isArray(res.data.results) ? res.data.results : []
+    };
+  } catch (err) {
+    console.error('Tavily search error:', err.message);
+    return { answer: null, results: [] };
+  }
 }
 
 async function searchWebTavily(query) {
@@ -4198,6 +4214,16 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       if (handledDoc) return res.sendStatus(200);
     }
 
+    // Photo without text/caption: inform user and stop — don't feed empty text to AI
+    if (msg.photo && !text) {
+      await safeSendMessage(
+        chatId,
+        '📷 Aku menerima fotomu! Untuk sekarang aku belum bisa memproses foto secara langsung.\n\nCoba kirim dengan caption seperti:\n- "ringkas" — untuk analisis\n- Atau kirim file teks/PDF jika ingin aku baca isinya.',
+        { reply_to_message_id: msg.message_id }
+      );
+      return res.sendStatus(200);
+    }
+
     const resolvedCmd = resolveAlias(userId, cmd);
 
     if (resolvedCmd === '/start') {
@@ -4314,12 +4340,13 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
     else if (lang === 'ko') prompt = `Jawab dalam bahasa Korea: ${text}`;
     else if (lang === 'vi') prompt = `Jawab dalam bahasa Vietnam: ${text}`;
+    else if (lang === 'en') prompt = `Answer in English: ${text}`;
 
     const systemPrompt = getSystemPrompt(userId);
 
     let answer;
     try {
-      answer = await getSmartAnswer(prompt, userId, systemPrompt, nlpResult.intent || null);
+      answer = await getSmartAnswer(prompt, userId, systemPrompt, nlpResult?.intent || null);
     } catch (e) {
       console.error('AI fallback error:', e.message);
       answer = 'Maaf, aku lagi kesulitan menjawab. Coba ulang atau gunakan perintah yang lebih spesifik.';
@@ -4582,42 +4609,6 @@ ${question}
 }
 
 // ==================== ADVANCED GROUP FEATURE ====================
-
-async function autoWelcomeFeature(msg) {
-  if (!msg.new_chat_members?.length) return;
-
-  const chatId = msg.chat.id;
-
-  const names = msg.new_chat_members
-    .map(x => x.first_name)
-    .join(', ');
-
-  await safeSendMessage(
-    chatId,
-    `👋 Selamat datang ${names}!\nSemoga betah di grup ini.`
-  );
-}
-
-async function antiLinkModeration(msg) {
-  const text = String(msg.text || '');
-
-  if (
-    text.includes('http://') ||
-    text.includes('https://') ||
-    text.includes('t.me/')
-  ) {
-    try {
-      await telegramPost('deleteMessage', {
-        chat_id: msg.chat.id,
-        message_id: msg.message_id
-      });
-
-      return true;
-    } catch (_) {}
-  }
-
-  return false;
-}
 
 // ==================== SMART COMMAND SUGGESTION ====================
 
@@ -4922,6 +4913,13 @@ setInterval(() => {
   for (const [k, v] of aiCache.entries()) {
     if (now - v.ts > 2 * 60 * 1000) {
       aiCache.delete(k);
+    }
+  }
+
+  // Clean up stale quizState entries (older than 10 minutes)
+  for (const [k, v] of Object.entries(quizState)) {
+    if (now - (v.createdAt || 0) > 10 * 60 * 1000) {
+      delete quizState[k];
     }
   }
 
