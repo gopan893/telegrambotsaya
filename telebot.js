@@ -249,13 +249,6 @@ function simpleDetectLanguage(text) {
     return 'vi';
   }
 
-  // Detect English: mostly ASCII letters with common English stopwords
-  const enWords = ['the', 'is', 'are', 'was', 'were', 'what', 'how', 'why', 'who', 'when', 'where', 'can', 'could', 'please', 'help', 'tell', 'give', 'make', 'with', 'about', 'have', 'this', 'that', 'your', 'you'];
-  const lower = s.toLowerCase();
-  if (enWords.some(w => new RegExp(`\\b${w}\\b`).test(lower))) {
-    return 'en';
-  }
-
   return 'id';
 }
 
@@ -1167,10 +1160,6 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
 
   const stepSize = Math.max(80, Math.floor(preview.length / 4));
 
-  // editMessageText does not support reply_to_message_id — strip it out
-  const editExtra = { ...extra };
-  delete editExtra.reply_to_message_id;
-
   for (let i = stepSize; i < preview.length; i += stepSize) {
     try {
       await sleep(120);
@@ -1178,7 +1167,7 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
         chat_id: chatId,
         message_id: messageId,
         text: preview.slice(0, i),
-        ...editExtra
+        ...extra
       });
     } catch (_) {}
   }
@@ -1188,7 +1177,7 @@ async function sendStreamingAnswer(chatId, text, extra = {}) {
       chat_id: chatId,
       message_id: messageId,
       text: preview,
-      ...editExtra
+      ...extra
     });
   } catch (_) {
     await sendChunkedMessage(chatId, full, extra);
@@ -1250,28 +1239,23 @@ async function searchWebTavilyRaw(query, maxResults = 6) {
     return { answer: null, results: [] };
   }
 
-  try {
-    const res = await axios.post(
-      'https://api.tavily.com/search',
-      {
-        api_key: TAVILY_API_KEY,
-        query,
-        search_depth: 'advanced',
-        max_results: maxResults,
-        include_answer: true,
-        include_raw_content: false
-      },
-      { timeout: 25000 }
-    );
+  const res = await axios.post(
+    'https://api.tavily.com/search',
+    {
+      api_key: TAVILY_API_KEY,
+      query,
+      search_depth: 'advanced',
+      max_results: maxResults,
+      include_answer: true,
+      include_raw_content: false
+    },
+    { timeout: 25000 }
+  );
 
-    return {
-      answer: res.data.answer || null,
-      results: Array.isArray(res.data.results) ? res.data.results : []
-    };
-  } catch (err) {
-    console.error('Tavily search error:', err.message);
-    return { answer: null, results: [] };
-  }
+  return {
+    answer: res.data.answer || null,
+    results: Array.isArray(res.data.results) ? res.data.results : []
+  };
 }
 
 async function searchWebTavily(query) {
@@ -4064,50 +4048,7 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
       return false;
   }
 }
-async function handleTools(msgText, userId = '0') {
-  const low = safeLower(msgText);
 
-  if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
-    return getCurrentDate();
-  }
-
-  const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) &&
-    (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
-
-  if (isTimeQuestion) {
-    let q = low
-      .replace(/(jam|waktu|di|pukul|berapa|sekarang|hari ini|hari\s+ini)/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    q = q || 'jakarta';
-    return getCurrentTime(q);
-  }
-
-  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
-    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
-    if (expr) return calculate(expr);
-  }
-
-  if (low.includes('alamat') || low.includes('lokasi') || low.includes('dimana') || low.includes('di mana')) {
-    const q = String(msgText || '').replace(/alamat|lokasi|dimana|di mana|cari tempat|di|tempat/gi, '').trim();
-    return q ? await searchLocation(q) : 'Sebutkan tempat';
-  }
-
-  if (low.includes('cuaca')) {
-    const city = String(msgText || '').replace(/cuaca|weather|di|kota|bagaimana|sekarang/gi, '').trim();
-    return city ? await getWeather(city) : 'Contoh: cuaca Tokyo';
-  }
-
-  const searchKw = ['cari', 'search', 'google', 'apa itu', 'informasi', 'berita', 'ringkas', 'rangkum', 'summary'];
-  if (searchKw.some(k => low.includes(k))) {
-    let q = String(msgText || '');
-    for (const k of searchKw) q = q.replace(new RegExp(escapeRegExp(k), 'gi'), ' ');
-    q = q.trim();
-    return q ? await summarizeSearchWithRefs(q, userId, getSystemPrompt(userId)) : 'Apa yang ingin dicari?';
-  }
-
-  return null;
-}
 // =====================================================
 // WEBHOOK
 // =====================================================
@@ -4212,16 +4153,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (msg.document) {
       const handledDoc = await handleDocumentSmart(chatId, userId, msg);
       if (handledDoc) return res.sendStatus(200);
-    }
-
-    // Photo without text/caption: inform user and stop — don't feed empty text to AI
-    if (msg.photo && !text) {
-      await safeSendMessage(
-        chatId,
-        '📷 Aku menerima fotomu! Untuk sekarang aku belum bisa memproses foto secara langsung.\n\nCoba kirim dengan caption seperti:\n- "ringkas" — untuk analisis\n- Atau kirim file teks/PDF jika ingin aku baca isinya.',
-        { reply_to_message_id: msg.message_id }
-      );
-      return res.sendStatus(200);
     }
 
     const resolvedCmd = resolveAlias(userId, cmd);
@@ -4340,13 +4271,12 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
     else if (lang === 'ko') prompt = `Jawab dalam bahasa Korea: ${text}`;
     else if (lang === 'vi') prompt = `Jawab dalam bahasa Vietnam: ${text}`;
-    else if (lang === 'en') prompt = `Answer in English: ${text}`;
 
     const systemPrompt = getSystemPrompt(userId);
 
     let answer;
     try {
-      answer = await getSmartAnswer(prompt, userId, systemPrompt, nlpResult?.intent || null);
+      answer = await getSmartAnswer(prompt, userId, systemPrompt, nlpResult.intent || null);
     } catch (e) {
       console.error('AI fallback error:', e.message);
       answer = 'Maaf, aku lagi kesulitan menjawab. Coba ulang atau gunakan perintah yang lebih spesifik.';
@@ -4609,6 +4539,42 @@ ${question}
 }
 
 // ==================== ADVANCED GROUP FEATURE ====================
+
+async function autoWelcomeFeature(msg) {
+  if (!msg.new_chat_members?.length) return;
+
+  const chatId = msg.chat.id;
+
+  const names = msg.new_chat_members
+    .map(x => x.first_name)
+    .join(', ');
+
+  await safeSendMessage(
+    chatId,
+    `👋 Selamat datang ${names}!\nSemoga betah di grup ini.`
+  );
+}
+
+async function antiLinkModeration(msg) {
+  const text = String(msg.text || '');
+
+  if (
+    text.includes('http://') ||
+    text.includes('https://') ||
+    text.includes('t.me/')
+  ) {
+    try {
+      await telegramPost('deleteMessage', {
+        chat_id: msg.chat.id,
+        message_id: msg.message_id
+      });
+
+      return true;
+    } catch (_) {}
+  }
+
+  return false;
+}
 
 // ==================== SMART COMMAND SUGGESTION ====================
 
@@ -4913,13 +4879,6 @@ setInterval(() => {
   for (const [k, v] of aiCache.entries()) {
     if (now - v.ts > 2 * 60 * 1000) {
       aiCache.delete(k);
-    }
-  }
-
-  // Clean up stale quizState entries (older than 10 minutes)
-  for (const [k, v] of Object.entries(quizState)) {
-    if (now - (v.createdAt || 0) > 10 * 60 * 1000) {
-      delete quizState[k];
     }
   }
 
