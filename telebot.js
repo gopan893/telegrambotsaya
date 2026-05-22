@@ -2,7 +2,6 @@ import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import OpenAI from 'openai';
 import { Telegraf } from 'telegraf';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,14 +9,10 @@ const __dirname = path.dirname(__filename);
 
 const config = {
   telegramToken: mustGetEnv('TELEGRAM_BOT_TOKEN'),
-  openaiKey: mustGetEnv('OPENAI_API_KEY'),
-  model: process.env.OPENAI_MODEL || 'gpt-5.2',
-  reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
   enableWebSearch: boolFromEnv('ENABLE_WEB_SEARCH', true),
   enableImageInput: boolFromEnv('ENABLE_IMAGE_INPUT', true),
   autoMemory: boolFromEnv('AUTO_MEMORY', true),
-  vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || '',
   adminIds: new Set((process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
   rateLimitMessages: numberFromEnv('RATE_LIMIT_MESSAGES', 10),
   rateLimitWindowMs: numberFromEnv('RATE_LIMIT_WINDOW_SECONDS', 60) * 1000,
@@ -68,7 +63,6 @@ Prinsip utama:
 `.trim();
 
 const bot = new Telegraf(config.telegramToken);
-const openai = new OpenAI({ apiKey: config.openaiKey });
 const rateLimiter = new Map();
 let state = await loadState();
 
@@ -99,7 +93,6 @@ bot.help(async (ctx) => {
     '- Konteks percakapan berkelanjutan',
     '- Mode kerja: balanced, coder, teacher, business, creative, strict',
     '- Knowledge base lokal dari folder knowledge/',
-    '- Web search opsional lewat OpenAI tools',
     '- Input gambar Telegram jika diaktifkan',
     '',
     'Command:',
