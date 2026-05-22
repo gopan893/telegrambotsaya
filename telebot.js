@@ -4204,16 +4204,219 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (update.message.from?.is_bot) return res.sendStatus(200);
     if (update.edited_message) return res.sendStatus(200);
 
-    const msg = update.message;
-    const chatId = msg.chat.id;
-    const userId = normalizeId(msg.from.id);
-    const text = String(msg.text || '').trim();
-    const cmd = getCommandBase(text);
-    const args = getCommandArgs(text);
+const msg = update.message;
+const chatId = msg.chat.id;
+const userId = normalizeId(msg.from.id);
 
-    if (!text && !msg.photo && !msg.document && !msg.voice) {
-      await safeSendMessage(chatId, 'Maaf, saya hanya bisa membaca pesan teks biasa saat ini.');
-      return res.sendStatus(200);
+await withUserActionLock(userId, async () => {
+  const text = String(msg.text || '').trim();
+  const cmd = getCommandBase(text);
+  const args = getCommandArgs(text);
+
+  const msgKey = getMessageKey(update);
+  if (!rememberWithTTL(processedMessageKeys, msgKey, 5 * 60 * 1000)) {
+    return;
+  }
+
+  if (!text && !msg.photo && !msg.document && !msg.voice) {
+    await safeSendMessage(chatId, 'Maaf, saya hanya bisa membaca pesan teks biasa saat ini.');
+    return;
+  }
+
+  const rl = rateLimit(userId);
+  if (!rl.ok) {
+    await safeSendMessage(chatId, 'Terlalu cepat. Coba sebentar lagi ya.', { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  const u = ensureUser(userId);
+  u.lastChatId = chatId;
+  u.msgCount += 1;
+  u.lastSeen = nowMs();
+  cleanupStaleUserState(u);
+
+  pushChatHistory({
+    userId,
+    chatId,
+    role: 'user',
+    text: text || msg.caption || '',
+    timestamp: nowMs()
+  });
+
+  updateUserTags(u, text || msg.caption || '');
+
+  const modAction = moderationCheckIncoming(msg);
+  if (modAction?.type === 'delete') {
+    try { await telegramPost('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch (_) {}
+    return;
+  }
+
+  if (modAction?.type === 'welcome') {
+    await safeSendMessage(chatId, modAction.text);
+    return;
+  }
+
+  if (msg.document) {
+    const handledDoc = await handleDocumentSmart(chatId, userId, msg);
+    if (handledDoc) return;
+  }
+
+  const resolvedCmd = resolveAlias(userId, cmd);
+
+  if (resolvedCmd === '/start') {
+    await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  if (resolvedCmd === '/ping') { await handlePing(chatId, msg); return; }
+  if (resolvedCmd === '/reset') { await handleReset(chatId, userId, msg); return; }
+  if (resolvedCmd === '/help') { await handleHelp(chatId, msg); return; }
+  if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
+  if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
+  if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }
+  if (resolvedCmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/jam') { await safeSendMessage(chatId, getCurrentTime(args || 'jakarta'), { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/hitung') { await safeSendMessage(chatId, args ? calculate(args) : 'Contoh: /hitung 25*4', { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/cuaca') { await safeSendMessage(chatId, args ? await getWeather(args) : 'Contoh: /cuaca Bandung', { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/lokasi') { await safeSendMessage(chatId, args ? await searchLocation(args) : 'Contoh: /lokasi Monas', { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/cari') { await sendChunkedMessage(chatId, args ? await summarizeSearchWithRefs(args, userId, getSystemPrompt(userId)) : 'Contoh: /cari sejarah Jakarta', { reply_to_message_id: msg.message_id }); return; }
+
+  if (await handleSettings(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleCalibration(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleMood(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleReminder(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleTodo(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleQuizPoll(chatId, resolvedCmd, args, msg)) return;
+  if (await handleGroupManagement(chatId, resolvedCmd, args, msg)) return;
+  if (await handleImageEdit(chatId, resolvedCmd, args, msg)) return;
+  if (await handleStickerHint(chatId, resolvedCmd, args, msg)) return;
+  if (await handleKnowledge(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleMode(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleAlias(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleRiwayat(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleDigest(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleModeration(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleFileCommands(chatId, userId, resolvedCmd, args, msg)) return;
+
+  if (resolvedCmd === '/auth') { await handleAuth(chatId, userId, msg); return; }
+  if (resolvedCmd === '/addevent') { await handleAddEvent(chatId, userId, args, msg); return; }
+  if (resolvedCmd === '/plugins') { await handlePluginsList(chatId, msg); return; }
+  if (resolvedCmd === '/reloadplugins') { await handleReloadPlugins(chatId, userId, msg); return; }
+  if (resolvedCmd === '/summary' || resolvedCmd === '/memori') { await handleSummary(chatId, userId, msg); return; }
+
+  if (await handlePluginCommand(chatId, userId, resolvedCmd, args, msg, text)) return;
+
+  if (isUnknownCommand(resolvedCmd)) {
+    await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  const pluginHookResult = await runPluginMessageHooks({
+    chatId,
+    userId,
+    msg,
+    text,
+    cmd: resolvedCmd,
+    args,
+    bot: {
+      telegramPost,
+      safeSendMessage,
+      sendChunkedMessage,
+      sendStreamingAnswer,
+      askAI,
+      searchWebTavily,
+      searchWebTavilyRaw,
+      summarizeSearchWithRefs,
+      getWeather,
+      searchLocation,
+      generateImage,
+      ensureUser,
+      persist,
+      getSystemPrompt
+    }
+  });
+
+  if (pluginHookResult) {
+    if (typeof pluginHookResult === 'string') {
+      await sendChunkedMessage(chatId, pluginHookResult, { reply_to_message_id: msg.message_id });
+    } else if (pluginHookResult && typeof pluginHookResult === 'object' && pluginHookResult.text) {
+      await sendChunkedMessage(chatId, pluginHookResult.text, { reply_to_message_id: msg.message_id });
+    }
+    return;
+  }
+
+  const toolRes = await handleTools(text, userId);
+  if (toolRes) {
+    await sendChunkedMessage(chatId, toolRes, {
+      reply_to_message_id: msg.message_id,
+      disable_web_page_preview: true
+    });
+    return;
+  }
+
+  const nlpResult = await universalNLP(text, userId);
+
+  if (nlpResult && nlpResult.intent && nlpResult.intent !== 'NONE') {
+    const executed = await executeUniversalIntent(nlpResult.intent, nlpResult.params || {}, chatId, userId, msg);
+    if (executed) return;
+  } else if (isLikelyActionRequest(text)) {
+    await askClarification(chatId, userId, text, msg);
+    return;
+  }
+
+  const lang = simpleDetectLanguage(text);
+  let prompt = text;
+  if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
+  else if (lang === 'ko') prompt = `Jawab dalam bahasa Korea: ${text}`;
+  else if (lang === 'vi') prompt = `Jawab dalam bahasa Vietnam: ${text}`;
+
+  const systemPrompt = getSystemPrompt(userId);
+  let answer;
+  try {
+    answer = await getSmartAnswer(prompt, userId, systemPrompt, nlpResult.intent || null);
+  } catch (e) {
+    console.error('AI fallback error:', e.message);
+    answer = 'Maaf, aku lagi kesulitan menjawab. Coba ulang atau gunakan perintah yang lebih spesifik.';
+  }
+
+  if (!answer || !String(answer).trim()) answer = 'Maaf, aku belum bisa memproses itu.';
+  if (calcEntropyScore(answer) < 0.01) answer = 'Maaf, aku belum mendapat jawaban yang cukup jelas.';
+
+  let quality = scoreAnswerQuality(text, answer);
+  if (quality < 0.45 && TAVILY_API_KEY && !resolvedCmd) {
+    try {
+      const webVersion = await summarizeSearchWithRefs(text, userId, systemPrompt);
+      if (webVersion && webVersion.length > answer.length * 0.6) {
+        answer = webVersion;
+        quality = scoreAnswerQuality(text, answer);
+      }
+    } catch (_) {}
+  }
+
+  await sendStreamingAnswer(chatId, answer, {
+    reply_to_message_id: msg.message_id,
+    disable_web_page_preview: true,
+    reply_markup: {
+      inline_keyboard: [[
+        { text: '👍', callback_data: 'positive' },
+        { text: '👎', callback_data: 'negative' }
+      ]]
+    }
+  });
+
+  pushChatHistory({
+    userId,
+    chatId,
+    role: 'assistant',
+    text: answer,
+    timestamp: nowMs()
+  });
+
+  updateUserTags(u, answer);
+
+  await autoSummarizeMemory(userId);
+  if (u.digest?.enabled) scheduleDigestJob(userId);
+});
     }
 
     const rl = rateLimit(userId);
