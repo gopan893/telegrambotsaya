@@ -28,7 +28,7 @@ const config = {
 const MODES = {
   balanced: {
     label: 'Seimbang',
-    instruction: 'Jawab dengan ringkas, jelas, dan langsung membantu. Gunakan bahasa Indonesia natural kecuali user meminta bahasa lain.'
+    instruction: 'Jawab dengan ringkas, jelas, dan langsung membantu. Ikuti bahasa yang dipakai user.'
   },
   coder: {
     label: 'Programmer',
@@ -64,6 +64,7 @@ Prinsip utama:
 - Untuk coding, berikan solusi lengkap, aman, dan mudah dipelihara.
 - Untuk bisnis, berikan prioritas tindakan yang bisa langsung dieksekusi.
 - Untuk percakapan santai, tetap hangat, manusiawi, dan tidak kaku.
+- Selalu balas dengan bahasa utama yang dipakai user di pesan terakhir. Jika user memakai bahasa Jepang, balas bahasa Jepang. Jika user meminta bahasa tertentu, ikuti permintaan itu.
 `.trim();
 
 const bot = new Telegraf(config.telegramToken);
@@ -305,7 +306,7 @@ function buildInstructions(profile, mode) {
     SYSTEM_CORE,
     `Mode aktif: ${mode.label}. ${mode.instruction}`,
     memoryLines ? `Memori user:\n${memoryLines}` : 'Belum ada memori user.',
-    'Format jawaban: pakai bahasa yang natural, ringkas bila bisa, dan beri langkah konkret saat user meminta aksi.'
+    'Format jawaban: pakai bahasa user secara natural, ringkas bila bisa, dan beri langkah konkret saat user meminta aksi.'
   ].join('\n\n');
 }
 
