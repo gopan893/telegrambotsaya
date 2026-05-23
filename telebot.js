@@ -4,7 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import { Telegraf } from 'telegraf';
+const isRender = process.env.RENDER === 'true';
 
+if (isRender) {
+  console.log('Running on Render...');
+}
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -281,7 +285,12 @@ process.once('SIGTERM', async () => {
   await bot.stop('SIGTERM');
   process.exit(0);
 });
-
+setInterval(() => {
+  if (global.gc) {
+    global.gc();
+    console.log('Memory dibersihkan');
+  }
+}, 300000);
 // ── Hapus webhook & pending updates sebelum polling ────────────────────────
 // Ini mencegah 409 Conflict jika sebelumnya pernah pakai webhook,
 // atau jika Render spin-up instance baru sebelum instance lama mati.
