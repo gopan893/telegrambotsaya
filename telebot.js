@@ -842,13 +842,18 @@ function getChatId(ctx) {
 function isAdmin(ctx) {
   return config.adminIds.has(getUserId(ctx));
 }
-
 async function replyLong(ctx, text) {
   const chunks = splitTelegramMessage(text);
   for (const chunk of chunks) {
-    await ctx.reply(chunk);
+    try {
+      await ctx.reply(chunk, { parse_mode: 'Markdown' });
+    } catch (error) {
+      // Fallback jika format Markdown error dari AI
+      await ctx.reply(chunk);
+    }
   }
 }
+
 
 function splitTelegramMessage(text) {
   const max = 3900;
