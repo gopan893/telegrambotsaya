@@ -992,7 +992,61 @@ function extractMistralText(response) {
   return '';
 }
 
+// FIX: Menggunakan {3} pada regex agar tidak error saat di Render
 function stripCodeFence(text) {
   return String(text)
     .trim()
-    .replace(/^
+    .replace(/^`{3}(?:json)?/i, '')
+    .replace(/`{3}$/i, '')
+    .trim();
+}
+
+function formatDuration(totalSeconds) {
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+}
+
+function resolveLocalPath(value) {
+  if (path.isAbsolute(value)) return value;
+  return path.join(__dirname, value);
+}
+
+function boolFromEnv(key, fallback) {
+  const value = process.env[key];
+  if (value === undefined) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function numberFromEnv(key, fallback) {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function mustGetEnv(key) {
+  const value = process.env[key];
+  if (!value) {
+    console.error(`Environment variable ${key} wajib diisi.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+function mustGetAnyEnv(keys) {
+  for (const key of keys) {
+    if (process.env[key]) {
+      return process.env[key];
+    }
+  }
+
+  console.error(`Salah satu environment variable wajib diisi: ${keys.join(' atau ')}.`);
+  process.exit(1);
+}
+
+function getActiveModel() {
+  if (config.aiProvider === 'openai') return config.openaiModel;
+  if (config.aiProvider === 'huggingface') return config.huggingfaceModel;
+  return config.mistralModel;
+}
