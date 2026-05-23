@@ -260,7 +260,13 @@ bot.catch(async (error, ctx) => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+import http from 'node:http';
 
+// Tambahkan sebelum bot.launch()
+const PORT = process.env.PORT || 3000;
+http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
+  console.log(`Health check listening on port ${PORT}`);
+});
 await bot.launch();
 console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
 
