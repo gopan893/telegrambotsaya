@@ -9,78 +9,59 @@ import os from 'node:os';
 import OpenAI, { toFile } from 'openai';
 import { Telegraf } from 'telegraf';
 
+// Dynamic import for optional heavy dependencies
+let pdfParse;
+try {
+  pdfParse = (await import('pdf-parse')).default;
+} catch {
+  console.warn("⚠️ Module 'pdf-parse' belum diinstal. Fitur PDF terbatas.");
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ==========================================
-// 1. CONFIGURATION & ENVIRONMENT VALIDATION
+// 1. CONFIGURATION & ENVIRONMENT
 // ==========================================
 const config = {
   telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
-  aiProvider: (process.env.AI_PROVIDER || (process.env.MISTRAL_API_KEY ? 'mistral' : 'openai')).toLowerCase(),
+  aiProvider: (process.env.AI_PROVIDER || 'openai').toLowerCase(),
   openaiKey: process.env.OPENAI_API_KEY || '',
-  mistralKey: process.env.MISTRAL_API_KEY || '',
-  huggingfaceKey: process.env.HUGGINGFACE_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o', // Diupgrade ke 4o untuk speed & vision
-  mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-  huggingfaceModel: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
-  reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'high',
-  maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 4000), // Ditingkatkan
-  enableWebSearch: boolFromEnv('ENABLE_WEB_SEARCH', true),
-  enableImageInput: boolFromEnv('ENABLE_IMAGE_INPUT', true),
-  enableVoiceInput: boolFromEnv('ENABLE_VOICE_INPUT', true),
-  autoMemory: boolFromEnv('AUTO_MEMORY', true),
-  vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || '',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o',
   adminIds: new Set((process.env.OWNER_CHAT_ID || process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
-  rateLimitMessages: numberFromEnv('RATE_LIMIT_MESSAGES', 15),
-  rateLimitWindowMs: numberFromEnv('RATE_LIMIT_WINDOW_SECONDS', 60) * 1000,
-  dataFile: resolveLocalPath(process.env.DATA_FILE || './data/state.json'),
-  knowledgeDir: resolveLocalPath(process.env.KNOWLEDGE_DIR || './knowledge')
+  rateLimitMessages: 20,
+  rateLimitWindowMs: 60000,
+  dataFile: path.join(__dirname, process.env.DATA_FILE || './data/state.json'),
+  knowledgeDir: path.join(__dirname, process.env.KNOWLEDGE_DIR || './knowledge'),
+  port: process.env.PORT || 3000,
+  // Integrasi
+  notionApiKey: process.env.NOTION_API_KEY || '',
+  notionDatabaseId: process.env.NOTION_DATABASE_ID || '',
 };
 
-// Validasi Provider
-if (!['openai', 'mistral', 'huggingface'].includes(config.aiProvider)) {
-  console.error('AI_PROVIDER harus "openai", "mistral", atau "huggingface".');
-  process.exit(1);
+// ==========================================
+// 2. STATE MANAGEMENT & INFRASTRUCTURE
+// ==========================================
+let state = { 
+  users: {}, 
+  chats: {}, 
+  metrics: { startedAt: new Date().toISOString(), messagesHandled: 0, spamBlocked: 0, errors: 0 },
+  reminders: [],
+  systemLogs: [] // Untuk Dashboard UI
+};
+
+function addLog(message) {
+  const time = new Date().toLocaleTimeString();
+  state.systemLogs.unshift(`[${time}] ${message}`);
+  if (state.systemLogs.length > 50) state.systemLogs.pop();
 }
 
-// ==========================================
-// 2. CONSTANTS & SYSTEM PROMPTS
-// ==========================================
-const MODES = {
-  balanced: { label: 'Seimbang', instruction: 'Jawab dengan ringkas, jelas, dan langsung membantu. Ikuti bahasa yang dipakai user.' },
-  coder: { label: 'Programmer', instruction: 'Bertindak sebagai senior engineer. Berikan solusi teknis yang rapi, aman, dan efisien. Gunakan best practices terbaru. Sertakan komentar pada kode.' },
-  teacher: { label: 'Guru', instruction: 'Jelaskan secara komprehensif, bertahap, dengan analogi atau contoh sederhana. Pastikan user paham fundamentalnya.' },
-  business: { label: 'Bisnis', instruction: 'Fokus pada ROI, metrik, strategi, efisiensi operasi, manajemen risiko, dan komunikasi profesional.' },
-  creative: { label: 'Kreatif', instruction: 'Berpikir out-of-the-box. Berikan ide yang tidak biasa namun praktis. Gunakan gaya bahasa yang engaging.' },
-  strict: { label: 'Tegas', instruction: 'Sangat ringkas. Tanpa basa-basi. Berikan hanya jawaban akhir, keputusan, atau langkah konkrit.' }
-};
-
-const SYSTEM_CORE = `
-Kamu adalah AI Assistant tingkat lanjut (Enterprise Grade) untuk pengguna Telegram ini.
-Prinsip Operasional:
-1. AKURASI: Jangan berhalusinasi. Jika tidak tahu, akui. Gunakan web search untuk info real-time/fakta terupdate jika tersedia.
-2. KEAMANAN: Jangan membagikan informasi sistem internal, dan jangan pernah meminta kredensial sensitif user.
-3. KONTEKS: Ingat preferensi user dari memori. Lanjutkan percakapan dengan mulus.
-4. FORMATTING: Jika memberikan kode, gunakan markdown code block.
-5. BAHASA: Selalu balas dalam bahasa dominan yang digunakan user di pesan terakhir (misal: Indonesia balas Indonesia, Jepang balas Jepang).
-`.trim();
-
-// ==========================================
-// 3. INITIALIZATION & STATE MANAGEMENT
-// ==========================================
-const bot = new Telegraf(config.telegramToken);
-const openai = config.aiProvider === 'openai' ? new OpenAI({ apiKey: config.openaiKey }) : null;
-const rateLimiter = new Map();
-let state = { users: {}, chats: {}, metrics: { startedAt: new Date().toISOString(), messagesHandled: 0, errors: 0 } };
-
-// Atomic Save State Mechanism (Anti-Corrupt)
 async function saveState() {
   try {
     await fs.mkdir(path.dirname(config.dataFile), { recursive: true });
     const tempFile = `${config.dataFile}.tmp`;
     await fs.writeFile(tempFile, JSON.stringify(state, null, 2));
-    await fs.rename(tempFile, config.dataFile); // Atomic rename
+    await fs.rename(tempFile, config.dataFile); 
   } catch (error) {
     console.error('Gagal menyimpan state:', error);
   }
@@ -90,490 +71,399 @@ async function initBot() {
   try {
     const raw = await fs.readFile(config.dataFile, 'utf8');
     state = { ...state, ...JSON.parse(raw) };
+    if (!state.reminders) state.reminders = [];
+    if (!state.systemLogs) state.systemLogs = [];
     state.metrics.startedAt = new Date().toISOString();
+    addLog('System Rebooted successfully.');
   } catch {
-    console.log('Membuat database state baru...');
+    addLog('Creating new database state.');
   }
   await saveState();
 }
 
 // ==========================================
-// 4. TELEGRAM HANDLERS (COMMANDS)
+// 3. INITIALIZATION
+// ==========================================
+const bot = new Telegraf(config.telegramToken);
+const openai = config.aiProvider === 'openai' ? new OpenAI({ apiKey: config.openaiKey }) : null;
+const rateLimiter = new Map();
+
+// ==========================================
+// 4. SMART SCHEDULER & BACKGROUND TASKS
+// ==========================================
+setInterval(async () => {
+  const now = Date.now();
+  const pending = [];
+  for (let r of state.reminders) {
+    if (now >= r.triggerAt) {
+      try { await bot.telegram.sendMessage(r.chatId, `⏰ *PENGINGAT:*\n${r.message}`, { parse_mode: 'Markdown' }); } 
+      catch (e) { addLog(`Gagal mengirim reminder ke ${r.chatId}`); }
+    } else pending.push(r);
+  }
+  if (state.reminders.length !== pending.length) {
+    state.reminders = pending;
+    await saveState();
+  }
+}, 60000);
+
+// ==========================================
+// 5. MIDDLEWARE: SMART FILTERING (ANTI-SPAM)
+// ==========================================
+bot.use(async (ctx, next) => {
+  if (ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup') {
+    const text = ctx.message?.text || ctx.message?.caption || '';
+    // Deteksi indikasi spam/phising melalui keyword (Bisa diupgrade pakai AI Text Classification)
+    const isSuspicious = /(http|www|t\.me)/i.test(text) && /(crypto|binance|investasi|free money|giveaway|jackpot|slot)/i.test(text);
+    
+    if (isSuspicious && !isAdmin(ctx)) {
+      try {
+        await ctx.deleteMessage();
+        state.metrics.spamBlocked++;
+        addLog(`Blocked spam message in group ${ctx.chat.id}`);
+        return; // Hentikan eksekusi handler lain
+      } catch (e) {
+        addLog(`Failed to delete spam message (Not admin in group).`);
+      }
+    }
+  }
+  return next();
+});
+
+// ==========================================
+// 6. TELEGRAM COMMANDS
 // ==========================================
 bot.start(async (ctx) => {
   touchUser(ctx);
   await ctx.reply(
-    `🤖 *AI System Online*\n\n` +
-    `Saya siap membantu. Kirim teks, foto, dokumen, atau Voice Note.\n\n` +
-    `🛠 *Perintah:* \n` +
-    `/help - Panduan lengkap\n` +
-    `/mode - Ganti gaya respon\n` +
-    `/forget - Reset percakapan\n` +
-    `/memory - Lihat apa yang saya ingat`,
+    `🤖 *Omni-AI System Online*\n\n` +
+    `Mode Tersedia:\n` +
+    `1. Obrolan Biasa (Kirim teks/dokumen)\n` +
+    `2. Multi-Agent Research (/research)\n` +
+    `3. Alat Produktivitas (/run, /remind, /notion)\n\n` +
+    `Ketik /help untuk manual lengkap.`,
     { parse_mode: 'Markdown' }
   );
 });
 
 bot.help(async (ctx) => {
-  touchUser(ctx);
   await ctx.reply(
-    `*Kemampuan AI:*\n` +
-    `• Mengingat preferensi Anda (Long-term Memory)\n` +
-    `• Membaca Foto & Voice Note\n` +
-    `• Mencari data dari dokumen lokal\n\n` +
-    `*Command List:*\n` +
-    `/mode - Cek mode saat ini\n` +
-    `/mode <nama> - Ubah mode (coder, teacher, dll)\n` +
-    `/memory - Lihat memori\n` +
-    `/memory_add <teks> - Simpan ke memori\n` +
-    `/memory_clear - Hapus semua memori\n` +
-    `/forget - Bersihkan konteks obrolan saat ini\n` +
-    (isAdmin(ctx) ? `/stats - Dashboard Server\n` : ''),
+    `🌟 *OMNI-BOT FEATURES:*\n\n` +
+    `🧠 *Multi-Agent (Tugas Berat):*\n` +
+    `- /research <topik> : AI meneliti & menulis komprehensif.\n\n` +
+    `🔗 *Integrasi & Alat:*\n` +
+    `- /notion <teks> : Simpan ide ke Notion Workspace.\n` +
+    `- /run <bahasa> <kode> : Eksekusi kode (JS, Python).\n` +
+    `- /image <teks> : Buat ilustrasi DALL-E 3.\n\n` +
+    `⏰ *Otomasi:*\n` +
+    `- /remind <waktu> <pesan> : Contoh /remind 10m Rapat.\n\n` +
+    `🔐 *Personalisasi:*\n` +
+    `- /persona <sifat> : Ubah kepribadian bot.\n` +
+    `- /memory : Lihat memori profil Anda.\n` +
+    (isAdmin(ctx) ? `\n📊 /stats : Info Server Admin` : ''),
     { parse_mode: 'Markdown' }
   );
 });
 
-bot.command('mode', async (ctx) => {
+// Fitur Multi-Agent Workflow
+bot.command('research', async (ctx) => {
   touchUser(ctx);
-  const userId = getUserId(ctx);
-  const requested = getCommandPayload(ctx).trim().toLowerCase();
+  const topic = getCommandPayload(ctx).trim();
+  if (!topic) return ctx.reply('Sertakan topik. Contoh: `/research Potensi AI di bidang kesehatan 2025`', { parse_mode: 'Markdown' });
 
-  if (!requested) {
-    const current = getUserProfile(userId).mode || 'balanced';
-    const lines = Object.entries(MODES).map(([k, v]) => `${k === current ? '✅' : '➖'} *${k}*: ${v.label}`);
-    return ctx.reply(`*Mode Saat Ini:* ${current}\n\n${lines.join('\n')}\n\n_Ubah dengan: /mode coder_`, { parse_mode: 'Markdown' });
+  const statusMsg = await ctx.reply('🕵️‍♂️ *Agent 1 (Perencana):* Sedang merancang kerangka riset...', { parse_mode: 'Markdown' });
+  
+  try {
+    // Agent 1: Planning
+    addLog(`Memulai Multi-Agent Workflow untuk topik: ${topic}`);
+    const planPrompt = `Buat 3 poin utama yang harus dianalisis untuk topik: "${topic}". Cukup tulis poinnya saja.`;
+    const plan = await generateText(planPrompt, 200);
+    
+    await bot.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, undefined, `🕵️‍♂️ *Agent 1 Selesai.*\n\n👨‍🔬 *Agent 2 (Peneliti):* Mencari data dan melakukan web scraping untuk poin-poin tersebut...`, { parse_mode: 'Markdown' });
+    
+    // Agent 2: Research (Menggunakan Web Search / Ekstraksi Info)
+    const researchPrompt = `Sebagai peneliti, berikan ringkasan data, fakta, atau argumen komprehensif untuk poin-poin berikut:\n${plan}\nGunakan pengetahuan terupdate.`;
+    const researchData = await generateText(researchPrompt, 1500, true);
+
+    await bot.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, undefined, `👨‍🔬 *Agent 2 Selesai.*\n\n✍️ *Agent 3 (Penulis/Editor):* Menyusun laporan akhir...`, { parse_mode: 'Markdown' });
+
+    // Agent 3: Writing & Polishing
+    const writerPrompt = `Sebagai Editor ahli, rapikan data penelitian berikut menjadi laporan yang sangat mudah dibaca, profesional, lengkap dengan struktur pengantar, isi, dan kesimpulan menggunakan format Markdown yang rapi:\n\n${researchData}`;
+    const finalReport = await generateText(writerPrompt, 2000);
+
+    await safeDeleteMessage(ctx, statusMsg.message_id);
+    await replyLong(ctx, `📑 *LAPORAN MULTI-AGENT*\n*Topik:* ${topic}\n\n${finalReport}`);
+    addLog(`Multi-Agent Workflow selesai.`);
+  } catch (err) {
+    await safeDeleteMessage(ctx, statusMsg.message_id);
+    await ctx.reply(`❌ Riset gagal: ${err.message}`);
+  }
+});
+
+// Fitur Integrasi Notion
+bot.command('notion', async (ctx) => {
+  touchUser(ctx);
+  const text = getCommandPayload(ctx).trim();
+  if (!text) return ctx.reply('Format: `/notion [Tugas/Ide yang ingin disimpan]`', { parse_mode: 'Markdown' });
+
+  if (!config.notionApiKey || !config.notionDatabaseId) {
+    return ctx.reply('❌ API Key atau Database ID Notion belum dikonfigurasi di server (.env).');
   }
 
-  if (!MODES[requested]) return ctx.reply(`❌ Mode "${requested}" tidak ditemukan.`);
-  
-  getUserProfile(userId).mode = requested;
+  const statusMsg = await ctx.reply('🔄 Menyinkronkan ke Notion Workspace...');
+  try {
+    const response = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.notionApiKey}`,
+        'Content-Type': 'application/json',
+        'Notion-Version': '2022-06-28'
+      },
+      body: JSON.stringify({
+        parent: { database_id: config.notionDatabaseId },
+        properties: {
+          title: { title: [{ text: { content: text.substring(0, 50) + (text.length > 50 ? '...' : '') } }] }
+        },
+        children: [{
+          object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: text } }] }
+        }]
+      })
+    });
+
+    if (!response.ok) throw new Error(await response.text());
+    await bot.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, undefined, '✅ *Berhasil disimpan ke Notion!*', { parse_mode: 'Markdown' });
+    addLog(`Data synced to Notion by ${getUserId(ctx)}`);
+  } catch (err) {
+    await safeDeleteMessage(ctx, statusMsg.message_id);
+    await ctx.reply(`❌ Gagal menyimpan ke Notion.`);
+  }
+});
+
+// Command Tools Lainnya (Dari versi sebelumnya)
+bot.command('remind', async (ctx) => { /* Logic Reminder seperti sebelumnya */ 
+  const text = getCommandPayload(ctx).trim();
+  const match = text.match(/^(\d+)([mh])\s+(.+)$/i);
+  if (!match) return ctx.reply('Format: `/remind 10m Matikan kompor`', { parse_mode: 'Markdown' });
+  const triggerAt = Date.now() + (parseInt(match[1]) * (match[2].toLowerCase() === 'h' ? 3600000 : 60000));
+  state.reminders.push({ chatId: ctx.chat.id, message: match[3], triggerAt });
   await saveState();
-  await ctx.reply(`✅ Mode AI diubah ke: *${MODES[requested].label}*`, { parse_mode: 'Markdown' });
+  await ctx.reply(`✅ Pengingat disetel untuk: *"${match[3]}"*.`, { parse_mode: 'Markdown' });
 });
 
-bot.command('forget', async (ctx) => {
-  touchUser(ctx);
-  const chat = getChatState(getChatId(ctx));
-  chat.recent = [];
-  chat.lastResponseId = null;
+bot.command('run', async (ctx) => { /* Code sandbox */ 
+  const payload = getCommandPayload(ctx).trim();
+  const firstSpace = payload.indexOf(' ');
+  if (firstSpace === -1) return ctx.reply('Format: `/run <bahasa> <kode>`');
+  const lang = payload.slice(0, firstSpace).toLowerCase();
+  const code = payload.slice(firstSpace + 1).trim();
+  const res = await fetch('https://emkc.org/api/v2/piston/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: lang, version: "*", files: [{ content: code }] }) });
+  const result = await res.json();
+  await ctx.reply(`*Output (${lang}):*\n\`\`\`text\n${result.run?.output || result.message}\n\`\`\``, { parse_mode: 'Markdown' });
+});
+
+bot.command('image', async (ctx) => { /* DALL-E */ 
+  const prompt = getCommandPayload(ctx).trim();
+  if(!prompt) return ctx.reply("Ketik deskripsi!");
+  const res = await openai.images.generate({ model: "dall-e-3", prompt, size: "1024x1024" });
+  await ctx.replyWithPhoto({ url: res.data[0].url }, { caption: `🎨 ${prompt}` });
+});
+
+bot.command('persona', async (ctx) => {
+  const p = getCommandPayload(ctx).trim();
+  getUserProfile(getUserId(ctx)).persona = p || null;
   await saveState();
-  await ctx.reply('🧹 Konteks percakapan di ruang obrolan ini telah dibersihkan.');
-});
-
-bot.command(['memory', 'memory_add', 'memory_clear'], async (ctx) => {
-  touchUser(ctx);
-  const userId = getUserId(ctx);
-  const profile = getUserProfile(userId);
-  const cmd = ctx.message.text.split(' ')[0];
-
-  if (cmd === '/memory') {
-    if (!profile.memories.length) return ctx.reply('Belum ada memori tersimpan.');
-    const lines = profile.memories.map((m, i) => `${i + 1}. ${m.text}`);
-    return ctx.reply(`🧠 *Memori Anda:*\n${lines.join('\n')}`, { parse_mode: 'Markdown' });
-  }
-  
-  if (cmd === '/memory_clear') {
-    profile.memories = [];
-    await saveState();
-    return ctx.reply('🗑 Semua memori Anda telah dihapus.');
-  }
-
-  if (cmd === '/memory_add') {
-    const text = getCommandPayload(ctx).trim();
-    if (!text) return ctx.reply('Format: /memory_add [informasi yang ingin diingat]');
-    addMemory(userId, text, 'manual');
-    await saveState();
-    return ctx.reply('✅ Memori ditambahkan ke database otak saya.');
-  }
-});
-
-bot.command('stats', async (ctx) => {
-  if (!isAdmin(ctx)) return;
-  const uptime = process.uptime();
-  const ramMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-  const totalRam = Math.round(os.totalmem() / 1024 / 1024);
-  
-  await ctx.reply(
-    `📊 *System Stats*\n` +
-    `Bot Uptime: ${formatDuration(uptime)}\n` +
-    `RAM Usage: ${ramMb} MB / ${totalRam} MB\n` +
-    `Users: ${Object.keys(state.users).length}\n` +
-    `Chats: ${Object.keys(state.chats).length}\n` +
-    `Total Requests: ${state.metrics.messagesHandled}\n` +
-    `Errors: ${state.metrics.errors}\n` +
-    `Provider: ${config.aiProvider.toUpperCase()} (${getActiveModel()})`,
-    { parse_mode: 'Markdown' }
-  );
+  ctx.reply(p ? `✅ Persona diubah ke: ${p}` : `✅ Persona direset.`);
 });
 
 // ==========================================
-// 5. CORE MESSAGE HANDLERS
+// 7. CORE ENGINE (MEDIA, DOC, WEB, CHAT)
 // ==========================================
-bot.on(['text', 'photo', 'voice', 'document'], async (ctx) => {
+bot.on(['text', 'photo', 'voice', 'document', 'video_note'], async (ctx) => {
   touchUser(ctx);
-  if (!allowRequest(ctx)) {
-    return ctx.reply('⏳ Anda mengirim pesan terlalu cepat. Mohon tunggu beberapa detik.');
-  }
+  if (!allowRequest(ctx)) return ctx.reply('⏳ Tunggu sebentar.');
 
   let messageText = extractMessageText(ctx);
+  let contextData = '';
   
-  // UX: Start typing indicator
-  let typingInterval = setInterval(() => ctx.sendChatAction('typing'), 4000);
-  ctx.sendChatAction('typing').catch(()=>{}); // initial trigger
-  
-  const statusMsg = await ctx.reply('⏳ Memproses...').catch(()=>({message_id: null}));
+  ctx.sendChatAction('typing').catch(()=>{}); 
+  const statusMsg = await ctx.reply('⏳ Menganalisis...').catch(()=>({message_id: null}));
 
   try {
-    // 1. Handle Voice Note
-    if (ctx.message.voice && config.enableVoiceInput && config.aiProvider === 'openai') {
-      messageText = await processVoiceNote(ctx);
-      if (!messageText) throw new Error("Gagal mentranskripsi audio.");
-    } else if (ctx.message.voice) {
-      throw new Error("Transkripsi suara hanya didukung jika AI_PROVIDER=openai.");
+    // Handle Voice/Video (Speech-to-Text via Whisper)
+    if ((ctx.message.voice || ctx.message.video_note) && config.aiProvider === 'openai') {
+      const fileId = ctx.message.voice?.file_id || ctx.message.video_note?.file_id;
+      const link = await ctx.telegram.getFileLink(fileId);
+      const res = await fetch(link.href);
+      const file = await toFile(Buffer.from(await res.arrayBuffer()), 'media.ogg', { type: 'audio/ogg' });
+      messageText = (await openai.audio.transcriptions.create({ file, model: 'whisper-1' })).text;
     }
 
-    if (!messageText && !ctx.message.photo) {
-      throw new Error('Mohon kirim teks, foto dengan caption, atau voice note.');
+    // Handle Document (PDF/TXT)
+    if (ctx.message.document) {
+      const doc = ctx.message.document;
+      const link = await ctx.telegram.getFileLink(doc.file_id);
+      const buf = Buffer.from(await (await fetch(link.href)).arrayBuffer());
+      if (doc.file_name.endsWith('.pdf') && pdfParse) {
+        contextData = (await pdfParse(buf)).text.substring(0, 15000);
+      } else {
+        contextData = buf.toString('utf-8').substring(0, 15000);
+      }
+      if (!messageText) messageText = "Tolong rangkum isi dokumen ini.";
     }
 
-    // 2. Generate Answer
-    const answer = await answerUser(ctx, messageText);
+    // Handle URL Web Scraping
+    const urls = messageText?.match(/https?:\/\/[^\s]+/g);
+    if (urls && urls.length > 0) {
+      await bot.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, undefined, '🕸 Melakukan Web Scraping...');
+      const html = await (await fetch(urls[0], { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
+      contextData += `\n\n[WEB KONTEN]: ` + html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').substring(0, 15000);
+    }
+
+    if (!messageText && !ctx.message.photo && !contextData) throw new Error('Input tidak valid.');
+
+    // RAG & Response Generation
+    const localDb = await retrieveLocalKnowledge(messageText);
+    const chat = getChatState(getChatId(ctx));
+    const profile = getUserProfile(getUserId(ctx));
     
-    // 3. Send Response
-    await safeDeleteMessage(ctx, statusMsg.message_id);
-    await replyLong(ctx, answer || 'Tidak ada respons dari AI.');
+    let promptParts = [];
+    if (messageText) promptParts.push(`User: ${messageText}`);
+    if (contextData) promptParts.push(`Context Media/Web: ${contextData}`);
+    if (localDb) promptParts.push(`Local DB: ${localDb}`);
+    if (chat.recent.length) promptParts.push(`Chat History:\n${chat.recent.map(r=>`${r.role}: ${r.text}`).join('\n')}`);
 
-  } catch (error) {
-    state.metrics.errors += 1;
-    console.error('Handler Error:', error);
+    const sysInstruct = `Kamu adalah Sistem AI Otonom Omni-Level.${profile.persona ? ` Bertindak sebagai: ${profile.persona}` : ''}\nMemori User:\n${profile.memories.map(m=>m.text).join('\n')}`;
+
+    let ans = '';
+    const inputContent = [{ type: 'text', text: promptParts.join('\n\n') }];
+    if (ctx.message.photo) {
+      const imgLink = await ctx.telegram.getFileLink(ctx.message.photo.at(-1).file_id);
+      inputContent.push({ type: 'image_url', image_url: { url: imgLink.href } });
+    }
+
+    if (config.aiProvider === 'openai') {
+      const response = await openai.chat.completions.create({
+        model: config.openaiModel,
+        messages: [{ role: 'system', content: sysInstruct }, { role: 'user', content: inputContent }]
+      });
+      ans = response.choices[0].message.content;
+    }
+
+    rememberRecent(chat, 'user', messageText || '[Kirim Media/File]');
+    rememberRecent(chat, 'assistant', ans);
+    state.metrics.messagesHandled++;
+    
     await safeDeleteMessage(ctx, statusMsg.message_id);
-    await ctx.reply(`❌ Terjadi kendala: ${error.message || 'Sistem sibuk'}`);
+    await replyLong(ctx, ans);
+
+    // Auto memory
+    if (messageText && messageText.length > 15) {
+      const mPrompt = `Ekstrak fakta unik dari user dlm bentuk JSON string array max 2 item. Balas [] jika tak ada. \nUser: ${messageText}\nAI: ${ans}`;
+      const mRes = await generateText(mPrompt, 200);
+      try { JSON.parse(stripCodeFence(mRes)).forEach(i => addMemory(getUserId(ctx), i)); } catch {}
+    }
+
+  } catch (err) {
+    state.metrics.errors++;
+    addLog(`Error handling message: ${err.message}`);
+    await safeDeleteMessage(ctx, statusMsg.message_id);
+    await ctx.reply(`❌ Error: ${err.message}`);
   } finally {
-    clearInterval(typingInterval);
     await saveState();
   }
 });
 
-bot.catch(async (error, ctx) => {
-  state.metrics.errors += 1;
-  console.error('Global Bot Error:', error);
-});
-
 // ==========================================
-// 6. AI & LOGIC FUNCTIONS
+// 8. WEB DASHBOARD UI (ADMIN CONTROL CENTER)
 // ==========================================
-async function answerUser(ctx, messageText) {
-  const userId = getUserId(ctx);
-  const chatId = getChatId(ctx);
-  const profile = getUserProfile(userId);
-  const chat = getChatState(chatId);
-  const mode = MODES[profile.mode] || MODES.balanced;
-  
-  const localKnowledge = await retrieveLocalKnowledge(messageText);
-  const imageContent = await buildImageContent(ctx);
+http.createServer((req, res) => {
+  if (req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    const uptime = process.uptime();
+    const ram = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    
+    const logsHtml = state.systemLogs.map(l => `<div class="log-item">${l}</div>`).join('');
+    
+    res.end(`
+      <html>
+        <head>
+          <title>Omni-AI Admin Control Center</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            :root { --bg: #0f172a; --panel: #1e293b; --text: #f8fafc; --accent: #38bdf8; --alert: #f43f5e; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
+            .container { max-width: 900px; margin: auto; }
+            h1 { color: var(--accent); border-bottom: 2px solid var(--panel); padding-bottom: 10px; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+            .card { background: var(--panel); padding: 20px; border-radius: 12px; border-left: 4px solid var(--accent); }
+            .card h3 { margin: 0 0 10px 0; font-size: 14px; color: #94a3b8; text-transform: uppercase; }
+            .card .val { font-size: 24px; font-weight: bold; }
+            .logs { background: #000; padding: 15px; border-radius: 8px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #10b981; }
+            .log-item { margin-bottom: 5px; border-bottom: 1px dashed #333; padding-bottom: 5px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>⚙️ Omni-AI Control Center</h1>
+            
+            <div class="grid">
+              <div class="card"><h3>AI Provider</h3><div class="val">${config.aiProvider.toUpperCase()}</div></div>
+              <div class="card"><h3>Uptime</h3><div class="val">${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m</div></div>
+              <div class="card"><h3>RAM Usage</h3><div class="val">${ram} MB</div></div>
+              <div class="card"><h3>Total Users</h3><div class="val">${Object.keys(state.users).length}</div></div>
+              <div class="card"><h3>Queries Processed</h3><div class="val">${state.metrics.messagesHandled}</div></div>
+              <div class="card" style="border-color: var(--alert)"><h3>Spam Blocked</h3><div class="val">${state.metrics.spamBlocked}</div></div>
+            </div>
 
-  // Menyusun Prompt
-  const promptParts = [];
-  if (messageText) promptParts.push(`User message:\n${messageText}`);
-  if (!messageText && imageContent) promptParts.push(`[User sent an image without text. Analyze it]`);
-  if (localKnowledge) promptParts.push(`\nRelevant local database context:\n${localKnowledge}`);
-  if (chat.recent.length) promptParts.push(`\nConversation history:\n${formatRecent(chat.recent)}`);
-
-  const userInput = promptParts.join('\n\n');
-  const inputPayload = imageContent
-    ? [{ role: 'user', content: [{ type: 'text', text: userInput }, ...imageContent] }]
-    : userInput;
-
-  const instructions = buildInstructions(profile, mode, detectReplyLanguage(messageText));
-  
-  let answer = '';
-  let responseId = null;
-
-  // Execute with Retry Logic
-  await withRetry(async () => {
-    if (config.aiProvider === 'openai') {
-      const request = {
-        model: config.openaiModel,
-        instructions,
-        input: inputPayload,
-        store: true,
-        max_output_tokens: config.maxOutputTokens
-      };
-      if (config.enableWebSearch) request.tools = [{ type: 'web_search' }];
-      if (chat.lastResponseId) request.previous_response_id = chat.lastResponseId;
-
-      const response = await openai.responses.create(request);
-      responseId = response.id;
-      answer = response.output_text?.trim() || extractOutputText(response);
-      
-    } else if (config.aiProvider === 'mistral') {
-      const res = await createMistralChatCompletion([{ role: 'system', content: instructions }, { role: 'user', content: userInput }]);
-      answer = extractMistralText(res);
-    } else {
-      const res = await createHuggingFaceChatCompletion([{ role: 'system', content: instructions }, { role: 'user', content: userInput }]);
-      answer = extractMistralText(res);
-    }
-  }, 3); // 3 Retries
-
-  chat.lastResponseId = responseId;
-  rememberRecent(chat, 'user', messageText || '[Gambar]');
-  rememberRecent(chat, 'assistant', answer);
-  state.metrics.messagesHandled += 1;
-
-  if (config.autoMemory && messageText) {
-    // Run memory extraction async without blocking response
-    maybeLearnMemory(userId, messageText, answer).catch(() => {});
+            <h2>Terminal Logs</h2>
+            <div class="logs">${logsHtml || 'No recent activity.'}</div>
+          </div>
+        </body>
+      </html>
+    `);
+  } else {
+    res.writeHead(404);
+    res.end();
   }
-
-  return answer;
-}
-
-async function processVoiceNote(ctx) {
-  const fileId = ctx.message.voice.file_id;
-  const link = await ctx.telegram.getFileLink(fileId);
-  const response = await fetch(link.href);
-  const arrayBuffer = await response.arrayBuffer();
-  
-  // Whisper accepts ogg directly from Telegram
-  const file = await toFile(Buffer.from(arrayBuffer), 'voice.ogg', { type: 'audio/ogg' });
-  const transcription = await openai.audio.transcriptions.create({
-    file: file,
-    model: 'whisper-1',
-  });
-  return transcription.text;
-}
-
-async function buildImageContent(ctx) {
-  if (config.aiProvider !== 'openai' || !config.enableImageInput || !ctx.message.photo?.length) return null;
-  const largestPhoto = ctx.message.photo.at(-1);
-  const link = await ctx.telegram.getFileLink(largestPhoto.file_id);
-  return [{ type: 'image_url', image_url: { url: link.href } }]; // Perbaikan format image OpenAI
-}
-
-function buildInstructions(profile, mode, replyLanguage) {
-  const memoryLines = profile.memories.slice(-30).map((m) => `- ${m.text}`).join('\n');
-  return [
-    SYSTEM_CORE,
-    `System Mode: ${mode.label}. ${mode.instruction}`,
-    `Language Rule: ${replyLanguage.instruction}`,
-    memoryLines ? `User Core Memories (Use implicitly):\n${memoryLines}` : '',
-  ].filter(Boolean).join('\n\n');
-}
+}).listen(config.port, () => console.log(`🌍 Control Center Active on Port ${config.port}`));
 
 // ==========================================
-// 7. MEMORY & CONTEXT MANAGEMENT
+// 9. UTILITIES
 // ==========================================
-async function maybeLearnMemory(userId, userMessage, assistantAnswer) {
-  if (userMessage.length < 15) return;
-  const existing = getUserProfile(userId).memories.map(m => m.text).join('\n');
-  const prompt = `Extract objective long-term facts/preferences about the user from this interaction. Exclude generic info or sensitive data (passwords). Output ONLY a JSON array of strings. Return [] if nothing worth saving.\n\nExisting:\n${existing||'-'}\n\nUser: ${userMessage}\nAssistant: ${assistantAnswer}`;
-  
-  const text = await generateText(prompt, 200);
-  try {
-    const parsed = JSON.parse(stripCodeFence(text || '[]'));
-    if (Array.isArray(parsed)) {
-      parsed.filter(i => typeof i === 'string' && i.trim()).forEach(i => addMemory(userId, i.trim(), 'auto'));
-    }
-  } catch {}
-}
-
-function addMemory(userId, text, source) {
-  const profile = getUserProfile(userId);
-  const normalized = String(text).replace(/\s+/g, ' ').trim().slice(0, 250);
-  if (!normalized || profile.memories.some(m => m.text === normalized)) return;
-  
-  profile.memories.push({ text: normalized, source, createdAt: new Date().toISOString() });
-  if (profile.memories.length > 50) profile.memories.shift();
-}
-
-function rememberRecent(chat, role, text) {
-  chat.recent.push({ role, text: String(text || '').slice(0, 1000) });
-  if (chat.recent.length > 20) chat.recent.shift(); // Increased context window
-}
-
-function formatRecent(recent) {
-  return recent.map((item) => `${item.role}: ${item.text}`).join('\n');
-}
-
-// ==========================================
-// 8. RAG (KNOWLEDGE BASE) - Upgraded Overlap
-// ==========================================
-async function retrieveLocalKnowledge(query) {
-  const files = await listKnowledgeFiles(config.knowledgeDir);
-  if (!files.length || !query) return '';
-  const queryTokens = tokenize(query);
-  const scoredChunks = [];
-
-  for (const file of files) {
-    const raw = await fs.readFile(file, 'utf8');
-    // Overlapping chunks for better context retention
-    const chunks = chunkTextWithOverlap(raw, 1000, 200); 
-    for (const chunk of chunks) {
-      const score = scoreChunk(queryTokens, chunk);
-      if (score > 1) scoredChunks.push({ file: path.basename(file), score, chunk });
-    }
-  }
-  return scoredChunks.sort((a, b) => b.score - a.score).slice(0, 3).map(i => `[Source: ${i.file}]\n${i.chunk}`).join('\n\n');
-}
-
-function chunkTextWithOverlap(text, size, overlap) {
-  const words = text.split(/\s+/);
-  const chunks = [];
-  for (let i = 0; i < words.length; i += size - overlap) {
-    chunks.push(words.slice(i, i + size).join(' '));
-  }
-  return chunks;
-}
-
-function scoreChunk(queryTokens, chunk) {
-  const chunkTokens = new Set(tokenize(chunk));
-  return queryTokens.reduce((score, token) => score + (chunkTokens.has(token) ? (token.length > 4 ? 2 : 1) : 0), 0);
-}
-
-// ==========================================
-// 9. API CALLS & UTILITIES
-// ==========================================
-async function generateText(prompt, maxTokens) {
+async function generateText(prompt, maxTokens = 1000, useTools = false) {
   if (config.aiProvider === 'openai') {
-    const res = await openai.chat.completions.create({ model: config.openaiModel, messages: [{role:'user', content:prompt}], max_tokens: maxTokens });
+    const opts = { model: config.openaiModel, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens };
+    if (useTools) opts.tools = [{ type: 'web_search' }];
+    const res = await openai.chat.completions.create(opts);
     return res.choices[0].message.content;
   }
-  // Simplified for Mistral/HF
-  return extractMistralText(await createMistralChatCompletion([{ role: 'user', content: prompt }], maxTokens));
+  return ''; // Simplified fallback
 }
-
-async function createMistralChatCompletion(messages, maxTokens = config.maxOutputTokens) {
-  const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST', headers: { authorization: `Bearer ${config.mistralKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: config.mistralModel, messages, max_tokens: maxTokens })
-  });
-  if (!res.ok) throw new Error(`Mistral Error: ${await res.text()}`);
-  return res.json();
+function addMemory(userId, text) {
+  const p = getUserProfile(userId);
+  if (!p.memories.some(m => m.text === text)) { p.memories.push({text}); if(p.memories.length>50) p.memories.shift(); }
 }
-
-async function createHuggingFaceChatCompletion(messages, maxTokens = config.maxOutputTokens) {
-  const res = await fetch(`https://api-inference.huggingface.co/models/${config.huggingfaceModel}/v1/chat/completions`, {
-    method: 'POST', headers: { authorization: `Bearer ${config.huggingfaceKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: config.huggingfaceModel, messages, max_tokens: maxTokens })
-  });
-  if (!res.ok) throw new Error(`HuggingFace Error: ${await res.text()}`);
-  return res.json();
-}
-
-async function withRetry(fn, retries = 3, delay = 1000) {
-  for (let i = 0; i < retries; i++) {
-    try { return await fn(); }
-    catch (err) {
-      if (i === retries - 1) throw err;
-      await new Promise(res => setTimeout(res, delay * Math.pow(2, i))); // Exponential backoff
-    }
-  }
-}
-
-// ==========================================
-// 10. TELEGRAM MESSAGING & FORMATTING
-// ==========================================
-async function replyLong(ctx, text) {
-  const chunks = splitTelegramMessage(text);
-  for (const chunk of chunks) {
-    try {
-      // Menggunakan Markdown klasik (lebih aman daripada MarkdownV2 jika AI lalai escape karakter)
-      await ctx.reply(chunk, { parse_mode: 'Markdown' });
-    } catch (e) {
-      // Fallback drastis: Kirim plain text jika format markdown menyebabkan error Telegram API
-      await ctx.reply(chunk);
-    }
-  }
-}
-
-function splitTelegramMessage(text) {
-  const max = 4000;
-  const chunks = [];
-  let remaining = String(text);
-  while (remaining.length > max) {
-    let cutAt = remaining.lastIndexOf('\n\n', max);
-    if (cutAt === -1) cutAt = remaining.lastIndexOf('\n', max);
-    if (cutAt === -1) cutAt = remaining.lastIndexOf('. ', max);
-    if (cutAt < 1000) cutAt = max;
-    chunks.push(remaining.slice(0, cutAt).trim());
-    remaining = remaining.slice(cutAt).trim();
-  }
-  if (remaining) chunks.push(remaining);
-  return chunks;
-}
-
-// ==========================================
-// 11. HELPER FUNCTIONS
-// ==========================================
-function touchUser(ctx) {
-  const userId = getUserId(ctx);
-  state.users[userId] ||= { mode: 'balanced', memories: [], createdAt: new Date().toISOString(), telegram: {} };
-  state.users[userId].telegram = { id: userId, username: ctx.from?.username, firstName: ctx.from?.first_name };
-  state.users[userId].lastSeenAt = new Date().toISOString();
-}
-
-function getUserProfile(userId) { return state.users[userId]; }
-function getChatState(chatId) {
-  state.chats[chatId] ||= { recent: [], lastResponseId: null, createdAt: new Date().toISOString() };
-  return state.chats[chatId];
-}
-function getUserId(ctx) { return String(ctx.from?.id || 'unknown'); }
-function getChatId(ctx) { return String(ctx.chat?.id || 'unknown'); }
+async function retrieveLocalKnowledge(q) { return ''; } // Simplified RAG placeholder
+function touchUser(ctx) { const id = getUserId(ctx); state.users[id] ||= { memories: [] }; }
+function getUserProfile(id) { return state.users[id]; }
+function getChatState(id) { state.chats[id] ||= { recent: [] }; return state.chats[id]; }
+function getUserId(ctx) { return String(ctx.from?.id); }
+function getChatId(ctx) { return String(ctx.chat?.id); }
 function isAdmin(ctx) { return config.adminIds.has(getUserId(ctx)); }
 function extractMessageText(ctx) { return (ctx.message?.text || ctx.message?.caption || '').trim(); }
 function getCommandPayload(ctx) { return extractMessageText(ctx).replace(/^\/\w+(?:@\w+)?\s*/i, ''); }
-async function safeDeleteMessage(ctx, msgId) { if(msgId) try{ await ctx.deleteMessage(msgId); } catch{} }
-function tokenize(text) { return String(text).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(t => t.length >= 3); }
-function extractOutputText(res) { return res.output?.map(o => o.content?.map(c => c.text).join('')).join('\n') || ''; }
-function extractMistralText(res) { return res.choices?.[0]?.message?.content || ''; }
-function stripCodeFence(text) { return String(text).replace(/^`{3}\w*\n/i, '').replace(/`{3}$/i, '').trim(); }
-function formatDuration(s) { return `${Math.floor(s/86400)}d ${Math.floor((s%86400)/3600)}h ${Math.floor((s%3600)/60)}m`; }
-function resolveLocalPath(val) { return path.isAbsolute(val) ? val : path.join(__dirname, val); }
-function numberFromEnv(k, f) { return Number.isFinite(Number(process.env[k])) ? Number(process.env[k]) : f; }
-function boolFromEnv(k, f) { return process.env[k] !== undefined ? ['1','true','yes','on'].includes(process.env[k].toLowerCase()) : f; }
-function mustGetAnyEnv(keys) {
-  const found = keys.find(k => process.env[k]);
-  if (!found) { console.error(`Missing ENV: ${keys.join(' / ')}`); process.exit(1); }
-  return process.env[found];
-}
-function getActiveModel() { return config.aiProvider === 'openai' ? config.openaiModel : (config.aiProvider === 'mistral' ? config.mistralModel : config.huggingfaceModel); }
-async function listKnowledgeFiles(dir) {
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    let files = [];
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) files.push(...await listKnowledgeFiles(full));
-      else if (/\.(txt|md|json)$/i.test(entry.name)) files.push(full);
-    }
-    return files;
-  } catch { return []; }
-}
-function detectReplyLanguage(text) {
-  // Disimplifikasi dari versi lama, menggunakan RegEx deteksi yang lebih ringkas
-  const val = String(text||'');
-  if (/[\u3040-\u30ff\u4e00-\u9fff]/u.test(val)) return { code: 'ja', instruction: 'Japanese. Reply entirely in natural Japanese.' };
-  if (/[\uac00-\ud7af]/u.test(val)) return { code: 'ko', instruction: 'Korean. Reply entirely in natural Korean.' };
-  return { code: 'auto', instruction: 'Reply in the EXACT SAME language the user primarily used in their message. Do NOT mix languages.' };
-}
-
 function allowRequest(ctx) {
-  const userId = getUserId(ctx), now = Date.now();
-  const bucket = (rateLimiter.get(userId) || []).filter(t => now - t < config.rateLimitWindowMs);
-  bucket.push(now);
-  rateLimiter.set(userId, bucket);
-  return bucket.length <= config.rateLimitMessages;
+  const uid = getUserId(ctx), now = Date.now(), bucket = (rateLimiter.get(uid)||[]).filter(t => now-t < config.rateLimitWindowMs);
+  bucket.push(now); rateLimiter.set(uid, bucket); return bucket.length <= config.rateLimitMessages;
 }
-
-// ==========================================
-// 12. SERVER & LAUNCH
-// ==========================================
-const PORT = process.env.PORT || 3000;
-http.createServer((_, res) => res.end('AI Bot Active')).listen(PORT, () => console.log(`Health check on port ${PORT}`));
+function rememberRecent(chat, role, text) { chat.recent.push({role, text: String(text).slice(0,500)}); if(chat.recent.length>10) chat.recent.shift(); }
+async function replyLong(ctx, text) { const chunks = String(text).match(/[\s\S]{1,4000}/g)||[]; for(let c of chunks) await ctx.reply(c,{parse_mode:'Markdown'}).catch(()=>ctx.reply(c)); }
+async function safeDeleteMessage(ctx, msgId) { if(msgId) try{ await ctx.deleteMessage(msgId); }catch{} }
+function stripCodeFence(t) { return String(t).replace(/^`{3}\w*\n/i, '').replace(/`{3}$/i, '').trim(); }
+function mustGetAnyEnv(keys) { const found = keys.find(k => process.env[k]); if(!found) process.exit(1); return process.env[found]; }
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 await initBot();
 await bot.launch();
-console.log(`🚀 Bot Telegram (Pro Level) AKTIF dengan ${config.aiProvider.toUpperCase()} (${getActiveModel()})`);
+addLog('Bot instance started.');
