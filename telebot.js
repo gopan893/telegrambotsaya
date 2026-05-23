@@ -4,17 +4,21 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import { Telegraf } from 'telegraf';
+import http from 'node:http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Konfigurasi sistem bot membaca Environment Variables (.env)
 const config = {
   telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
   aiProvider: (process.env.AI_PROVIDER || (process.env.MISTRAL_API_KEY ? 'mistral' : 'openai')).toLowerCase(),
   openaiKey: process.env.OPENAI_API_KEY || '',
   mistralKey: process.env.MISTRAL_API_KEY || '',
+  huggingfaceKey: process.env.HUGGINGFACE_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-5.2',
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+  huggingfaceModel: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
   reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
   enableWebSearch: boolFromEnv('ENABLE_WEB_SEARCH', true),
@@ -28,8 +32,9 @@ const config = {
   knowledgeDir: resolveLocalPath(process.env.KNOWLEDGE_DIR || './knowledge')
 };
 
-if (!['openai', 'mistral'].includes(config.aiProvider)) {
-  console.error('AI_PROVIDER harus diisi "openai" atau "mistral".');
+// Validasi Provider AI yang dipilih
+if (!['openai', 'mistral', 'huggingface'].includes(config.aiProvider)) {
+  console.error('AI_PROVIDER harus diisi "openai", "mistral", atau "huggingface".');
   process.exit(1);
 }
 
@@ -40,6 +45,11 @@ if (config.aiProvider === 'openai' && !config.openaiKey) {
 
 if (config.aiProvider === 'mistral' && !config.mistralKey) {
   console.error('Environment variable MISTRAL_API_KEY wajib diisi jika AI_PROVIDER=mistral.');
+  process.exit(1);
+}
+
+if (config.aiProvider === 'huggingface' && !config.huggingfaceKey) {
+  console.error('Environment variable HUGGINGFACE_API_KEY wajib diisi jika AI_PROVIDER=huggingface.');
   process.exit(1);
 }
 
@@ -260,16 +270,17 @@ bot.catch(async (error, ctx) => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-import http from 'node:http';
 
-// Tambahkan sebelum bot.launch()
+// Health check server
 const PORT = process.env.PORT || 3000;
 http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
   console.log(`Health check listening on port ${PORT}`);
 });
+
 await bot.launch();
 console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
 
+// Fungsi utama memproses pesan dari user ke AI
 async function answerUser(ctx, messageText) {
   const userId = getUserId(ctx);
   const chatId = getChatId(ctx);
@@ -314,7 +325,15 @@ async function answerUser(ctx, messageText) {
     const response = await openai.responses.create(request);
     responseId = response.id;
     answer = response.output_text?.trim() || extractOutputText(response);
+  } else if (config.aiProvider === 'huggingface') {
+    // Alur penanganan khusus Hugging Face
+    const response = await createHuggingFaceChatCompletion([
+      { role: 'system', content: instructions },
+      { role: 'user', content: userInput }
+    ], config.maxOutputTokens);
+    answer = extractMistralText(response);
   } else {
+    // Alur penanganan Mistral
     const response = await createMistralChatCompletion([
       { role: 'system', content: instructions },
       { role: 'user', content: userInput }
@@ -605,10 +624,11 @@ ${assistantAnswer}
       }
     }
   } catch {
-    // Memori otomatis hanya fitur tambahan. Jika gagal, jawaban utama tetap aman.
+    // Gagal menyimpan memori tidak merusak alur chat utama
   }
 }
 
+// Fungsi generate text internal untuk manajemen memori
 async function generateText(prompt, maxTokens) {
   if (config.aiProvider === 'openai') {
     const response = await openai.responses.create({
@@ -618,6 +638,13 @@ async function generateText(prompt, maxTokens) {
     });
 
     return response.output_text || extractOutputText(response);
+  }
+
+  if (config.aiProvider === 'huggingface') {
+    const response = await createHuggingFaceChatCompletion([
+      { role: 'user', content: prompt }
+    ], maxTokens);
+    return extractMistralText(response);
   }
 
   const response = await createMistralChatCompletion([
@@ -644,6 +671,30 @@ async function createMistralChatCompletion(messages, maxTokens) {
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Mistral API error ${response.status}: ${body}`);
+  }
+
+  return response.json();
+}
+
+// Handler Request API untuk Hugging Face Serverless Inference
+async function createHuggingFaceChatCompletion(messages, maxTokens) {
+  const url = `https://api-inference.huggingface.co/models/${config.huggingfaceModel}/v1/chat/completions`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${config.huggingfaceKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: config.huggingfaceModel,
+      messages,
+      max_tokens: maxTokens
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Hugging Face API error ${response.status}: ${body}`);
   }
 
   return response.json();
@@ -842,18 +893,20 @@ function getChatId(ctx) {
 function isAdmin(ctx) {
   return config.adminIds.has(getUserId(ctx));
 }
+
+// Fungsi pengiriman pesan panjang ke Telegram dengan parsing Markdown
 async function replyLong(ctx, text) {
   const chunks = splitTelegramMessage(text);
   for (const chunk of chunks) {
     try {
+      // Mengirimkan pesan dengan interpretasi format Markdown
       await ctx.reply(chunk, { parse_mode: 'Markdown' });
     } catch (error) {
-      // Fallback jika format Markdown error dari AI
+      // Fallback: kirim tanpa parsing jika AI menghasilkan Markdown cacat
       await ctx.reply(chunk);
     }
   }
 }
-
 
 function splitTelegramMessage(text) {
   const max = 3900;
@@ -879,7 +932,7 @@ async function safeDeleteMessage(ctx, messageId) {
   try {
     await ctx.deleteMessage(messageId);
   } catch {
-    // Pesan mungkin sudah tidak bisa dihapus, abaikan.
+    // Abaikan jika pesan gagal dihapus
   }
 }
 
@@ -942,55 +995,4 @@ function extractMistralText(response) {
 function stripCodeFence(text) {
   return String(text)
     .trim()
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-}
-
-function formatDuration(totalSeconds) {
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
-}
-
-function resolveLocalPath(value) {
-  if (path.isAbsolute(value)) return value;
-  return path.join(__dirname, value);
-}
-
-function boolFromEnv(key, fallback) {
-  const value = process.env[key];
-  if (value === undefined) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
-}
-
-function numberFromEnv(key, fallback) {
-  const value = Number(process.env[key]);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function mustGetEnv(key) {
-  const value = process.env[key];
-  if (!value) {
-    console.error(`Environment variable ${key} wajib diisi.`);
-    process.exit(1);
-  }
-  return value;
-}
-
-function mustGetAnyEnv(keys) {
-  for (const key of keys) {
-    if (process.env[key]) {
-      return process.env[key];
-    }
-  }
-
-  console.error(`Salah satu environment variable wajib diisi: ${keys.join(' atau ')}.`);
-  process.exit(1);
-}
-
-function getActiveModel() {
-  return config.aiProvider === 'openai' ? config.openaiModel : config.mistralModel;
-}
+    .replace(/^
