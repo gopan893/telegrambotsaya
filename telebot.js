@@ -16,8 +16,11 @@ function resolveLocalPath(value) { return path.isAbsolute(value) ? value : path.
 function boolFromEnv(key, fallback) { return process.env[key] !== undefined ? ['1', 'true', 'yes', 'on'].includes(process.env[key].toLowerCase()) : fallback; }
 function numberFromEnv(key, fallback) { const v = Number(process.env[key]); return Number.isFinite(v) ? v : fallback; }
 function mustGetAnyEnv(keys) {
-  for (const k of keys) if (process.env[k]) return process.env[k];
-  console.error(`Missing required ENV: ${keys.join(' or ')}`); process.exit(1);
+  for (const k of keys) {
+    if (process.env[k]) return process.env[k];
+  }
+  console.error(`[FATAL] Missing required ENV: ${keys.join(' or ')}. Pastikan sudah diisi di menu Environment Render!`); 
+  process.exit(1);
 }
 
 const config = {
@@ -104,7 +107,7 @@ const BOT_TOOLS = [
 ];
 
 // ==========================================
-// 3. ALL UTILITY & STATE FUNCTIONS (DECLARATIONS)
+// 3. ALL UTILITY & STATE FUNCTIONS
 // ==========================================
 async function loadState() {
   try { return JSON.parse(await fs.readFile(config.dataFile, 'utf8')); }
