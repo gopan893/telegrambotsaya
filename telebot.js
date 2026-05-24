@@ -6,21 +6,31 @@ import { Telegraf } from 'telegraf';
 import http from 'node:http';
 import cron from 'node-cron';
 
+// ==========================================
+// 1. EARLY PORT BINDING (TAKTIK ANTI-BUNUH RENDER)
+// Dinyalakan paling pertama agar Render langsung mendeteksi aplikasi dalam status "Sehat"
+// ==========================================
+const PORT = process.env.PORT || 3000;
+http.createServer((_, res) => res.end('Sistem Polymath Aktif')).listen(PORT, "0.0.0.0", () => {
+  console.log(`[SERVER] 🌐 Web server berhasil diikat ke port ${PORT} secara instan.`);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ==========================================
-// 1. HELPER & CONFIGURATION
+// 2. HELPER & CONFIGURATION
 // ==========================================
 function resolveLocalPath(value) { return path.isAbsolute(value) ? value : path.join(__dirname, value); }
 function boolFromEnv(key, fallback) { return process.env[key] !== undefined ? ['1', 'true', 'yes', 'on'].includes(process.env[key].toLowerCase()) : fallback; }
 function numberFromEnv(key, fallback) { const v = Number(process.env[key]); return Number.isFinite(v) ? v : fallback; }
+
+// Jika ENV kosong, kita ledakkan sistem dengan Error yang berisik agar tercatat di log Render!
 function mustGetAnyEnv(keys) {
   for (const k of keys) {
     if (process.env[k]) return process.env[k];
   }
-  console.error(`[FATAL] Missing required ENV: ${keys.join(' or ')}. Pastikan sudah diisi di menu Environment Render!`); 
-  process.exit(1);
+  throw new Error(`\n\n❌ [FATAL ERROR] Variabel Environment KOSONG: ${keys.join(' atau ')}!\nBos Alfan, pastikan Anda sudah memasukkan data ini di menu 'Environment' di dashboard Render!\n\n`);
 }
 
 const config = {
@@ -58,12 +68,11 @@ const config = {
 const availableProviders = Object.keys(config.keys).filter(k => config.keys[k]);
 const fallbackStrategy = [config.primaryProvider, ...availableProviders.filter(p => p !== config.primaryProvider)];
 
-// Variabel Global
 let state; 
 const rateLimiter = new Map();
 
 // ==========================================
-// 2. SYSTEM CORE & TOOLS DEFINITION
+// 3. SYSTEM CORE & TOOLS DEFINITION
 // ==========================================
 const SYSTEM_CORE = `
 Kamu adalah Luxy, Autonomous AI Agent (Polymath) tingkat tinggi milik Bos Alfan.
@@ -107,7 +116,7 @@ const BOT_TOOLS = [
 ];
 
 // ==========================================
-// 3. ALL UTILITY & STATE FUNCTIONS
+// 4. UTILITIES & FUNCTIONS
 // ==========================================
 async function loadState() {
   try { return JSON.parse(await fs.readFile(config.dataFile, 'utf8')); }
@@ -148,3 +157,4 @@ function allowRequest(ctx) {
   recent.push(Date.now()); rateLimiter.set(getUserId(ctx), recent);
   return recent.length <= config.rateLimitMessages;
 }
+
