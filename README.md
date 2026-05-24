@@ -24,8 +24,18 @@ npm start
 Isi `.env` minimal:
 
 ```env
-TELEGRAM_BOT_TOKEN=isi_token_bot_telegram
+TELEGRAM_TOKEN=isi_token_bot_telegram
+AI_PROVIDER=mistral
+MISTRAL_API_KEY=isi_api_key_mistral
+MISTRAL_MODEL=mistral-large-latest
+```
+
+Kalau mau pakai OpenAI, ubah menjadi:
+
+```env
+AI_PROVIDER=openai
 OPENAI_API_KEY=isi_api_key_openai
+OPENAI_MODEL=gpt-5.2
 ```
 
 ## Push Otomatis ke GitHub

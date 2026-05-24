@@ -9,21 +9,39 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const config = {
-  telegramToken: mustGetEnv('TELEGRAM_BOT_TOKEN'),
-  openaiKey: mustGetEnv('OPENAI_API_KEY'),
-  model: process.env.OPENAI_MODEL || 'gpt-5.2',
+  telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
+  aiProvider: (process.env.AI_PROVIDER || (process.env.MISTRAL_API_KEY ? 'mistral' : 'openai')).toLowerCase(),
+  openaiKey: process.env.OPENAI_API_KEY || '',
+  mistralKey: process.env.MISTRAL_API_KEY || '',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.2',
+  mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
   reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
   enableWebSearch: boolFromEnv('ENABLE_WEB_SEARCH', true),
   enableImageInput: boolFromEnv('ENABLE_IMAGE_INPUT', true),
   autoMemory: boolFromEnv('AUTO_MEMORY', true),
   vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || '',
-  adminIds: new Set((process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
+  adminIds: new Set((process.env.OWNER_CHAT_ID || process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
   rateLimitMessages: numberFromEnv('RATE_LIMIT_MESSAGES', 10),
   rateLimitWindowMs: numberFromEnv('RATE_LIMIT_WINDOW_SECONDS', 60) * 1000,
   dataFile: resolveLocalPath(process.env.DATA_FILE || './data/state.json'),
   knowledgeDir: resolveLocalPath(process.env.KNOWLEDGE_DIR || './knowledge')
 };
+
+if (!['openai', 'mistral'].includes(config.aiProvider)) {
+  console.error('AI_PROVIDER harus diisi "openai" atau "mistral".');
+  process.exit(1);
+}
+
+if (config.aiProvider === 'openai' && !config.openaiKey) {
+  console.error('Environment variable OPENAI_API_KEY wajib diisi jika AI_PROVIDER=openai.');
+  process.exit(1);
+}
+
+if (config.aiProvider === 'mistral' && !config.mistralKey) {
+  console.error('Environment variable MISTRAL_API_KEY wajib diisi jika AI_PROVIDER=mistral.');
+  process.exit(1);
+}
 
 const MODES = {
   balanced: {
@@ -68,7 +86,7 @@ Prinsip utama:
 `.trim();
 
 const bot = new Telegraf(config.telegramToken);
-const openai = new OpenAI({ apiKey: config.openaiKey });
+const openai = config.aiProvider === 'openai' ? new OpenAI({ apiKey: config.openaiKey }) : null;
 const rateLimiter = new Map();
 let state = await loadState();
 
@@ -244,7 +262,7 @@ process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 await bot.launch();
-console.log(`Telegram AI aktif dengan model ${config.model}`);
+console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
 
 async function answerUser(ctx, messageText) {
   const userId = getUserId(ctx);
@@ -268,24 +286,37 @@ async function answerUser(ctx, messageText) {
     ? [{ role: 'user', content: [{ type: 'input_text', text: userInput }, ...imageContent] }]
     : userInput;
 
-  const request = {
-    model: config.model,
-    instructions: buildInstructions(profile, mode, replyLanguage),
-    input,
-    previous_response_id: chat.lastResponseId || undefined,
-    tools: buildTools(),
-    store: true,
-    max_output_tokens: config.maxOutputTokens
-  };
+  const instructions = buildInstructions(profile, mode, replyLanguage);
+  let responseId = null;
+  let answer = '';
 
-  if (config.reasoningEffort && config.reasoningEffort !== 'none') {
-    request.reasoning = { effort: config.reasoningEffort };
+  if (config.aiProvider === 'openai') {
+    const request = {
+      model: config.openaiModel,
+      instructions,
+      input,
+      previous_response_id: chat.lastResponseId || undefined,
+      tools: buildTools(),
+      store: true,
+      max_output_tokens: config.maxOutputTokens
+    };
+
+    if (config.reasoningEffort && config.reasoningEffort !== 'none') {
+      request.reasoning = { effort: config.reasoningEffort };
+    }
+
+    const response = await openai.responses.create(request);
+    responseId = response.id;
+    answer = response.output_text?.trim() || extractOutputText(response);
+  } else {
+    const response = await createMistralChatCompletion([
+      { role: 'system', content: instructions },
+      { role: 'user', content: userInput }
+    ], config.maxOutputTokens);
+    answer = extractMistralText(response);
   }
 
-  const response = await openai.responses.create(request);
-  const answer = response.output_text?.trim() || extractOutputText(response);
-
-  chat.lastResponseId = response.id;
+  chat.lastResponseId = responseId;
   rememberRecent(chat, 'user', messageText || '[gambar]');
   rememberRecent(chat, 'assistant', answer);
   state.metrics.messagesHandled += 1;
@@ -511,11 +542,11 @@ function detectReplyLanguage(text) {
 function buildTools() {
   const tools = [];
 
-  if (config.enableWebSearch) {
+  if (config.aiProvider === 'openai' && config.enableWebSearch) {
     tools.push({ type: 'web_search' });
   }
 
-  if (config.vectorStoreId) {
+  if (config.aiProvider === 'openai' && config.vectorStoreId) {
     tools.push({
       type: 'file_search',
       vector_store_ids: [config.vectorStoreId]
@@ -526,7 +557,7 @@ function buildTools() {
 }
 
 async function buildImageContent(ctx) {
-  if (!config.enableImageInput || !ctx.message.photo?.length) {
+  if (config.aiProvider !== 'openai' || !config.enableImageInput || !ctx.message.photo?.length) {
     return null;
   }
 
@@ -558,13 +589,8 @@ ${assistantAnswer}
 `.trim();
 
   try {
-    const response = await openai.responses.create({
-      model: config.model,
-      input: prompt,
-      max_output_tokens: 300
-    });
-
-    const parsed = JSON.parse(stripCodeFence(response.output_text || '[]'));
+    const text = await generateText(prompt, 300);
+    const parsed = JSON.parse(stripCodeFence(text || '[]'));
     if (!Array.isArray(parsed)) return;
 
     for (const item of parsed) {
@@ -575,6 +601,46 @@ ${assistantAnswer}
   } catch {
     // Memori otomatis hanya fitur tambahan. Jika gagal, jawaban utama tetap aman.
   }
+}
+
+async function generateText(prompt, maxTokens) {
+  if (config.aiProvider === 'openai') {
+    const response = await openai.responses.create({
+      model: config.openaiModel,
+      input: prompt,
+      max_output_tokens: maxTokens
+    });
+
+    return response.output_text || extractOutputText(response);
+  }
+
+  const response = await createMistralChatCompletion([
+    { role: 'user', content: prompt }
+  ], maxTokens);
+
+  return extractMistralText(response);
+}
+
+async function createMistralChatCompletion(messages, maxTokens) {
+  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${config.mistralKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: config.mistralModel,
+      messages,
+      max_tokens: maxTokens
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Mistral API error ${response.status}: ${body}`);
+  }
+
+  return response.json();
 }
 
 async function retrieveLocalKnowledge(query) {
@@ -842,6 +908,26 @@ function extractOutputText(response) {
   return parts.join('\n').trim();
 }
 
+function extractMistralText(response) {
+  const content = response?.choices?.[0]?.message?.content;
+
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        return part?.text || '';
+      })
+      .join('')
+      .trim();
+  }
+
+  return '';
+}
+
 function stripCodeFence(text) {
   return String(text)
     .trim()
@@ -881,4 +967,19 @@ function mustGetEnv(key) {
     process.exit(1);
   }
   return value;
+}
+
+function mustGetAnyEnv(keys) {
+  for (const key of keys) {
+    if (process.env[key]) {
+      return process.env[key];
+    }
+  }
+
+  console.error(`Salah satu environment variable wajib diisi: ${keys.join(' atau ')}.`);
+  process.exit(1);
+}
+
+function getActiveModel() {
+  return config.aiProvider === 'openai' ? config.openaiModel : config.mistralModel;
 }

@@ -14,9 +14,18 @@ cp .env.example .env
 
 Isi:
 
-- `TELEGRAM_BOT_TOKEN` dari BotFather
-- `OPENAI_API_KEY` dari dashboard OpenAI
-- `OPENAI_MODEL` biarkan `gpt-5.2` jika tersedia di akun kamu
+- `TELEGRAM_TOKEN` dari BotFather
+- `AI_PROVIDER=mistral` jika kamu memakai Mistral
+- `MISTRAL_API_KEY` dari Mistral La Plateforme
+- `MISTRAL_MODEL=mistral-large-latest`
+
+Kalau kamu memakai OpenAI:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=isi_api_key_openai
+OPENAI_MODEL=gpt-5.2
+```
 
 ## 3. Jalankan
 
