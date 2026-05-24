@@ -4,47 +4,27 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Telegraf } from 'telegraf';
 import http from 'node:http';
+import cron from 'node-cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ==========================================
-// 1. HELPER FUNCTIONS (Di atas agar aman dari Hoisting Render)
+// 1. HELPER & CONFIG
 // ==========================================
-function resolveLocalPath(value) {
-  if (path.isAbsolute(value)) return value;
-  return path.join(__dirname, value);
-}
-
-function boolFromEnv(key, fallback) {
-  const value = process.env[key];
-  if (value === undefined) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
-}
-
-function numberFromEnv(key, fallback) {
-  const value = Number(process.env[key]);
-  return Number.isFinite(value) ? value : fallback;
-}
-
+function resolveLocalPath(value) { return path.isAbsolute(value) ? value : path.join(__dirname, value); }
+function boolFromEnv(key, fallback) { return process.env[key] !== undefined ? ['1', 'true', 'yes', 'on'].includes(process.env[key].toLowerCase()) : fallback; }
+function numberFromEnv(key, fallback) { const v = Number(process.env[key]); return Number.isFinite(v) ? v : fallback; }
 function mustGetAnyEnv(keys) {
-  for (const key of keys) {
-    if (process.env[key]) {
-      return process.env[key];
-    }
-  }
-  console.error(`Salah satu environment variable wajib diisi: ${keys.join(' atau ')}.`);
-  process.exit(1);
+  for (const k of keys) if (process.env[k]) return process.env[k];
+  console.error(`Missing required ENV: ${keys.join(' or ')}`); process.exit(1);
 }
 
-// ==========================================
-// 2. KONFIGURASI UTAMA & FALLBACK STRATEGY
-// ==========================================
 const config = {
   telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
+  ownerChatId: process.env.OWNER_CHAT_ID || '',
   primaryProvider: (process.env.AI_PROVIDER || 'mistral').toLowerCase(),
   
-  // Mapping semua API Key dari .env Bos Alfan
   keys: {
     mistral: process.env.MISTRAL_API_KEY || '',
     huggingface: process.env.HUGGINGFACE_API_KEY || '',
@@ -54,7 +34,6 @@ const config = {
     openai: process.env.OPENAI_API_KEY || ''
   },
   
-  // Mapping model default untuk masing-masing provider
   models: {
     mistral: process.env.MISTRAL_MODEL || 'mistral-large-latest',
     huggingface: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
@@ -67,399 +46,315 @@ const config = {
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
   autoMemory: boolFromEnv('AUTO_MEMORY', true),
   adminIds: new Set((process.env.OWNER_CHAT_ID || process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
-  rateLimitMessages: numberFromEnv('RATE_LIMIT_MESSAGES', 10),
-  rateLimitWindowMs: numberFromEnv('RATE_LIMIT_WINDOW_SECONDS', 60) * 1000,
+  rateLimitMessages: 20, // Dinaikkan untuk mendukung multi-turn function calling
+  rateLimitWindowMs: 60 * 1000,
   dataFile: resolveLocalPath(process.env.DATA_FILE || './data/state.json'),
   knowledgeDir: resolveLocalPath(process.env.KNOWLEDGE_DIR || './knowledge')
 };
 
-// Logika Fallback Cerdas: Ambil provider utama, lalu sisa provider yang punya API key disusun jadi cadangan
 const availableProviders = Object.keys(config.keys).filter(k => config.keys[k]);
-const fallbackStrategy = [
-  config.primaryProvider, 
-  ...availableProviders.filter(p => p !== config.primaryProvider)
-];
+const fallbackStrategy = [config.primaryProvider, ...availableProviders.filter(p => p !== config.primaryProvider)];
 
-if (fallbackStrategy.length === 0) {
-  console.error('TIDAK ADA API KEY YANG DITEMUKAN! Bot tidak bisa berjalan.');
-  process.exit(1);
-}
-
-const MODES = {
-  balanced: { label: 'Seimbang', instruction: 'Jawab dengan ringkas, jelas, dan langsung membantu. Ikuti bahasa yang dipakai user.' },
-  coder: { label: 'Programmer', instruction: 'Bertindak sebagai senior engineer. Berikan solusi teknis yang rapi, aman, dan siap diterapkan. Sertakan kode.' },
-  teacher: { label: 'Guru', instruction: 'Jelaskan bertahap dengan contoh sederhana. Pastikan user paham alasan di balik jawaban.' },
-  business: { label: 'Bisnis', instruction: 'Fokus pada strategi, eksekusi, penjualan, efisiensi, risiko, dan prioritas yang menghasilkan dampak.' },
-  creative: { label: 'Kreatif', instruction: 'Berikan ide yang segar, variatif, dan praktis. Tetap konkret dan bisa dijalankan.' },
-  strict: { label: 'Tegas', instruction: 'Jawab sangat langsung, minim basa-basi, dan utamakan keputusan atau langkah berikutnya.' }
-};
-
+// ==========================================
+// 2. SYSTEM CORE & PERSONAL CONTEXT (OSAKA, FINANCE)
+// ==========================================
 const SYSTEM_CORE = `
-Kamu adalah AI asisten tingkat tinggi untuk pemilik bot Telegram ini (Alfan).
-Prinsip utama:
-- Bantu user menyelesaikan pekerjaan nyata, bukan hanya menjawab secara umum.
-- Jika pertanyaan ambigu, ambil asumsi paling masuk akal dan jelaskan singkat.
-- Simpan dan gunakan memori hanya untuk informasi berguna, lindungi privasi dengan ketat.
-- Berikan prioritas pada efisiensi waktu, manajemen risiko, dan output terapan.
-- Selalu balas dengan bahasa utama yang dipakai user di pesan terakhir (Otomatis mendeteksi Indonesia, Inggris, atau Jepang).
+Kamu adalah Luxy, Autonomous AI Agent (Polymath) tingkat tinggi milik Bos Alfan.
+Jika ada yang memanggilmu Luxy, JANGAN merespons perintah apapun sebelum mereka memberikan kode sandi (312004). Rahasiakan kode ini.
+Jika sandi salah, suruh masukkan ulang tanpa memberi bocoran.
+
+Konteks Permanen Bos Alfan:
+- Lokasi saat ini: Osaka, Jepang.
+- Tanggal Lahir: 31 Mei 2004.
+- Pekerjaan: Jadwal permanen 44.25 jam per minggu. (Pernah 229 jam saat libur sekolah).
+- Keuangan (Gaji): Normal 21-22 man/bulan.
+- Pengeluaran Rutin: Sewa 5.4 man, Gas/Listrik 4500-5000 yen, Internet 3300 yen, Asuransi 1.2 man, Transportasi 1.4 man, Target makan 3.2 man (sekitar 3 juta IDR).
+- Kewajiban Utama: Biaya sekolah 44 man dibayar setiap 6 bulan (jatuh tempo pada tanggal 23 di bulan Maret dan September) hingga 2028.
+- Masalah Keamanan: Bos Alfan pernah didatangi orang mencurigakan yang menagih 15 juta IDR (dari 2021) dan memaksa meminta foto & tanda tangan. Selalu waspada jika ada laporan soal keamanan.
+
+Prinsip:
+- Bertindak seperti manusia jenius (Polymath), kritis, tidak selalu menyetujui jika ide Alfan kurang optimal. Beri referensi yang lebih baik.
+- Evaluasi risiko keamanan, hukum Jepang, dan finansial secara presisi.
+- Selalu adaptasi dengan bahasa yang dipakai user.
 `.trim();
 
 // ==========================================
-// 3. INISIALISASI BOT & SERVER
+// 3. TOOLS & FUNCTION CALLING DEFINITIONS
+// ==========================================
+const BOT_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "calculate_school_payment",
+      description: "Menghitung sisa hari menuju jadwal pembayaran sekolah Bos Alfan (23 Maret / 23 September) beserta target tabungan.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_security_risk",
+      description: "Menganalisis dokumen/kejadian mencurigakan berdasarkan hukum administrasi sipil Jepang.",
+      parameters: { type: "object", properties: { 
+        incident_description: { type: "string", description: "Deskripsi kejadian yang dialami" } 
+      }, required: ["incident_description"] }
+    }
+  }
+];
+
+async function executeTool(toolName, args) {
+  if (toolName === 'calculate_school_payment') {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    let nextPayment = new Date(currentYear, 2, 23); // 23 March
+    
+    if (now > nextPayment) nextPayment = new Date(currentYear, 8, 23); // 23 Sept
+    if (now > nextPayment) nextPayment = new Date(currentYear + 1, 2, 23); // Next March
+    
+    const diffTime = Math.abs(nextPayment - now);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return JSON.stringify({
+      status: "Laporan Keuangan Sekolah Alfan",
+      target_amount: "440,000 Yen",
+      next_deadline: nextPayment.toDateString(),
+      days_remaining: diffDays,
+      advice: `Anda harus menyisihkan rata-rata ${(440000 / (6*30)).toFixed(0)} Yen per hari atau ${(440000/6).toFixed(0)} Yen per bulan.`
+    });
+  }
+  
+  if (toolName === 'analyze_security_risk') {
+    return JSON.stringify({
+      legal_context_japan: "Berdasarkan hukum Jepang, tanda tangan tanpa inkan (stempel resmi) atau materai di atas kertas biasa memiliki kekuatan hukum yang sangat lemah. Namun, foto wajah dapat disalahgunakan untuk social engineering atau registrasi pinjaman online ilegal.",
+      recommended_action: "Segera lapor ke Koban (Pos Polisi) terdekat di Osaka untuk membuat 'Soudan' (Laporan Konsultasi) agar ada rekam jejak resmi jika foto/tanda tangan disalahgunakan di masa depan."
+    });
+  }
+  return JSON.stringify({ error: "Tool tidak ditemukan." });
+}
+
+// ==========================================
+// 4. BOT INITIALIZATION & CRON (PROACTIVE NOTIFICATIONS)
 // ==========================================
 const bot = new Telegraf(config.telegramToken);
 const rateLimiter = new Map();
 let state = await loadState();
 
-state.metrics.startedAt ||= new Date().toISOString();
-await saveState();
+bot.start(async (ctx) => { touchUser(ctx); await ctx.reply(`System Polymath Aktif. Siap melayani Bos Alfan di Osaka.`); });
+bot.help(async (ctx) => { await ctx.reply('Sistem mendukung Analisis Visual (kirim foto), Kalkulasi Finansial Otomatis, dan Fallback Cerdas.'); });
 
-bot.start(async (ctx) => {
-  touchUser(ctx);
-  await ctx.reply(`AI sudah aktif.\nMode utama: ${config.primaryProvider.toUpperCase()}\nFitur Fallback otomatis: AKTIF (${fallbackStrategy.length} penyedia siaga).\n\nKirim pesan untuk mulai.`);
-});
+// CRON JOB: Cek jadwal setiap hari jam 08:00 Pagi waktu server
+if (config.ownerChatId) {
+  cron.schedule('0 8 * * *', () => {
+    const now = new Date();
+    const month = now.getMonth() + 1; // 1-12
+    const date = now.getDate();
+    
+    // Peringatan H-7 Pembayaran Sekolah (Tanggal 16 Maret & 16 September)
+    if ((month === 3 || month === 9) && date === 16) {
+      bot.telegram.sendMessage(config.ownerChatId, `⚠️ [SYSTEM ALERT] Bos Alfan, ini adalah pengingat otomatis. Dalam 7 hari (Tanggal 23), tenggat waktu pembayaran sekolah sebesar 44 man akan jatuh tempo. Harap siapkan dana.`);
+    }
+    // Laporan Keuangan Bulanan setiap tanggal 1
+    if (date === 1) {
+      bot.telegram.sendMessage(config.ownerChatId, `📊 [MONTHLY BRIEFING] Selamat awal bulan, Bos Alfan. Ingat target pengeluaran makan: 3 Juta Rupiah (sekitar 3.2 man). Tetap fokus pada jadwal kerja 44.25 jam Anda.`);
+    }
+  });
+}
 
-bot.help(async (ctx) => {
-  touchUser(ctx);
-  await ctx.reply('Command:\n/mode - ubah persona\n/memory - tampilkan memori\n/memory_add [teks] - tambah memori manual\n/memory_clear - hapus memori\n/forget - reset konteks\n/stats - statistik admin');
-});
-
-bot.command('mode', async (ctx) => {
-  touchUser(ctx);
-  const userId = getUserId(ctx);
-  const requested = getCommandPayload(ctx).trim().toLowerCase();
-
-  if (!requested) {
-    const current = getUserProfile(userId).mode || 'balanced';
-    const lines = Object.entries(MODES).map(([key, mode]) => `${key === current ? '*' : '-'} ${key}: ${mode.label}`);
-    await ctx.reply(`Mode saat ini: ${current}\n\n${lines.join('\n')}\n\nUbah dengan: /mode coder`);
-    return;
-  }
-  if (!MODES[requested]) return ctx.reply(`Mode "${requested}" tidak tersedia.`);
-  
-  getUserProfile(userId).mode = requested;
-  await saveState();
-  await ctx.reply(`Mode AI diubah ke ${requested} (${MODES[requested].label}).`);
-});
-
-bot.command(['memory', 'memory_add', 'memory_clear', 'forget', 'stats'], async (ctx) => {
-  touchUser(ctx);
-  const cmd = ctx.message.text.split(' ')[0].substring(1);
-  const userId = getUserId(ctx);
-  
-  if (cmd === 'memory') {
-    const mems = getUserProfile(userId).memories;
-    if (!mems.length) return ctx.reply('Belum ada memori.');
-    return ctx.reply(`Memori kamu:\n${mems.map((m, i) => `${i + 1}. ${m.text}`).join('\n')}`);
-  }
-  
-  if (cmd === 'memory_add') {
-    const text = getCommandPayload(ctx).trim();
-    if (!text) return ctx.reply('Kirim: /memory_add [teks memori]');
-    addMemory(userId, text, 'manual');
-    await saveState();
-    return ctx.reply('Memori ditambahkan.');
-  }
-  
-  if (cmd === 'memory_clear') {
-    getUserProfile(userId).memories = [];
-    await saveState();
-    return ctx.reply('Memori dihapus.');
-  }
-  
-  if (cmd === 'forget') {
-    getChatState(getChatId(ctx)).recent = [];
-    await saveState();
-    return ctx.reply('Konteks chat direset.');
-  }
-
-  if (cmd === 'stats' && isAdmin(ctx)) {
-    const uptime = Math.round((Date.now() - Date.parse(state.metrics.startedAt)) / 1000);
-    return ctx.reply(`Stats:\n- User: ${Object.keys(state.users).length}\n- Pesan: ${state.metrics.messagesHandled}\n- Error: ${state.metrics.errors}\n- Urutan Fallback AI: ${fallbackStrategy.join(' > ')}\n- Uptime: ${formatDuration(uptime)}`);
-  }
-});
-
-bot.on('text', async (ctx) => {
+// ==========================================
+// 5. MESSAGE HANDLER (TEXT & VISION)
+// ==========================================
+bot.on(['text', 'photo'], async (ctx) => {
   touchUser(ctx);
   if (!allowRequest(ctx)) return ctx.reply('Terlalu cepat. Tunggu sebentar.');
-  const messageText = extractMessageText(ctx);
-  if (!messageText) return ctx.reply('Kirim teks.');
+  
+  let messageText = ctx.message.text || ctx.message.caption || '';
+  let imageUrl = null;
 
-  const thinkingMsg = await ctx.reply('Sedang menganalisis...');
+  // VISUAL ANALYSIS (Menangkap foto beresolusi tertinggi)
+  if (ctx.message.photo && ctx.message.photo.length > 0) {
+    const photo = ctx.message.photo[ctx.message.photo.length - 1];
+    const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+    imageUrl = fileLink.href;
+    if (!messageText) messageText = "Tolong analisis gambar/dokumen ini secara mendetail.";
+  }
+
+  if (!messageText && !imageUrl) return;
+  const thinkingMsg = await ctx.reply('🧠 Menganalisis data...');
 
   try {
-    const answer = await answerUser(ctx, messageText);
+    const answer = await processAgentLogic(ctx, messageText, imageUrl);
     await safeDeleteMessage(ctx, thinkingMsg.message_id);
-    await replyLong(ctx, answer || 'Maaf, saya kesulitan mencari jawaban yang tepat.');
+    await replyLong(ctx, answer);
   } catch (error) {
-    state.metrics.errors += 1;
-    await saveState();
     console.error(error);
     await safeDeleteMessage(ctx, thinkingMsg.message_id);
-    await ctx.reply('Sistem sedang padat dan semua jalur AI (Fallback) gagal. Mohon ulangi beberapa detik lagi.');
+    await ctx.reply('Sistem sedang melakukan rekoneksi. Mohon ulangi beberapa saat lagi.');
   }
 });
 
-bot.catch(async (error, ctx) => {
-  state.metrics.errors += 1;
-  await saveState();
-  console.error('Bot error:', error);
-});
-
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-const PORT = process.env.PORT || 3000;
-http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
-  console.log(`Health check listening on port ${PORT}`);
-});
-
-await bot.launch();
-console.log(`🔥 Bot aktif! Jalur prioritas AI: ${fallbackStrategy.join(' -> ')}`);
-
 // ==========================================
-// 4. UNIFIED AI PROVIDER ROUTER (CIRCUIT BREAKER)
+// 6. UNIFIED API ROUTER DENGAN VISION & TOOLS
 // ==========================================
-async function callAIProvider(providerName, messages, maxTokens) {
+async function callAIProvider(providerName, messages, maxTokens, isVision = false) {
   const providerEndpoints = {
     mistral: { url: 'https://api.mistral.ai/v1/chat/completions', key: config.keys.mistral, model: config.models.mistral },
     huggingface: { url: `https://api-inference.huggingface.co/models/${config.models.huggingface}/v1/chat/completions`, key: config.keys.huggingface, model: config.models.huggingface },
     deepseek: { url: 'https://api.deepseek.com/chat/completions', key: config.keys.deepseek, model: config.models.deepseek },
     gemini: { url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: config.keys.gemini, model: config.models.gemini },
-    groq: { url: 'https://api.groq.com/openai/v1/chat/completions', key: config.keys.groq, model: config.models.groq },
-    openai: { url: 'https://api.openai.com/v1/chat/completions', key: config.keys.openai, model: config.models.openai }
+    openai: { url: 'https://api.openai.com/v1/chat/completions', key: config.keys.openai, model: config.models.openai },
+    groq: { url: 'https://api.groq.com/openai/v1/chat/completions', key: config.keys.groq, model: config.models.groq }
   };
 
   const target = providerEndpoints[providerName];
-  if (!target || !target.key) throw new Error(`Provider ${providerName} tidak memiliki API Key.`);
+  if (!target || !target.key) throw new Error(`Provider ${providerName} missing key.`);
+
+  const payload = { model: target.model, messages: messages, max_tokens: maxTokens };
+  
+  // Hanya inject tools jika bukan vision request (demi stabilitas lintas platform)
+  if (!isVision && (providerName === 'openai' || providerName === 'gemini' || providerName === 'mistral')) {
+    payload.tools = BOT_TOOLS;
+    payload.tool_choice = "auto";
+  }
 
   const response = await fetch(target.url, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${target.key}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: target.model,
-      messages: messages,
-      max_tokens: maxTokens
-    })
+    headers: { 'Authorization': `Bearer ${target.key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
   });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`${providerName} HTTP ${response.status}: ${errorBody}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  if (!response.ok) throw new Error(`${providerName} HTTP ${response.status}: ${await response.text()}`);
+  return await response.json();
 }
 
 // ==========================================
-// 5. CORE LOGIC
+// 7. AGENTIC WORKFLOW (THE BRAIN)
 // ==========================================
-async function answerUser(ctx, messageText) {
+async function processAgentLogic(ctx, userMessage, imageUrl) {
   const userId = getUserId(ctx);
-  const chatId = getChatId(ctx);
+  const chat = getChatState(getChatId(ctx));
   const profile = getUserProfile(userId);
-  const chat = getChatState(chatId);
-  const modeKey = profile.mode || 'balanced';
-  const mode = MODES[modeKey] || MODES.balanced;
-  const replyLanguage = detectReplyLanguage(messageText);
-  const localKnowledge = await retrieveLocalKnowledge(messageText);
+  
+  // Sistem Sandi Luxy
+  if (userMessage.toLowerCase().includes('luxy')) {
+    if (!profile.isAuthenticated) {
+      if (userMessage.includes('312004')) {
+        profile.isAuthenticated = true;
+        await saveState();
+        return "Sandi diterima. Otorisasi berhasil, Bos Alfan. Ada yang bisa Luxy bantu?";
+      }
+      return "Mohon masukkan kode sandi untuk mengakses sistem Luxy.";
+    }
+  }
 
-  const userInput = [
-    `Mandatory reply language:\n${replyLanguage.instruction}`,
-    `User message:\n${messageText}`,
-    localKnowledge ? `\nRelevant local knowledge:\n${localKnowledge}` : '',
-    chat.recent.length ? `\nRecent conversation summary:\n${formatRecent(chat.recent)}` : ''
-  ].filter(Boolean).join('\n\n');
+  // Smart Context Injection (Advanced RAG Concept)
+  const localKnowledge = await retrieveLocalKnowledge(userMessage);
+  
+  let contentPayload;
+  if (imageUrl) {
+    contentPayload = [
+      { type: "text", text: userMessage + (localKnowledge ? `\nReferensi Lokal:\n${localKnowledge}` : '') },
+      { type: "image_url", image_url: { url: imageUrl } }
+    ];
+  } else {
+    contentPayload = userMessage + (localKnowledge ? `\nReferensi Lokal Tertaut:\n${localKnowledge}` : '');
+  }
 
-  const instructions = buildInstructions(profile, mode, replyLanguage);
-  let answer = '';
-  let lastError = null;
+  const messages = [
+    { role: 'system', content: SYSTEM_CORE },
+    ...chat.recent,
+    { role: 'user', content: contentPayload }
+  ];
+
+  // Vision Routing: Jika ada gambar, paksa masuk ke Gemini atau OpenAI (Model yang support Vision)
+  let strategy = fallbackStrategy;
+  if (imageUrl) {
+    strategy = ['gemini', 'openai'].filter(p => config.keys[p]);
+    if (strategy.length === 0) return "Bos, Anda mengirim gambar, tapi API Key untuk model Vision (Gemini/OpenAI) tidak tersedia.";
+  }
+
+  let finalAnswer = '';
+  let aiResponse = null;
   let successfulProvider = '';
 
-  // AUTOMATIC FALLBACK LOOP
-  for (const provider of fallbackStrategy) {
+  for (const provider of strategy) {
     try {
-      answer = await callAIProvider(provider, [
-        { role: 'system', content: instructions },
-        { role: 'user', content: userInput }
-      ], config.maxOutputTokens);
-      
+      aiResponse = await callAIProvider(provider, messages, config.maxOutputTokens, !!imageUrl);
       successfulProvider = provider;
-      break; // Jika sukses, hentikan perulangan (jangan panggil provider lain)
-    } catch (error) {
-      lastError = error;
-      console.warn(`⚠️ [FALLBACK] Provider ${provider.toUpperCase()} gagal. Melompat ke provider selanjutnya...`);
+      break;
+    } catch (e) {
+      console.warn(`[AGENT] ${provider.toUpperCase()} gagal:`, e.message);
     }
   }
 
-  if (!answer) {
-    throw lastError || new Error('Semua provider gagal.');
+  if (!aiResponse) throw new Error("Semua sistem AI down.");
+  const responseMessage = aiResponse.choices[0].message;
+
+  // --------------------------------------------------
+  // FUNCTION CALLING EXECUTION (Tindakan Nyata Bot)
+  // --------------------------------------------------
+  if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+    messages.push(responseMessage); // Simpan pesan instruksi tool
+    
+    for (const toolCall of responseMessage.tool_calls) {
+      const args = JSON.parse(toolCall.function.arguments || "{}");
+      const toolResult = await executeTool(toolCall.function.name, args);
+      
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        name: toolCall.function.name,
+        content: toolResult
+      });
+    }
+
+    // Panggil ulang AI dengan hasil dari Tool
+    const secondPass = await callAIProvider(successfulProvider, messages, config.maxOutputTokens, false);
+    finalAnswer = secondPass.choices[0].message.content;
+  } else {
+    finalAnswer = responseMessage.content;
   }
 
-  rememberRecent(chat, 'user', messageText);
-  rememberRecent(chat, 'assistant', answer);
-  state.metrics.messagesHandled += 1;
-
-  if (config.autoMemory && messageText) {
-    await maybeLearnMemory(userId, messageText, answer);
-  }
-
+  // Update memory context
+  rememberRecent(chat, 'user', userMessage);
+  rememberRecent(chat, 'assistant', finalAnswer);
+  
+  if (config.autoMemory) await maybeLearnMemory(userId, userMessage, finalAnswer);
   await saveState();
-  return answer;
-}
-
-async function maybeLearnMemory(userId, userMessage, assistantAnswer) {
-  if (userMessage.length < 12) return;
-  const profile = getUserProfile(userId);
-  const existing = profile.memories.map((m) => m.text).join('\n');
-  const prompt = `Ekstrak preferensi/fakta jangka panjang user (hindari data rahasia/password). Balas array JSON. \nExisting:\n${existing||'-'}\nUser:${userMessage}\nAssistant:${assistantAnswer}`;
-
-  let memoryText = '';
-  for (const provider of fallbackStrategy) {
-    try {
-      memoryText = await callAIProvider(provider, [{ role: 'user', content: prompt }], 300);
-      break; // Stop mencoba jika sukses
-    } catch (e) { /* Silent fail */ }
-  }
-
-  try {
-    const parsed = JSON.parse(stripCodeFence(memoryText || '[]'));
-    if (Array.isArray(parsed)) parsed.forEach(item => typeof item === 'string' && item.trim() && addMemory(userId, item.trim(), 'auto'));
-  } catch {}
-}
-
-function buildInstructions(profile, mode, replyLanguage) {
-  const memoryLines = profile.memories.slice(-30).map((m) => `- ${m.text}`).join('\n');
-  return [SYSTEM_CORE, `Mode aktif: ${mode.label}. ${mode.instruction}`, `Language rule: ${replyLanguage.instruction}`, memoryLines ? `Memori user:\n${memoryLines}` : 'Belum ada memori user.', 'Gunakan satu bahasa utama, jangan dicampur kecuali diminta.'].join('\n\n');
-}
-
-function detectReplyLanguage(text) {
-  const val = String(text || '');
-  if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(val)) return { code: 'ja', instruction: 'Japanese. Reply entirely in natural Japanese.' };
-  if (/[a-z]/iu.test(val)) return { code: 'latin', instruction: 'Use the same Latin-script language used by the user (Indonesian, English, etc). Reply entirely in that language.' };
-  return { code: 'auto', instruction: 'Reply entirely in the user message primary language.' };
+  
+  return finalAnswer;
 }
 
 // ==========================================
-// 6. RAG & UTILS
+// 8. RAG & UTILITIES
 // ==========================================
 async function retrieveLocalKnowledge(query) {
-  const files = await listKnowledgeFiles(config.knowledgeDir);
-  if (!files.length || !query) return '';
-  const queryTokens = tokenize(query);
-  const scoredChunks = [];
-
-  for (const file of files) {
-    const raw = await fs.readFile(file, 'utf8');
-    chunkText(raw, 1200).forEach(chunk => {
-      const score = scoreChunk(queryTokens, chunk);
-      if (score > 0) scoredChunks.push({ file: path.basename(file), score, chunk });
-    });
-  }
-
-  return scoredChunks.sort((a, b) => b.score - a.score).slice(0, 5).map((item, i) => `[${i + 1}] ${item.file}\n${item.chunk}`).join('\n\n');
-}
-
-async function listKnowledgeFiles(dir) {
   try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    const files = [];
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) files.push(...await listKnowledgeFiles(fullPath));
-      else if (/\.(txt|md|json)$/i.test(entry.name)) files.push(fullPath);
+    const files = await fs.readdir(config.knowledgeDir, { withFileTypes: true });
+    let combined = "";
+    for (const f of files) {
+      if (/\.(txt|md|json)$/i.test(f.name)) {
+        const text = await fs.readFile(path.join(config.knowledgeDir, f.name), 'utf8');
+        // Simple TF-IDF scoring alternative (Advanced Keyword Matching)
+        const score = text.toLowerCase().split(' ').filter(w => query.toLowerCase().includes(w)).length;
+        if (score > 2) combined += `[File: ${f.name}]\n${text.substring(0, 500)}...\n\n`;
+      }
     }
-    return files;
-  } catch { return []; }
+    return combined.slice(0, 1500); // Limit RAG size
+  } catch { return ""; }
 }
 
-function scoreChunk(queryTokens, chunk) {
-  const chunkTokens = new Set(tokenize(chunk));
-  return queryTokens.reduce((score, token) => chunkTokens.has(token) ? score + (token.length > 5 ? 2 : 1) : score, 0);
-}
-
-function tokenize(text) { return String(text).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(t => t.length >= 3); }
-function chunkText(text, maxChars) {
-  const paragraphs = String(text).split(/\n{2,}/);
-  const chunks = [];
-  let current = '';
-  for (const p of paragraphs) {
-    const next = current ? `${current}\n\n${p}` : p;
-    if (next.length > maxChars && current) { chunks.push(current); current = p; } 
-    else { current = next; }
-  }
-  if (current) chunks.push(current);
-  return chunks;
-}
-
-function touchUser(ctx) {
-  const userId = getUserId(ctx);
-  const profile = getUserProfile(userId);
-  profile.telegram = { id: userId, username: ctx.from?.username || null, firstName: ctx.from?.first_name || null, lastName: ctx.from?.last_name || null };
-  profile.lastSeenAt = new Date().toISOString();
-}
-
-function getUserProfile(userId) {
-  state.users[userId] ||= { mode: 'balanced', memories: [], createdAt: new Date().toISOString(), lastSeenAt: null, telegram: {} };
-  return state.users[userId];
-}
-
-function getChatState(chatId) {
-  state.chats[chatId] ||= { recent: [], createdAt: new Date().toISOString() };
-  return state.chats[chatId];
-}
-
-function addMemory(userId, text, source) {
-  const profile = getUserProfile(userId);
-  const normalized = String(text).replace(/\s+/g, ' ').trim().slice(0, 240);
-  if (!normalized || profile.memories.some(m => String(m.text).replace(/\s+/g, ' ').trim().slice(0, 240) === normalized)) return;
-  profile.memories.push({ text: normalized, source, createdAt: new Date().toISOString() });
-  if (profile.memories.length > 60) profile.memories = profile.memories.slice(-60);
-}
-
-function rememberRecent(chat, role, text) {
-  chat.recent.push({ role, text: String(text || '').slice(0, 700), at: new Date().toISOString() });
-  if (chat.recent.length > 16) chat.recent = chat.recent.slice(-16);
-}
-function formatRecent(recent) { return recent.slice(-8).map((item) => `${item.role}: ${item.text}`).join('\n'); }
-function extractMessageText(ctx) { return (ctx.message.text || ctx.message.caption || '').trim(); }
-function getCommandPayload(ctx) { return extractMessageText(ctx).replace(/^\/\w+(?:@\w+)?\s*/i, ''); }
-function allowRequest(ctx) {
-  const userId = getUserId(ctx), now = Date.now(), bucket = rateLimiter.get(userId) || [];
-  const recent = bucket.filter((t) => now - t < config.rateLimitWindowMs);
-  recent.push(now); rateLimiter.set(userId, recent);
-  return recent.length <= config.rateLimitMessages;
-}
-function getUserId(ctx) { return String(ctx.from?.id || 'unknown'); }
-function getChatId(ctx) { return String(ctx.chat?.id || 'unknown'); }
-function isAdmin(ctx) { return config.adminIds.has(getUserId(ctx)); }
-
-async function replyLong(ctx, text) {
-  const chunks = [], max = 3900;
-  let remaining = String(text);
-  while (remaining.length > max) {
-    const cutAt = Math.max(remaining.lastIndexOf('\n\n', max), remaining.lastIndexOf('\n', max), remaining.lastIndexOf('. ', max));
-    const index = cutAt > 1000 ? cutAt + 1 : max;
-    chunks.push(remaining.slice(0, index).trim());
-    remaining = remaining.slice(index).trim();
-  }
-  if (remaining) chunks.push(remaining);
-  for (const chunk of chunks) {
-    try { await ctx.reply(chunk, { parse_mode: 'Markdown' }); } 
-    catch { await ctx.reply(chunk); }
-  }
-}
-async function safeDeleteMessage(ctx, messageId) { try { await ctx.deleteMessage(messageId); } catch {} }
-
-async function loadState() {
-  try { return JSON.parse(await fs.readFile(config.dataFile, 'utf8')); } 
-  catch { return { users: {}, chats: {}, metrics: { startedAt: null, messagesHandled: 0, errors: 0 } }; }
-}
-async function saveState() {
-  await fs.mkdir(path.dirname(config.dataFile), { recursive: true });
-  await fs.writeFile(config.dataFile, JSON.stringify(state, null, 2));
+async function maybeLearnMemory(userId, user, assistant) {
+  if (user.length < 15) return;
+  const p = `Ekstrak fakta penting permanen tentang user. Abaikan password. Format JSON array string. User:${user}`;
+  try {
+    const res = await callAIProvider(fallbackStrategy[0], [{role: 'user', content: p}], 200);
+    const text = stripCodeFence(res.choices[0].message.content);
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      const profile = getUserProfile(userId);
+      parsed.forEach(i => {
+        if (typeof i === 'string' && !profile.memories.includes(i)) profile.memories.push(i);
+      });
+    }
+  } catch (e) {}
 }
