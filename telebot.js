@@ -8,6 +8,51 @@ import http from 'node:http';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ==========================================
+// HELPER FUNCTIONS (Dipindah ke atas agar aman dari Hoisting/ReferenceError)
+// ==========================================
+function resolveLocalPath(value) {
+  if (path.isAbsolute(value)) return value;
+  return path.join(__dirname, value);
+}
+
+function boolFromEnv(key, fallback) {
+  const value = process.env[key];
+  if (value === undefined) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function numberFromEnv(key, fallback) {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function mustGetEnv(key) {
+  const value = process.env[key];
+  if (!value) {
+    console.error(`Environment variable ${key} wajib diisi.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+function mustGetAnyEnv(keys) {
+  for (const key of keys) {
+    if (process.env[key]) {
+      return process.env[key];
+    }
+  }
+  console.error(`Salah satu environment variable wajib diisi: ${keys.join(' atau ')}.`);
+  process.exit(1);
+}
+
+function getActiveModel() {
+  return config.aiProvider === 'huggingface' ? config.hfModel : config.mistralModel;
+}
+
+// ==========================================
+// KONFIGURASI UTAMA
+// ==========================================
 const config = {
   telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
   aiProvider: (process.env.AI_PROVIDER || 'huggingface').toLowerCase(),
@@ -251,6 +296,9 @@ http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
 await bot.launch();
 console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
 
+// ==========================================
+// CORE LOGIC FUNCTIONS
+// ==========================================
 async function answerUser(ctx, messageText) {
   const userId = getUserId(ctx);
   const chatId = getChatId(ctx);
