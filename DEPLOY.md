@@ -14,9 +14,10 @@ cp .env.example .env
 
 Isi:
 
-- `TELEGRAM_BOT_TOKEN` dari BotFather
-- `OPENAI_API_KEY` dari dashboard OpenAI
-- `OPENAI_MODEL` biarkan `gpt-5.2` jika tersedia di akun kamu
+- `TELEGRAM_TOKEN` dari BotFather
+- `MISTRAL_API_KEY` dari Mistral
+- `OWNER_CHAT_ID` untuk admin bot
+- `WEBHOOK_URL` jika memakai webhook, atau `RENDER_EXTERNAL_HOSTNAME` jika deploy di Render
 
 ## 3. Jalankan
 

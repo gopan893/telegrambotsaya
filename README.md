@@ -24,9 +24,12 @@ npm start
 Isi `.env` minimal:
 
 ```env
-TELEGRAM_BOT_TOKEN=isi_token_bot_telegram
-OPENAI_API_KEY=isi_api_key_openai
+TELEGRAM_TOKEN=isi_token_bot_telegram
+MISTRAL_API_KEY=isi_api_key_mistral
+OWNER_CHAT_ID=telegram_user_id_owner
 ```
+
+File env juga mendukung `WEBHOOK_URL`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `REDIS_URL`, dan variabel lain yang ada di `telegrambotsaya.env`.
 
 ## Push Otomatis ke GitHub
 

@@ -30,9 +30,11 @@ const {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
+  WEBHOOK_URL,
   TELEGRAM_WEBHOOK_URL,
   PORT = 10000,
   RENDER_EXTERNAL_HOSTNAME,
+  OWNER_CHAT_ID = '',
   ADMIN_IDS = ''
 } = process.env;
 
@@ -49,7 +51,7 @@ if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 const FILE_DIR = process.cwd();
 const ADMIN_SET = new Set(
-  String(ADMIN_IDS)
+  String(OWNER_CHAT_ID || ADMIN_IDS)
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
@@ -5248,6 +5250,7 @@ async function start() {
   await restoreAllDigests();
 
   const baseUrl =
+    WEBHOOK_URL ||
     TELEGRAM_WEBHOOK_URL ||
     (RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : null);
 
@@ -5286,7 +5289,7 @@ async function start() {
       }
     } else {
       console.warn(
-        '⚠️ Webhook URL belum diset. Isi TELEGRAM_WEBHOOK_URL atau RENDER_EXTERNAL_HOSTNAME.'
+        '⚠️ Webhook URL belum diset. Isi WEBHOOK_URL, TELEGRAM_WEBHOOK_URL, atau RENDER_EXTERNAL_HOSTNAME.'
       );
     }
   });
