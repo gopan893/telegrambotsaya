@@ -7,12 +7,17 @@
   "scripts": {
     "start": "node telebot.js",
     "dev": "node --watch telebot.js",
-    "check": "node --check telebot.js"
+    "check": "node --check telebot.js",
+    "push": "bash scripts/push-code.sh",
+    "push:msg": "bash scripts/push-code.sh"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "node-cron": "^3.0.3",
-    "telegraf": "^4.16.3",
-    "openai": "..."
+    "openai": "^4.28.0",
+    "telegraf": "^4.16.3"
   }
 }
