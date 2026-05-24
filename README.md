@@ -31,6 +31,8 @@ OWNER_CHAT_ID=telegram_user_id_owner
 
 File env juga mendukung `WEBHOOK_URL`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `REDIS_URL`, dan variabel lain yang ada di `telegrambotsaya.env`.
 
+Catatan arsitektur dan rencana modularisasi ada di `docs/ARCHITECTURE.md`.
+
 ## Push Otomatis ke GitHub
 
 Pertama kali saja:

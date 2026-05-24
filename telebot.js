@@ -3,6 +3,10 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
+const { createLogger } = require('./src/core/logger');
+const { BoundedTTLMap } = require('./src/core/ttl-map');
+const { KeyedQueue } = require('./src/core/keyed-queue');
+const { CircuitBreaker } = require('./src/core/circuit-breaker');
 
 let scheduleLib = null;
 let googleLib = null;
@@ -59,6 +63,7 @@ const ADMIN_SET = new Set(
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+const log = createLogger('telegram-ai');
 
 let server = null;
 let redisClient = null;
@@ -84,14 +89,18 @@ let botSettings = {
 const reminderJobs = new Map();
 const digestJobs = new Map();
 const rateBuckets = new Map();
-const aiCache = new Map();
+const aiCache = new BoundedTTLMap({ ttlMs: 2 * 60 * 1000, max: 250 });
 
-const processedUpdates = new Map();
-const processedMessageKeys = new Map();
-const userActionLocks = new Map();
+const processedUpdates = new BoundedTTLMap({ ttlMs: 10 * 60 * 1000, max: 5000 });
+const processedMessageKeys = new BoundedTTLMap({ ttlMs: 5 * 60 * 1000, max: 5000 });
+const userActionQueue = new KeyedQueue({ idleTtlMs: 10 * 60 * 1000 });
+const aiCircuitBreaker = new CircuitBreaker({ failureThreshold: 3, cooldownMs: 45 * 1000 });
 
 function rememberWithTTL(map, key, ttlMs) {
   if (!key) return false;
+  if (typeof map.remember === 'function') {
+    return map.remember(key, ttlMs);
+  }
   const now = nowMs();
   const prev = map.get(key);
   if (prev && now - prev < ttlMs) return false;
@@ -100,6 +109,10 @@ function rememberWithTTL(map, key, ttlMs) {
 }
 
 function cleanupMapTTL(map, ttlMs) {
+  if (typeof map.cleanup === 'function') {
+    map.cleanup(ttlMs);
+    return;
+  }
   const now = nowMs();
   for (const [key, ts] of map.entries()) {
     if (now - ts > ttlMs) map.delete(key);
@@ -120,28 +133,13 @@ function isDuplicateIncomingUpdate(update) {
 }
 
 async function withUserActionLock(userId, fn) {
-  const key = normalizeId(userId);
-  const prev = userActionLocks.get(key) || Promise.resolve();
-
-  let release;
-  const next = new Promise(resolve => { release = resolve; });
-  userActionLocks.set(key, prev.then(() => next));
-
-  try {
-    await prev;
-    return await fn();
-  } finally {
-    release();
-    if (userActionLocks.get(key) === next) {
-      userActionLocks.delete(key);
-    }
-  }
+  return userActionQueue.run(normalizeId(userId), fn);
 }
 
 function cleanupPatch4State() {
   cleanupMapTTL(processedUpdates, 10 * 60 * 1000);
   cleanupMapTTL(processedMessageKeys, 10 * 60 * 1000);
-  cleanupMapTTL(userActionLocks, 10 * 60 * 1000);
+  userActionQueue.cleanup();
 }
 
 let pluginModules = [];
@@ -1534,6 +1532,11 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
   let lastErr = null;
 
   for (const m of modelOrder) {
+    if (!aiCircuitBreaker.canRun(m)) {
+      lastErr = new Error(`${m} circuit open`);
+      continue;
+    }
+
     try {
       const raw = m === 'mistral'
         ? await askMistral(systemPrompt, userPrompt, temperature, maxTokens)
@@ -1544,6 +1547,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
         : sanitizeOutgoingText(raw);
 
       if (answer && answer.trim()) {
+        aiCircuitBreaker.success(m);
         aiCache.set(cacheKey, {
           ts: nowMs(),
           answer
@@ -1551,13 +1555,14 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
         return answer;
       }
     } catch (err) {
+      aiCircuitBreaker.failure(m);
       if (err?.message === 'RATE_LIMIT' && m === 'mistral') {
         lastErr = err;
         continue;
       }
 
       lastErr = err;
-      console.error(`${m} gagal:`, err.message);
+      log.warn(`${m} gagal:`, err.message);
     }
   }
 
@@ -4991,11 +4996,8 @@ setInterval(() => {
     abLog = abLog.slice(-botSettings.maxAbLog);
   }
 
-  for (const [k, v] of aiCache.entries()) {
-    if (now - v.ts > 2 * 60 * 1000) {
-      aiCache.delete(k);
-    }
-  }
+  aiCache.cleanup();
+  cleanupPatch4State();
 
   for (const [k, v] of rateBuckets.entries()) {
     if (now - (v.last || 0) > 10 * 60 * 1000) {
