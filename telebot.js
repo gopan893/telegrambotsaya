@@ -372,9 +372,6 @@ bot.on(['text', 'photo', 'voice', 'document', 'video_note'], async (ctx) => {
   }
 });
 
-// ==========================================
-// 8. WEB DASHBOARD UI (ADMIN CONTROL CENTER)
-// ==========================================
 http.createServer((req, res) => {
   if (req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -387,36 +384,15 @@ http.createServer((req, res) => {
       <html>
         <head>
           <title>Omni-AI Admin Control Center</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
-            :root { --bg: #0f172a; --panel: #1e293b; --text: #f8fafc; --accent: #38bdf8; --alert: #f43f5e; }
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
-            .container { max-width: 900px; margin: auto; }
-            h1 { color: var(--accent); border-bottom: 2px solid var(--panel); padding-bottom: 10px; }
-            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-            .card { background: var(--panel); padding: 20px; border-radius: 12px; border-left: 4px solid var(--accent); }
-            .card h3 { margin: 0 0 10px 0; font-size: 14px; color: #94a3b8; text-transform: uppercase; }
-            .card .val { font-size: 24px; font-weight: bold; }
-            .logs { background: #000; padding: 15px; border-radius: 8px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; color: #10b981; }
-            .log-item { margin-bottom: 5px; border-bottom: 1px dashed #333; padding-bottom: 5px; }
+            body { background: #0f172a; color: #f8fafc; font-family: sans-serif; padding: 20px; }
+            .card { background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
           </style>
         </head>
         <body>
-          <div class="container">
-            <h1>⚙️ Omni-AI Control Center</h1>
-            
-            <div class="grid">
-              <div class="card"><h3>AI Provider</h3><div class="val">${config.aiProvider.toUpperCase()}</div></div>
-              <div class="card"><h3>Uptime</h3><div class="val">${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m</div></div>
-              <div class="card"><h3>RAM Usage</h3><div class="val">${ram} MB</div></div>
-              <div class="card"><h3>Total Users</h3><div class="val">${Object.keys(state.users).length}</div></div>
-              <div class="card"><h3>Queries Processed</h3><div class="val">${state.metrics.messagesHandled}</div></div>
-              <div class="card" style="border-color: var(--alert)"><h3>Spam Blocked</h3><div class="val">${state.metrics.spamBlocked}</div></div>
-            </div>
-
-            <h2>Terminal Logs</h2>
-            <div class="logs">${logsHtml || 'No recent activity.'}</div>
-          </div>
+          <h1>Omni-AI Online</h1>
+          <div class="card">Status: <b>OK</b> | RAM: ${ram}MB | Uptime: ${Math.floor(uptime/60)}m</div>
+          <div style="background:#000; padding:10px; height:200px; overflow-y:scroll;">${logsHtml}</div>
         </body>
       </html>
     `);
@@ -424,7 +400,9 @@ http.createServer((req, res) => {
     res.writeHead(404);
     res.end();
   }
-}).listen(config.port, () => console.log(`🌍 Control Center Active on Port ${config.port}`));
+}).listen(config.port, '0.0.0.0', () => {
+  console.log(`🌍 Control Center Active on 0.0.0.0:${config.port}`);
+});
 
 // ==========================================
 // 9. UTILITIES
