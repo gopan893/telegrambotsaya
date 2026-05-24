@@ -16,7 +16,7 @@
 4. Perkuat recovery: graceful shutdown, atomic save, retry terbatas, log terstruktur.
 5. Baru setelah stabil, pecah command besar menjadi modul per domain.
 
-## Struktur Target
+## Struktur Folder Tahap 2
 
 ```text
 core/
@@ -27,31 +27,18 @@ core/
 config/
   env.js
 handlers/
+  learning.js
 services/
+  ai-router.js
 utils/
+  retry.js
 storage/
+  json-store.js
 plugins/
 scheduler/
+  cleanup.js
 middleware/
-  ai/
-    router.js
-    providers/
-      groq.js
-      mistral.js
-  memory/
-    store.js
-    context.js
-  plugins/
-    loader.js
-  commands/
-    index.js
-    reminder.js
-    calendar.js
-    files.js
-    moderation.js
-  telegram/
-    webhook.js
-    sender.js
+  process-guards.js
 ```
 
 ## Modul Yang Sudah Dipisah
@@ -61,5 +48,28 @@ middleware/
 - `core/keyed-queue.js`
 - `core/circuit-breaker.js`
 - `config/env.js`
+- `utils/retry.js`
+- `storage/json-store.js`
+- `middleware/process-guards.js`
+- `scheduler/cleanup.js`
+- `services/ai-router.js`
+- `handlers/learning.js`
 
 Modul ini sudah dipakai oleh `telebot.js` tanpa mengubah command Telegram lama.
+
+## Catatan Belajar Tahap 2
+
+- `config/env.js`: satu tempat untuk membaca environment variable. Ini mengurangi bug karena nama env tersebar.
+- `utils/retry.js`: retry terbatas untuk API eksternal. Trade-off: request bisa sedikit lebih lama, tetapi error sementara lebih sering pulih.
+- `storage/json-store.js`: tulis JSON secara atomic. Risiko yang dikurangi: file rusak jika proses mati saat save.
+- `middleware/process-guards.js`: menangkap async error global. Ini membantu bot tetap shutdown dengan rapi.
+- `scheduler/cleanup.js`: membersihkan cache dan queue berkala. Ini penting untuk RAM Render free tier.
+- `services/ai-router.js`: memilih provider AI yang tersedia saja. Ini mengurangi log error dan request sia-sia.
+- `handlers/learning.js`: command edukasi `/belajar`, supaya perubahan teknis bisa dipelajari dari dalam bot.
+
+## Prioritas Berikutnya
+
+1. Pisahkan command handler besar dari `telebot.js` secara bertahap per domain.
+2. Pisahkan provider AI menjadi `services/providers/groq.js` dan `services/providers/mistral.js`.
+3. Pisahkan memory/context manager agar prompt panjang bisa dikontrol lebih baik.
+4. Tambahkan test smoke untuk command penting sebelum deploy.

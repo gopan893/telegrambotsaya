@@ -11,6 +11,8 @@ const { withRetry } = require('./utils/retry');
 const { readJsonFile, writeJsonFileAtomic } = require('./storage/json-store');
 const { installProcessGuards } = require('./middleware/process-guards');
 const { cleanupRuntimeState } = require('./scheduler/cleanup');
+const { chooseProviderOrder, shouldUseSearchFallback } = require('./services/ai-router');
+const { buildLearningGuide } = require('./handlers/learning');
 
 let scheduleLib = null;
 let googleLib = null;
@@ -1539,9 +1541,13 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
       : sanitizeOutgoingText(cached.answer);
   }
 
-  const modelOrder = chooseAIModel(question, intent) === 'mistral'
-    ? ['mistral', 'groq']
-    : ['groq', 'mistral'];
+  const modelOrder = chooseProviderOrder({
+    preferred: chooseAIModel(question, intent),
+    available: {
+      groq: Boolean(GROQ_API_KEY),
+      mistral: Boolean(MISTRAL_API_KEY)
+    }
+  });
 
   let lastErr = null;
 
@@ -1580,7 +1586,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     }
   }
 
-  if (allowSearch && TAVILY_API_KEY) {
+  if (shouldUseSearchFallback({ allowSearch, hasSearchKey: Boolean(TAVILY_API_KEY) })) {
     try {
       const searchRes = await searchWebTavily(question);
 
@@ -3313,6 +3319,7 @@ async function handleHelp(chatId, msg) {
 /ping - cek bot hidup
 /reset - reset memory pribadi
 /help - bantuan
+/belajar - catatan belajar arsitektur bot
 /stats - statistik
 /rollback - hapus aturan terakhir
 /feedback - log A/B
@@ -3386,6 +3393,7 @@ function isUnknownCommand(cmd) {
     '/ping',
     '/reset',
     '/help',
+    '/belajar',
     '/stats',
     '/rollback',
     '/feedback',
@@ -4308,6 +4316,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/ping') { await handlePing(chatId, msg); return; }
   if (resolvedCmd === '/reset') { await handleReset(chatId, userId, msg); return; }
   if (resolvedCmd === '/help') { await handleHelp(chatId, msg); return; }
+  if (resolvedCmd === '/belajar') { await sendChunkedMessage(chatId, buildLearningGuide(), { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
   if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }

@@ -4,6 +4,7 @@ function readEnv(env = process.env) {
   const telegramToken = env.TELEGRAM_TOKEN;
   const ownerChatId = env.OWNER_CHAT_ID || '';
   const adminIds = env.ADMIN_IDS || '';
+  const parsedPort = Number(env.PORT || 10000);
   const webhookBaseUrl =
     env.WEBHOOK_URL ||
     env.TELEGRAM_WEBHOOK_URL ||
@@ -21,12 +22,12 @@ function readEnv(env = process.env) {
     GOOGLE_REDIRECT_URI: env.GOOGLE_REDIRECT_URI,
     WEBHOOK_URL: env.WEBHOOK_URL,
     TELEGRAM_WEBHOOK_URL: env.TELEGRAM_WEBHOOK_URL,
-    PORT: Number(env.PORT || 10000),
+    PORT: Number.isFinite(parsedPort) ? parsedPort : 10000,
     RENDER_EXTERNAL_HOSTNAME: env.RENDER_EXTERNAL_HOSTNAME,
     OWNER_CHAT_ID: ownerChatId,
     ADMIN_IDS: adminIds,
     ADMIN_SET: new Set(
-      String(ownerChatId || adminIds)
+      `${ownerChatId},${adminIds}`
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean)
