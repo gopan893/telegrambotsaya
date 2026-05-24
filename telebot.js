@@ -1,6 +1,5 @@
 const express = require('express');
 const fs = require('fs');
-const fsp = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
 const { readEnv, validateConfig } = require('./config/env');
@@ -8,6 +7,10 @@ const { createLogger } = require('./core/logger');
 const { BoundedTTLMap } = require('./core/ttl-map');
 const { KeyedQueue } = require('./core/keyed-queue');
 const { CircuitBreaker } = require('./core/circuit-breaker');
+const { withRetry } = require('./utils/retry');
+const { readJsonFile, writeJsonFileAtomic } = require('./storage/json-store');
+const { installProcessGuards } = require('./middleware/process-guards');
+const { cleanupRuntimeState } = require('./scheduler/cleanup');
 
 let scheduleLib = null;
 let googleLib = null;
@@ -1016,14 +1019,7 @@ async function loadData(key, defaultValue) {
     } catch (_) {}
   }
 
-  try {
-    const filePath = path.join(FILE_DIR, `${key}.json`);
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(await fsp.readFile(filePath, 'utf-8'));
-    }
-  } catch (_) {}
-
-  return defaultValue;
+  return readJsonFile(FILE_DIR, key, defaultValue);
 }
 
 async function saveData(key, data) {
@@ -1038,7 +1034,7 @@ async function saveData(key, data) {
   }
 
   try {
-    await fsp.writeFile(path.join(FILE_DIR, `${key}.json`), str, 'utf-8');
+    await writeJsonFileAtomic(FILE_DIR, key, data);
   } catch (e) {
     console.error(`File save ${key} gagal:`, e.message);
   }
@@ -1098,7 +1094,14 @@ async function loadAllMemories() {
 // =====================================================
 
 async function telegramPost(method, payload) {
-  return axios.post(`${TELEGRAM_API}/${method}`, payload, { timeout: 20000 });
+  return withRetry(
+    () => axios.post(`${TELEGRAM_API}/${method}`, payload, { timeout: 20000 }),
+    {
+      retries: 1,
+      baseDelayMs: 300,
+      onRetry: (err, attempt) => log.warn(`Telegram retry ${method} #${attempt}:`, err.message)
+    }
+  );
 }
 
 async function safeSendMessage(chatId, text, extra = {}) {
@@ -1412,12 +1415,19 @@ async function askMistral(systemPrompt, userPrompt, temperature = 0.7, maxTokens
     if (mistralClient?.chat?.complete) {
       response = await mistralClient.chat.complete(payload);
     } else {
-      const res = await axios.post(
-        'https://api.mistral.ai/v1/chat/completions',
-        payload,
+      const res = await withRetry(
+        () => axios.post(
+          'https://api.mistral.ai/v1/chat/completions',
+          payload,
+          {
+            headers: { Authorization: `Bearer ${MISTRAL_API_KEY}` },
+            timeout: 20000
+          }
+        ),
         {
-          headers: { Authorization: `Bearer ${MISTRAL_API_KEY}` },
-          timeout: 20000
+          retries: 1,
+          baseDelayMs: 500,
+          onRetry: (retryErr, attempt) => log.warn(`Mistral retry #${attempt}:`, retryErr.message)
         }
       );
       response = res.data;
@@ -1447,20 +1457,27 @@ async function askGroq(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 
     throw new Error('GROQ tidak diset');
   }
 
-  const res = await axios.post(
-    'https://api.groq.com/openai/v1/chat/completions',
+  const res = await withRetry(
+    () => axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature,
+        max_tokens: maxTokens
+      },
+      {
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+        timeout: 20000
+      }
+    ),
     {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature,
-      max_tokens: maxTokens
-    },
-    {
-      headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
-      timeout: 20000
+      retries: 1,
+      baseDelayMs: 500,
+      onRetry: (err, attempt) => log.warn(`Groq retry #${attempt}:`, err.message)
     }
   );
 
@@ -4962,45 +4979,20 @@ function emotionPrefix(emotion) {
 // ==================== AUTO-CLEANUP ====================
 
 setInterval(() => {
-  const now = nowMs();
-
-  for (const key of Object.keys(userMemory)) {
-    const u = userMemory[key];
-    if (!u) continue;
-
-    if (Array.isArray(u.todos) && u.todos.length > 50) {
-      u.todos = u.todos.slice(-50);
-    }
-
-    if (Array.isArray(u.reminders) && u.reminders.length > 20) {
-      u.reminders = u.reminders.slice(-20);
-    }
-
-    if (Array.isArray(u.tags) && u.tags.length > 20) {
-      u.tags = u.tags.slice(-20);
-    }
-  }
-
-  if (shortMemory.length > botSettings.maxShortMemory) {
-    shortMemory = shortMemory.slice(-botSettings.maxShortMemory);
-  }
-
-  if (knowledgeBase.length > botSettings.maxKnowledge) {
-    knowledgeBase = knowledgeBase.slice(-botSettings.maxKnowledge);
-  }
-
-  if (abLog.length > botSettings.maxAbLog) {
-    abLog = abLog.slice(-botSettings.maxAbLog);
-  }
-
-  aiCache.cleanup();
-  cleanupPatch4State();
-
-  for (const [k, v] of rateBuckets.entries()) {
-    if (now - (v.last || 0) > 10 * 60 * 1000) {
-      rateBuckets.delete(k);
-    }
-  }
+  cleanupRuntimeState({
+    userMemory,
+    botSettings,
+    getShortMemory: () => shortMemory,
+    setShortMemory: (value) => { shortMemory = value; },
+    getKnowledgeBase: () => knowledgeBase,
+    setKnowledgeBase: (value) => { knowledgeBase = value; },
+    getAbLog: () => abLog,
+    setAbLog: (value) => { abLog = value; },
+    aiCache,
+    cleanupPatchState: cleanupPatch4State,
+    rateBuckets,
+    now: nowMs
+  });
 
   if (global.gc) {
     try { global.gc(); } catch (_) {}
@@ -5008,14 +5000,6 @@ setInterval(() => {
 }, 60000);
 
 // ==================== ERROR HANDLER ====================
-
-process.on('unhandledRejection', (err) => {
-  console.error('UnhandledRejection:', err);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('UncaughtException:', err);
-});
 
 // ==================== SHUTDOWN ====================
 
@@ -5042,6 +5026,7 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+installProcessGuards({ logger: log, shutdown });
 
 // ==================== STARTUP ====================
 
