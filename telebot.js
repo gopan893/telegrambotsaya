@@ -2,9 +2,13 @@ import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dns from 'node:dns';
 import OpenAI from 'openai';
 import { Telegraf } from 'telegraf';
 import http from 'node:http';
+
+// FIX: Memaksa pencarian DNS ke IPv4 agar fetch ke API Hugging Face tidak gagal (ENOTFOUND) di Render.
+dns.setDefaultResultOrder('ipv4first');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,8 +20,9 @@ const config = {
   openaiKey: process.env.OPENAI_API_KEY || '',
   mistralKey: process.env.MISTRAL_API_KEY || '',
   huggingfaceKey: process.env.HUGGINGFACE_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.2',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o',
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+  // FIX: Mengganti model default ke 7B agar tidak terjadi timeout/ditolak oleh server serverless Hugging Face
   huggingfaceModel: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-7B-Instruct',
   reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
