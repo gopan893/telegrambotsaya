@@ -2,25 +2,21 @@ import 'dotenv/config';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import OpenAI from 'openai';
 import { Telegraf } from 'telegraf';
+import http from 'node:http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const config = {
   telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
-  aiProvider: (process.env.AI_PROVIDER || (process.env.MISTRAL_API_KEY ? 'mistral' : 'openai')).toLowerCase(),
-  openaiKey: process.env.OPENAI_API_KEY || '',
+  aiProvider: (process.env.AI_PROVIDER || 'huggingface').toLowerCase(),
+  hfKey: process.env.HF_API_KEY || '',
+  hfModel: process.env.HF_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
   mistralKey: process.env.MISTRAL_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.2',
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-  reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
-  enableWebSearch: boolFromEnv('ENABLE_WEB_SEARCH', true),
-  enableImageInput: boolFromEnv('ENABLE_IMAGE_INPUT', true),
   autoMemory: boolFromEnv('AUTO_MEMORY', true),
-  vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || '',
   adminIds: new Set((process.env.OWNER_CHAT_ID || process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
   rateLimitMessages: numberFromEnv('RATE_LIMIT_MESSAGES', 10),
   rateLimitWindowMs: numberFromEnv('RATE_LIMIT_WINDOW_SECONDS', 60) * 1000,
@@ -28,13 +24,8 @@ const config = {
   knowledgeDir: resolveLocalPath(process.env.KNOWLEDGE_DIR || './knowledge')
 };
 
-if (!['openai', 'mistral'].includes(config.aiProvider)) {
-  console.error('AI_PROVIDER harus diisi "openai" atau "mistral".');
-  process.exit(1);
-}
-
-if (config.aiProvider === 'openai' && !config.openaiKey) {
-  console.error('Environment variable OPENAI_API_KEY wajib diisi jika AI_PROVIDER=openai.');
+if (config.aiProvider === 'huggingface' && !config.hfKey) {
+  console.error('Environment variable HF_API_KEY wajib diisi jika AI_PROVIDER=huggingface.');
   process.exit(1);
 }
 
@@ -76,7 +67,7 @@ Kamu adalah AI asisten tingkat tinggi untuk pemilik bot Telegram ini.
 Prinsip utama:
 - Bantu user menyelesaikan pekerjaan nyata, bukan hanya menjawab secara umum.
 - Jika pertanyaan ambigu, ambil asumsi paling masuk akal dan jelaskan singkat.
-- Jangan mengarang fakta, harga, jadwal, atau data terbaru. Jika web search aktif, gunakan untuk hal yang berubah cepat.
+- Jangan mengarang fakta, harga, jadwal, atau data terbaru.
 - Simpan dan gunakan memori hanya untuk informasi yang berguna dan tidak sensitif.
 - Jaga privasi. Jangan meminta token, password, OTP, atau data rahasia kecuali benar-benar diperlukan dan jelaskan risikonya.
 - Untuk coding, berikan solusi lengkap, aman, dan mudah dipelihara.
@@ -86,7 +77,6 @@ Prinsip utama:
 `.trim();
 
 const bot = new Telegraf(config.telegramToken);
-const openai = config.aiProvider === 'openai' ? new OpenAI({ apiKey: config.openaiKey }) : null;
 const rateLimiter = new Map();
 let state = await loadState();
 
@@ -105,7 +95,7 @@ bot.start(async (ctx) => {
     '/memory_add teks - tambah memori manual',
     '/forget - hapus konteks chat ini',
     '',
-    'Langsung kirim pertanyaan, ide, foto, atau tugas yang mau dikerjakan.'
+    'Langsung kirim pertanyaan, ide, atau tugas yang mau dikerjakan.'
   ].join('\n'));
 });
 
@@ -117,8 +107,6 @@ bot.help(async (ctx) => {
     '- Konteks percakapan berkelanjutan',
     '- Mode kerja: balanced, coder, teacher, business, creative, strict',
     '- Knowledge base lokal dari folder knowledge/',
-    '- Web search opsional lewat OpenAI tools',
-    '- Input gambar Telegram jika diaktifkan',
     '',
     'Command:',
     '/mode - lihat mode',
@@ -191,7 +179,6 @@ bot.command('memory_clear', async (ctx) => {
 bot.command('forget', async (ctx) => {
   touchUser(ctx);
   const chat = getChatState(getChatId(ctx));
-  chat.lastResponseId = null;
   chat.recent = [];
   await saveState();
   await ctx.reply('Konteks percakapan chat ini sudah direset.');
@@ -215,7 +202,7 @@ bot.command('stats', async (ctx) => {
   ].join('\n'));
 });
 
-bot.on(['text', 'photo'], async (ctx) => {
+bot.on('text', async (ctx) => {
   touchUser(ctx);
 
   if (!allowRequest(ctx)) {
@@ -224,8 +211,8 @@ bot.on(['text', 'photo'], async (ctx) => {
   }
 
   const messageText = extractMessageText(ctx);
-  if (!messageText && !ctx.message.photo) {
-    await ctx.reply('Kirim teks atau foto dengan caption supaya bisa saya bantu.');
+  if (!messageText) {
+    await ctx.reply('Kirim teks supaya bisa saya bantu.');
     return;
   }
 
@@ -244,11 +231,6 @@ bot.on(['text', 'photo'], async (ctx) => {
   }
 });
 
-bot.on('voice', async (ctx) => {
-  touchUser(ctx);
-  await ctx.reply('Saya belum memproses voice note di versi ini. Kirim teksnya, nanti saya bantu sampai beres.');
-});
-
 bot.catch(async (error, ctx) => {
   state.metrics.errors += 1;
   await saveState();
@@ -260,13 +242,12 @@ bot.catch(async (error, ctx) => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-import http from 'node:http';
 
-// Tambahkan sebelum bot.launch()
 const PORT = process.env.PORT || 3000;
 http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
   console.log(`Health check listening on port ${PORT}`);
 });
+
 await bot.launch();
 console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
 
@@ -279,41 +260,22 @@ async function answerUser(ctx, messageText) {
   const mode = MODES[modeKey] || MODES.balanced;
   const replyLanguage = detectReplyLanguage(messageText);
   const localKnowledge = await retrieveLocalKnowledge(messageText);
-  const imageContent = await buildImageContent(ctx);
 
   const userInput = [
     `Mandatory reply language:\n${replyLanguage.instruction}`,
-    `User message:\n${messageText || '[User sent an image without text]'}`,
+    `User message:\n${messageText}`,
     localKnowledge ? `\nRelevant local knowledge:\n${localKnowledge}` : '',
     chat.recent.length ? `\nRecent conversation summary:\n${formatRecent(chat.recent)}` : ''
   ].filter(Boolean).join('\n\n');
 
-  const input = imageContent
-    ? [{ role: 'user', content: [{ type: 'input_text', text: userInput }, ...imageContent] }]
-    : userInput;
-
   const instructions = buildInstructions(profile, mode, replyLanguage);
-  let responseId = null;
   let answer = '';
 
-  if (config.aiProvider === 'openai') {
-    const request = {
-      model: config.openaiModel,
-      instructions,
-      input,
-      previous_response_id: chat.lastResponseId || undefined,
-      tools: buildTools(),
-      store: true,
-      max_output_tokens: config.maxOutputTokens
-    };
-
-    if (config.reasoningEffort && config.reasoningEffort !== 'none') {
-      request.reasoning = { effort: config.reasoningEffort };
-    }
-
-    const response = await openai.responses.create(request);
-    responseId = response.id;
-    answer = response.output_text?.trim() || extractOutputText(response);
+  if (config.aiProvider === 'huggingface') {
+    answer = await createHuggingFaceCompletion([
+      { role: 'system', content: instructions },
+      { role: 'user', content: userInput }
+    ], config.maxOutputTokens);
   } else {
     const response = await createMistralChatCompletion([
       { role: 'system', content: instructions },
@@ -322,8 +284,7 @@ async function answerUser(ctx, messageText) {
     answer = extractMistralText(response);
   }
 
-  chat.lastResponseId = responseId;
-  rememberRecent(chat, 'user', messageText || '[gambar]');
+  rememberRecent(chat, 'user', messageText);
   rememberRecent(chat, 'assistant', answer);
   state.metrics.messagesHandled += 1;
 
@@ -353,223 +314,65 @@ function buildInstructions(profile, mode, replyLanguage) {
 function detectReplyLanguage(text) {
   const value = String(text || '');
   const hasJapanese = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(value);
-  const hasHangul = /[\uac00-\ud7af]/u.test(value);
-  const hasThai = /[\u0e00-\u0e7f]/u.test(value);
-  const hasArabic = /[\u0600-\u06ff]/u.test(value);
-  const hasCyrillic = /[\u0400-\u04ff]/u.test(value);
-  const hasHebrew = /[\u0590-\u05ff]/u.test(value);
-  const hasGreek = /[\u0370-\u03ff]/u.test(value);
-  const hasDevanagari = /[\u0900-\u097f]/u.test(value);
-  const hasBengali = /[\u0980-\u09ff]/u.test(value);
-  const hasGurmukhi = /[\u0a00-\u0a7f]/u.test(value);
-  const hasGujarati = /[\u0a80-\u0aff]/u.test(value);
-  const hasTamil = /[\u0b80-\u0bff]/u.test(value);
-  const hasTelugu = /[\u0c00-\u0c7f]/u.test(value);
-  const hasKannada = /[\u0c80-\u0cff]/u.test(value);
-  const hasMalayalam = /[\u0d00-\u0d7f]/u.test(value);
-  const hasSinhala = /[\u0d80-\u0dff]/u.test(value);
-  const hasLao = /[\u0e80-\u0eff]/u.test(value);
-  const hasTibetan = /[\u0f00-\u0fff]/u.test(value);
-  const hasMyanmar = /[\u1000-\u109f]/u.test(value);
-  const hasGeorgian = /[\u10a0-\u10ff]/u.test(value);
-  const hasEthiopic = /[\u1200-\u137f]/u.test(value);
-  const hasKhmer = /[\u1780-\u17ff]/u.test(value);
   const hasLatin = /[a-z]/iu.test(value);
-
-  const strictSameLanguage = 'Reply entirely in the user message primary language. Do not mix Indonesian, English, or any other language unless the user explicitly asks for translation, comparison, or mixed-language output.';
+  
+  const strictSameLanguage = 'Reply entirely in the user message primary language. Do not mix languages unless requested.';
 
   if (hasJapanese) {
-    return {
-      code: 'ja',
-      instruction: `Japanese. ${strictSameLanguage} Use natural Japanese only.`
-    };
+    return { code: 'ja', instruction: `Japanese. ${strictSameLanguage} Use natural Japanese only.` };
   }
-
-  if (hasHangul) {
-    return {
-      code: 'ko',
-      instruction: `Korean. ${strictSameLanguage} Use natural Korean only.`
-    };
-  }
-
-  if (hasThai) {
-    return {
-      code: 'th',
-      instruction: `Thai. ${strictSameLanguage} Use natural Thai only.`
-    };
-  }
-
-  if (hasArabic) {
-    return {
-      code: 'ar',
-      instruction: `Arabic. ${strictSameLanguage} Use natural Arabic only.`
-    };
-  }
-
-  if (hasCyrillic) {
-    return {
-      code: 'cyrillic',
-      instruction: `Use the same Cyrillic-script language used by the user. ${strictSameLanguage}`
-    };
-  }
-
-  if (hasHebrew) {
-    return {
-      code: 'he',
-      instruction: `Hebrew. ${strictSameLanguage} Use natural Hebrew only.`
-    };
-  }
-
-  if (hasGreek) {
-    return {
-      code: 'el',
-      instruction: `Greek. ${strictSameLanguage} Use natural Greek only.`
-    };
-  }
-
-  if (hasDevanagari) {
-    return {
-      code: 'devanagari',
-      instruction: `Use the same Devanagari-script language used by the user. ${strictSameLanguage}`
-    };
-  }
-
-  if (hasBengali) {
-    return {
-      code: 'bengali',
-      instruction: `Use the same Bengali-script language used by the user. ${strictSameLanguage}`
-    };
-  }
-
-  if (hasGurmukhi) {
-    return {
-      code: 'gurmukhi',
-      instruction: `Use the same Gurmukhi-script language used by the user. ${strictSameLanguage}`
-    };
-  }
-
-  if (hasGujarati) {
-    return {
-      code: 'gujarati',
-      instruction: `Gujarati. ${strictSameLanguage} Use natural Gujarati only.`
-    };
-  }
-
-  if (hasTamil) {
-    return {
-      code: 'ta',
-      instruction: `Tamil. ${strictSameLanguage} Use natural Tamil only.`
-    };
-  }
-
-  if (hasTelugu) {
-    return {
-      code: 'te',
-      instruction: `Telugu. ${strictSameLanguage} Use natural Telugu only.`
-    };
-  }
-
-  if (hasKannada) {
-    return {
-      code: 'kn',
-      instruction: `Kannada. ${strictSameLanguage} Use natural Kannada only.`
-    };
-  }
-
-  if (hasMalayalam) {
-    return {
-      code: 'ml',
-      instruction: `Malayalam. ${strictSameLanguage} Use natural Malayalam only.`
-    };
-  }
-
-  if (hasSinhala) {
-    return {
-      code: 'si',
-      instruction: `Sinhala. ${strictSameLanguage} Use natural Sinhala only.`
-    };
-  }
-
-  if (hasLao) {
-    return {
-      code: 'lo',
-      instruction: `Lao. ${strictSameLanguage} Use natural Lao only.`
-    };
-  }
-
-  if (hasTibetan) {
-    return {
-      code: 'bo',
-      instruction: `Tibetan. ${strictSameLanguage} Use natural Tibetan only.`
-    };
-  }
-
-  if (hasMyanmar) {
-    return {
-      code: 'my',
-      instruction: `Myanmar/Burmese. ${strictSameLanguage} Use natural Burmese only.`
-    };
-  }
-
-  if (hasGeorgian) {
-    return {
-      code: 'ka',
-      instruction: `Georgian. ${strictSameLanguage} Use natural Georgian only.`
-    };
-  }
-
-  if (hasEthiopic) {
-    return {
-      code: 'ethiopic',
-      instruction: `Use the same Ethiopic-script language used by the user. ${strictSameLanguage}`
-    };
-  }
-
-  if (hasKhmer) {
-    return {
-      code: 'km',
-      instruction: `Khmer. ${strictSameLanguage} Use natural Khmer only.`
-    };
-  }
-
   if (hasLatin) {
-    return {
-      code: 'latin',
-      instruction: `Use the same Latin-script language used by the user, such as Indonesian, English, Malay, Spanish, French, German, Portuguese, Italian, Dutch, Turkish, Vietnamese, or another Latin-script language. ${strictSameLanguage}`
-    };
+    return { code: 'latin', instruction: `Use the same Latin-script language used by the user (Indonesian, English, etc). ${strictSameLanguage}` };
   }
 
-  return {
-    code: 'auto',
-    instruction: strictSameLanguage
-  };
+  return { code: 'auto', instruction: strictSameLanguage };
 }
 
-function buildTools() {
-  const tools = [];
+async function createHuggingFaceCompletion(messages, maxTokens) {
+  const url = `https://api-inference.huggingface.co/models/${config.hfModel}/v1/chat/completions`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.hfKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: config.hfModel,
+      messages,
+      max_tokens: maxTokens
+    })
+  });
 
-  if (config.aiProvider === 'openai' && config.enableWebSearch) {
-    tools.push({ type: 'web_search' });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Hugging Face API error ${response.status}: ${body}`);
   }
 
-  if (config.aiProvider === 'openai' && config.vectorStoreId) {
-    tools.push({
-      type: 'file_search',
-      vector_store_ids: [config.vectorStoreId]
-    });
-  }
-
-  return tools;
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
 }
 
-async function buildImageContent(ctx) {
-  if (config.aiProvider !== 'openai' || !config.enableImageInput || !ctx.message.photo?.length) {
-    return null;
+async function createMistralChatCompletion(messages, maxTokens) {
+  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${config.mistralKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: config.mistralModel,
+      messages,
+      max_tokens: maxTokens
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Mistral API error ${response.status}: ${body}`);
   }
 
-  const largestPhoto = ctx.message.photo.at(-1);
-  const link = await ctx.telegram.getFileLink(largestPhoto.file_id);
-  return [{ type: 'input_image', image_url: link.href }];
+  return response.json();
 }
 
 async function maybeLearnMemory(userId, userMessage, assistantAnswer) {
@@ -605,19 +408,15 @@ ${assistantAnswer}
       }
     }
   } catch {
-    // Memori otomatis hanya fitur tambahan. Jika gagal, jawaban utama tetap aman.
+    // Silent fail untuk memory
   }
 }
 
 async function generateText(prompt, maxTokens) {
-  if (config.aiProvider === 'openai') {
-    const response = await openai.responses.create({
-      model: config.openaiModel,
-      input: prompt,
-      max_output_tokens: maxTokens
-    });
-
-    return response.output_text || extractOutputText(response);
+  if (config.aiProvider === 'huggingface') {
+    return await createHuggingFaceCompletion([
+      { role: 'user', content: prompt }
+    ], maxTokens);
   }
 
   const response = await createMistralChatCompletion([
@@ -625,28 +424,6 @@ async function generateText(prompt, maxTokens) {
   ], maxTokens);
 
   return extractMistralText(response);
-}
-
-async function createMistralChatCompletion(messages, maxTokens) {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${config.mistralKey}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: config.mistralModel,
-      messages,
-      max_tokens: maxTokens
-    })
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Mistral API error ${response.status}: ${body}`);
-  }
-
-  return response.json();
 }
 
 async function retrieveLocalKnowledge(query) {
@@ -761,7 +538,6 @@ function getUserProfile(userId) {
 
 function getChatState(chatId) {
   state.chats[chatId] ||= {
-    lastResponseId: null,
     recent: [],
     createdAt: new Date().toISOString()
   };
@@ -842,18 +618,17 @@ function getChatId(ctx) {
 function isAdmin(ctx) {
   return config.adminIds.has(getUserId(ctx));
 }
+
 async function replyLong(ctx, text) {
   const chunks = splitTelegramMessage(text);
   for (const chunk of chunks) {
     try {
       await ctx.reply(chunk, { parse_mode: 'Markdown' });
     } catch (error) {
-      // Fallback jika format Markdown error dari AI
       await ctx.reply(chunk);
     }
   }
 }
-
 
 function splitTelegramMessage(text) {
   const max = 3900;
@@ -879,7 +654,7 @@ async function safeDeleteMessage(ctx, messageId) {
   try {
     await ctx.deleteMessage(messageId);
   } catch {
-    // Pesan mungkin sudah tidak bisa dihapus, abaikan.
+    // Abaikan jika pesan sudah hilang
   }
 }
 
@@ -905,20 +680,6 @@ async function saveState() {
   await fs.writeFile(config.dataFile, JSON.stringify(state, null, 2));
 }
 
-function extractOutputText(response) {
-  const parts = [];
-
-  for (const item of response.output || []) {
-    for (const content of item.content || []) {
-      if (content.type === 'output_text' && content.text) {
-        parts.push(content.text);
-      }
-    }
-  }
-
-  return parts.join('\n').trim();
-}
-
 function extractMistralText(response) {
   const content = response?.choices?.[0]?.message?.content;
 
@@ -937,60 +698,4 @@ function extractMistralText(response) {
   }
 
   return '';
-}
-
-function stripCodeFence(text) {
-  return String(text)
-    .trim()
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-}
-
-function formatDuration(totalSeconds) {
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
-}
-
-function resolveLocalPath(value) {
-  if (path.isAbsolute(value)) return value;
-  return path.join(__dirname, value);
-}
-
-function boolFromEnv(key, fallback) {
-  const value = process.env[key];
-  if (value === undefined) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
-}
-
-function numberFromEnv(key, fallback) {
-  const value = Number(process.env[key]);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function mustGetEnv(key) {
-  const value = process.env[key];
-  if (!value) {
-    console.error(`Environment variable ${key} wajib diisi.`);
-    process.exit(1);
-  }
-  return value;
-}
-
-function mustGetAnyEnv(keys) {
-  for (const key of keys) {
-    if (process.env[key]) {
-      return process.env[key];
-    }
-  }
-
-  console.error(`Salah satu environment variable wajib diisi: ${keys.join(' atau ')}.`);
-  process.exit(1);
-}
-
-function getActiveModel() {
-  return config.aiProvider === 'openai' ? config.openaiModel : config.mistralModel;
 }
