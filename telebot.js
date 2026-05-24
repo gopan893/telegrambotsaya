@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ==========================================
-// HELPER FUNCTIONS (Dipindah ke atas agar aman dari Hoisting/ReferenceError)
+// 1. HELPER FUNCTIONS (Di atas agar aman dari Hoisting Render)
 // ==========================================
 function resolveLocalPath(value) {
   if (path.isAbsolute(value)) return value;
@@ -27,15 +27,6 @@ function numberFromEnv(key, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function mustGetEnv(key) {
-  const value = process.env[key];
-  if (!value) {
-    console.error(`Environment variable ${key} wajib diisi.`);
-    process.exit(1);
-  }
-  return value;
-}
-
 function mustGetAnyEnv(keys) {
   for (const key of keys) {
     if (process.env[key]) {
@@ -46,20 +37,33 @@ function mustGetAnyEnv(keys) {
   process.exit(1);
 }
 
-function getActiveModel() {
-  return config.aiProvider === 'huggingface' ? config.hfModel : config.mistralModel;
-}
-
 // ==========================================
-// KONFIGURASI UTAMA
+// 2. KONFIGURASI UTAMA & FALLBACK STRATEGY
 // ==========================================
 const config = {
   telegramToken: mustGetAnyEnv(['TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN']),
-  aiProvider: (process.env.AI_PROVIDER || 'huggingface').toLowerCase(),
-  hfKey: process.env.HF_API_KEY || '',
-  hfModel: process.env.HF_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
-  mistralKey: process.env.MISTRAL_API_KEY || '',
-  mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+  primaryProvider: (process.env.AI_PROVIDER || 'mistral').toLowerCase(),
+  
+  // Mapping semua API Key dari .env Bos Alfan
+  keys: {
+    mistral: process.env.MISTRAL_API_KEY || '',
+    huggingface: process.env.HUGGINGFACE_API_KEY || '',
+    deepseek: process.env.DEEPSEEK_API_KEY || '',
+    gemini: process.env.GEMINI_API_KEY || '',
+    groq: process.env.GROQ_API_KEY || '',
+    openai: process.env.OPENAI_API_KEY || ''
+  },
+  
+  // Mapping model default untuk masing-masing provider
+  models: {
+    mistral: process.env.MISTRAL_MODEL || 'mistral-large-latest',
+    huggingface: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
+    deepseek: 'deepseek-chat',
+    gemini: 'gemini-1.5-flash',
+    groq: 'llama3-70b-8192',
+    openai: 'gpt-4o-mini'
+  },
+
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
   autoMemory: boolFromEnv('AUTO_MEMORY', true),
   adminIds: new Set((process.env.OWNER_CHAT_ID || process.env.ADMIN_USER_IDS || '').split(',').map((x) => x.trim()).filter(Boolean)),
@@ -69,58 +73,40 @@ const config = {
   knowledgeDir: resolveLocalPath(process.env.KNOWLEDGE_DIR || './knowledge')
 };
 
-if (config.aiProvider === 'huggingface' && !config.hfKey) {
-  console.error('Environment variable HF_API_KEY wajib diisi jika AI_PROVIDER=huggingface.');
-  process.exit(1);
-}
+// Logika Fallback Cerdas: Ambil provider utama, lalu sisa provider yang punya API key disusun jadi cadangan
+const availableProviders = Object.keys(config.keys).filter(k => config.keys[k]);
+const fallbackStrategy = [
+  config.primaryProvider, 
+  ...availableProviders.filter(p => p !== config.primaryProvider)
+];
 
-if (config.aiProvider === 'mistral' && !config.mistralKey) {
-  console.error('Environment variable MISTRAL_API_KEY wajib diisi jika AI_PROVIDER=mistral.');
+if (fallbackStrategy.length === 0) {
+  console.error('TIDAK ADA API KEY YANG DITEMUKAN! Bot tidak bisa berjalan.');
   process.exit(1);
 }
 
 const MODES = {
-  balanced: {
-    label: 'Seimbang',
-    instruction: 'Jawab dengan ringkas, jelas, dan langsung membantu. Ikuti bahasa yang dipakai user.'
-  },
-  coder: {
-    label: 'Programmer',
-    instruction: 'Bertindak sebagai senior engineer. Berikan solusi teknis yang rapi, aman, dan siap diterapkan. Sertakan kode bila diperlukan.'
-  },
-  teacher: {
-    label: 'Guru',
-    instruction: 'Jelaskan bertahap dengan contoh sederhana. Pastikan user paham alasan di balik jawaban.'
-  },
-  business: {
-    label: 'Bisnis',
-    instruction: 'Fokus pada strategi, eksekusi, penjualan, efisiensi, risiko, dan prioritas yang menghasilkan dampak.'
-  },
-  creative: {
-    label: 'Kreatif',
-    instruction: 'Berikan ide yang segar, variatif, dan praktis. Tetap konkret dan bisa dijalankan.'
-  },
-  strict: {
-    label: 'Tegas',
-    instruction: 'Jawab sangat langsung, minim basa-basi, dan utamakan keputusan atau langkah berikutnya.'
-  }
+  balanced: { label: 'Seimbang', instruction: 'Jawab dengan ringkas, jelas, dan langsung membantu. Ikuti bahasa yang dipakai user.' },
+  coder: { label: 'Programmer', instruction: 'Bertindak sebagai senior engineer. Berikan solusi teknis yang rapi, aman, dan siap diterapkan. Sertakan kode.' },
+  teacher: { label: 'Guru', instruction: 'Jelaskan bertahap dengan contoh sederhana. Pastikan user paham alasan di balik jawaban.' },
+  business: { label: 'Bisnis', instruction: 'Fokus pada strategi, eksekusi, penjualan, efisiensi, risiko, dan prioritas yang menghasilkan dampak.' },
+  creative: { label: 'Kreatif', instruction: 'Berikan ide yang segar, variatif, dan praktis. Tetap konkret dan bisa dijalankan.' },
+  strict: { label: 'Tegas', instruction: 'Jawab sangat langsung, minim basa-basi, dan utamakan keputusan atau langkah berikutnya.' }
 };
 
 const SYSTEM_CORE = `
-Kamu adalah AI asisten tingkat tinggi untuk pemilik bot Telegram ini.
-
+Kamu adalah AI asisten tingkat tinggi untuk pemilik bot Telegram ini (Alfan).
 Prinsip utama:
 - Bantu user menyelesaikan pekerjaan nyata, bukan hanya menjawab secara umum.
 - Jika pertanyaan ambigu, ambil asumsi paling masuk akal dan jelaskan singkat.
-- Jangan mengarang fakta, harga, jadwal, atau data terbaru.
-- Simpan dan gunakan memori hanya untuk informasi yang berguna dan tidak sensitif.
-- Jaga privasi. Jangan meminta token, password, OTP, atau data rahasia kecuali benar-benar diperlukan dan jelaskan risikonya.
-- Untuk coding, berikan solusi lengkap, aman, dan mudah dipelihara.
-- Untuk bisnis, berikan prioritas tindakan yang bisa langsung dieksekusi.
-- Untuk percakapan santai, tetap hangat, manusiawi, dan tidak kaku.
-- Selalu balas dengan bahasa utama yang dipakai user di pesan terakhir. Jika user memakai bahasa Jepang, balas bahasa Jepang. Jika user meminta bahasa tertentu, ikuti permintaan itu.
+- Simpan dan gunakan memori hanya untuk informasi berguna, lindungi privasi dengan ketat.
+- Berikan prioritas pada efisiensi waktu, manajemen risiko, dan output terapan.
+- Selalu balas dengan bahasa utama yang dipakai user di pesan terakhir (Otomatis mendeteksi Indonesia, Inggris, atau Jepang).
 `.trim();
 
+// ==========================================
+// 3. INISIALISASI BOT & SERVER
+// ==========================================
 const bot = new Telegraf(config.telegramToken);
 const rateLimiter = new Map();
 let state = await loadState();
@@ -130,38 +116,12 @@ await saveState();
 
 bot.start(async (ctx) => {
   touchUser(ctx);
-  await ctx.reply([
-    'AI sudah aktif.',
-    '',
-    'Command penting:',
-    '/help - lihat fitur',
-    '/mode - pilih gaya AI',
-    '/memory - lihat memori',
-    '/memory_add teks - tambah memori manual',
-    '/forget - hapus konteks chat ini',
-    '',
-    'Langsung kirim pertanyaan, ide, atau tugas yang mau dikerjakan.'
-  ].join('\n'));
+  await ctx.reply(`AI sudah aktif.\nMode utama: ${config.primaryProvider.toUpperCase()}\nFitur Fallback otomatis: AKTIF (${fallbackStrategy.length} penyedia siaga).\n\nKirim pesan untuk mulai.`);
 });
 
 bot.help(async (ctx) => {
   touchUser(ctx);
-  await ctx.reply([
-    'Fitur AI:',
-    '- Memori jangka panjang per user',
-    '- Konteks percakapan berkelanjutan',
-    '- Mode kerja: balanced, coder, teacher, business, creative, strict',
-    '- Knowledge base lokal dari folder knowledge/',
-    '',
-    'Command:',
-    '/mode - lihat mode',
-    '/mode coder - ubah mode',
-    '/memory - tampilkan memori',
-    '/memory_add saya suka jawaban singkat - tambah memori',
-    '/memory_clear - hapus semua memori kamu',
-    '/forget - reset konteks chat',
-    '/stats - statistik bot khusus admin'
-  ].join('\n'));
+  await ctx.reply('Command:\n/mode - ubah persona\n/memory - tampilkan memori\n/memory_add [teks] - tambah memori manual\n/memory_clear - hapus memori\n/forget - reset konteks\n/stats - statistik admin');
 });
 
 bot.command('mode', async (ctx) => {
@@ -171,108 +131,72 @@ bot.command('mode', async (ctx) => {
 
   if (!requested) {
     const current = getUserProfile(userId).mode || 'balanced';
-    const lines = Object.entries(MODES).map(([key, mode]) => {
-      const marker = key === current ? '*' : '-';
-      return `${marker} ${key}: ${mode.label}`;
-    });
+    const lines = Object.entries(MODES).map(([key, mode]) => `${key === current ? '*' : '-'} ${key}: ${mode.label}`);
     await ctx.reply(`Mode saat ini: ${current}\n\n${lines.join('\n')}\n\nUbah dengan: /mode coder`);
     return;
   }
-
-  if (!MODES[requested]) {
-    await ctx.reply(`Mode "${requested}" tidak tersedia. Ketik /mode untuk melihat daftar mode.`);
-    return;
-  }
-
+  if (!MODES[requested]) return ctx.reply(`Mode "${requested}" tidak tersedia.`);
+  
   getUserProfile(userId).mode = requested;
   await saveState();
   await ctx.reply(`Mode AI diubah ke ${requested} (${MODES[requested].label}).`);
 });
 
-bot.command('memory', async (ctx) => {
+bot.command(['memory', 'memory_add', 'memory_clear', 'forget', 'stats'], async (ctx) => {
   touchUser(ctx);
-  const profile = getUserProfile(getUserId(ctx));
-  if (!profile.memories.length) {
-    await ctx.reply('Belum ada memori tersimpan.');
-    return;
+  const cmd = ctx.message.text.split(' ')[0].substring(1);
+  const userId = getUserId(ctx);
+  
+  if (cmd === 'memory') {
+    const mems = getUserProfile(userId).memories;
+    if (!mems.length) return ctx.reply('Belum ada memori.');
+    return ctx.reply(`Memori kamu:\n${mems.map((m, i) => `${i + 1}. ${m.text}`).join('\n')}`);
+  }
+  
+  if (cmd === 'memory_add') {
+    const text = getCommandPayload(ctx).trim();
+    if (!text) return ctx.reply('Kirim: /memory_add [teks memori]');
+    addMemory(userId, text, 'manual');
+    await saveState();
+    return ctx.reply('Memori ditambahkan.');
+  }
+  
+  if (cmd === 'memory_clear') {
+    getUserProfile(userId).memories = [];
+    await saveState();
+    return ctx.reply('Memori dihapus.');
+  }
+  
+  if (cmd === 'forget') {
+    getChatState(getChatId(ctx)).recent = [];
+    await saveState();
+    return ctx.reply('Konteks chat direset.');
   }
 
-  const lines = profile.memories.map((memory, index) => `${index + 1}. ${memory.text}`);
-  await ctx.reply(`Memori kamu:\n${lines.join('\n')}`);
-});
-
-bot.command('memory_add', async (ctx) => {
-  touchUser(ctx);
-  const text = getCommandPayload(ctx).trim();
-  if (!text) {
-    await ctx.reply('Kirim seperti ini: /memory_add saya suka jawaban singkat dan langsung');
-    return;
+  if (cmd === 'stats' && isAdmin(ctx)) {
+    const uptime = Math.round((Date.now() - Date.parse(state.metrics.startedAt)) / 1000);
+    return ctx.reply(`Stats:\n- User: ${Object.keys(state.users).length}\n- Pesan: ${state.metrics.messagesHandled}\n- Error: ${state.metrics.errors}\n- Urutan Fallback AI: ${fallbackStrategy.join(' > ')}\n- Uptime: ${formatDuration(uptime)}`);
   }
-
-  addMemory(getUserId(ctx), text, 'manual');
-  await saveState();
-  await ctx.reply('Memori ditambahkan.');
-});
-
-bot.command('memory_clear', async (ctx) => {
-  touchUser(ctx);
-  getUserProfile(getUserId(ctx)).memories = [];
-  await saveState();
-  await ctx.reply('Memori kamu sudah dihapus.');
-});
-
-bot.command('forget', async (ctx) => {
-  touchUser(ctx);
-  const chat = getChatState(getChatId(ctx));
-  chat.recent = [];
-  await saveState();
-  await ctx.reply('Konteks percakapan chat ini sudah direset.');
-});
-
-bot.command('stats', async (ctx) => {
-  touchUser(ctx);
-  if (!isAdmin(ctx)) {
-    await ctx.reply('Command ini khusus admin.');
-    return;
-  }
-
-  const uptimeSeconds = Math.round((Date.now() - Date.parse(state.metrics.startedAt)) / 1000);
-  await ctx.reply([
-    'Statistik bot:',
-    `- User: ${Object.keys(state.users).length}`,
-    `- Chat: ${Object.keys(state.chats).length}`,
-    `- Pesan diproses: ${state.metrics.messagesHandled}`,
-    `- Error: ${state.metrics.errors}`,
-    `- Uptime: ${formatDuration(uptimeSeconds)}`
-  ].join('\n'));
 });
 
 bot.on('text', async (ctx) => {
   touchUser(ctx);
-
-  if (!allowRequest(ctx)) {
-    await ctx.reply('Terlalu banyak pesan dalam waktu singkat. Tunggu sebentar lalu coba lagi.');
-    return;
-  }
-
+  if (!allowRequest(ctx)) return ctx.reply('Terlalu cepat. Tunggu sebentar.');
   const messageText = extractMessageText(ctx);
-  if (!messageText) {
-    await ctx.reply('Kirim teks supaya bisa saya bantu.');
-    return;
-  }
+  if (!messageText) return ctx.reply('Kirim teks.');
 
-  const thinkingMessage = await ctx.reply('Sedang berpikir...');
+  const thinkingMsg = await ctx.reply('Sedang menganalisis...');
 
   try {
     const answer = await answerUser(ctx, messageText);
-    await safeDeleteMessage(ctx, thinkingMessage.message_id);
-    await replyLong(ctx, answer || 'Saya belum mendapatkan jawaban yang cukup baik. Coba ulangi dengan detail sedikit lagi.');
+    await safeDeleteMessage(ctx, thinkingMsg.message_id);
+    await replyLong(ctx, answer || 'Maaf, saya kesulitan mencari jawaban yang tepat.');
   } catch (error) {
     state.metrics.errors += 1;
     await saveState();
     console.error(error);
-    await safeDeleteMessage(ctx, thinkingMessage.message_id);
-    await ctx.reply('Maaf, AI sedang gagal memproses pesan ini. Coba lagi sebentar lagi.');
+    await safeDeleteMessage(ctx, thinkingMsg.message_id);
+    await ctx.reply('Sistem sedang padat dan semua jalur AI (Fallback) gagal. Mohon ulangi beberapa detik lagi.');
   }
 });
 
@@ -280,9 +204,6 @@ bot.catch(async (error, ctx) => {
   state.metrics.errors += 1;
   await saveState();
   console.error('Bot error:', error);
-  if (ctx) {
-    await ctx.reply('Ada error internal. Saya sudah catat di log.');
-  }
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
@@ -294,10 +215,48 @@ http.createServer((_, res) => res.end('OK')).listen(PORT, () => {
 });
 
 await bot.launch();
-console.log(`Telegram AI aktif dengan ${config.aiProvider}:${getActiveModel()}`);
+console.log(`🔥 Bot aktif! Jalur prioritas AI: ${fallbackStrategy.join(' -> ')}`);
 
 // ==========================================
-// CORE LOGIC FUNCTIONS
+// 4. UNIFIED AI PROVIDER ROUTER (CIRCUIT BREAKER)
+// ==========================================
+async function callAIProvider(providerName, messages, maxTokens) {
+  const providerEndpoints = {
+    mistral: { url: 'https://api.mistral.ai/v1/chat/completions', key: config.keys.mistral, model: config.models.mistral },
+    huggingface: { url: `https://api-inference.huggingface.co/models/${config.models.huggingface}/v1/chat/completions`, key: config.keys.huggingface, model: config.models.huggingface },
+    deepseek: { url: 'https://api.deepseek.com/chat/completions', key: config.keys.deepseek, model: config.models.deepseek },
+    gemini: { url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: config.keys.gemini, model: config.models.gemini },
+    groq: { url: 'https://api.groq.com/openai/v1/chat/completions', key: config.keys.groq, model: config.models.groq },
+    openai: { url: 'https://api.openai.com/v1/chat/completions', key: config.keys.openai, model: config.models.openai }
+  };
+
+  const target = providerEndpoints[providerName];
+  if (!target || !target.key) throw new Error(`Provider ${providerName} tidak memiliki API Key.`);
+
+  const response = await fetch(target.url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${target.key}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: target.model,
+      messages: messages,
+      max_tokens: maxTokens
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`${providerName} HTTP ${response.status}: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+// ==========================================
+// 5. CORE LOGIC
 // ==========================================
 async function answerUser(ctx, messageText) {
   const userId = getUserId(ctx);
@@ -318,18 +277,27 @@ async function answerUser(ctx, messageText) {
 
   const instructions = buildInstructions(profile, mode, replyLanguage);
   let answer = '';
+  let lastError = null;
+  let successfulProvider = '';
 
-  if (config.aiProvider === 'huggingface') {
-    answer = await createHuggingFaceCompletion([
-      { role: 'system', content: instructions },
-      { role: 'user', content: userInput }
-    ], config.maxOutputTokens);
-  } else {
-    const response = await createMistralChatCompletion([
-      { role: 'system', content: instructions },
-      { role: 'user', content: userInput }
-    ], config.maxOutputTokens);
-    answer = extractMistralText(response);
+  // AUTOMATIC FALLBACK LOOP
+  for (const provider of fallbackStrategy) {
+    try {
+      answer = await callAIProvider(provider, [
+        { role: 'system', content: instructions },
+        { role: 'user', content: userInput }
+      ], config.maxOutputTokens);
+      
+      successfulProvider = provider;
+      break; // Jika sukses, hentikan perulangan (jangan panggil provider lain)
+    } catch (error) {
+      lastError = error;
+      console.warn(`⚠️ [FALLBACK] Provider ${provider.toUpperCase()} gagal. Melompat ke provider selanjutnya...`);
+    }
+  }
+
+  if (!answer) {
+    throw lastError || new Error('Semua provider gagal.');
   }
 
   rememberRecent(chat, 'user', messageText);
@@ -344,215 +312,86 @@ async function answerUser(ctx, messageText) {
   return answer;
 }
 
-function buildInstructions(profile, mode, replyLanguage) {
-  const memoryLines = profile.memories
-    .slice(-30)
-    .map((memory) => `- ${memory.text}`)
-    .join('\n');
+async function maybeLearnMemory(userId, userMessage, assistantAnswer) {
+  if (userMessage.length < 12) return;
+  const profile = getUserProfile(userId);
+  const existing = profile.memories.map((m) => m.text).join('\n');
+  const prompt = `Ekstrak preferensi/fakta jangka panjang user (hindari data rahasia/password). Balas array JSON. \nExisting:\n${existing||'-'}\nUser:${userMessage}\nAssistant:${assistantAnswer}`;
 
-  return [
-    SYSTEM_CORE,
-    `Mode aktif: ${mode.label}. ${mode.instruction}`,
-    `Language rule for this response: ${replyLanguage.instruction}`,
-    memoryLines ? `Memori user:\n${memoryLines}` : 'Belum ada memori user.',
-    'Format jawaban: gunakan satu bahasa yang sama dengan pesan user. Jangan mencampur bahasa Indonesia, Inggris, atau bahasa lain kecuali user memintanya.'
-  ].join('\n\n');
+  let memoryText = '';
+  for (const provider of fallbackStrategy) {
+    try {
+      memoryText = await callAIProvider(provider, [{ role: 'user', content: prompt }], 300);
+      break; // Stop mencoba jika sukses
+    } catch (e) { /* Silent fail */ }
+  }
+
+  try {
+    const parsed = JSON.parse(stripCodeFence(memoryText || '[]'));
+    if (Array.isArray(parsed)) parsed.forEach(item => typeof item === 'string' && item.trim() && addMemory(userId, item.trim(), 'auto'));
+  } catch {}
+}
+
+function buildInstructions(profile, mode, replyLanguage) {
+  const memoryLines = profile.memories.slice(-30).map((m) => `- ${m.text}`).join('\n');
+  return [SYSTEM_CORE, `Mode aktif: ${mode.label}. ${mode.instruction}`, `Language rule: ${replyLanguage.instruction}`, memoryLines ? `Memori user:\n${memoryLines}` : 'Belum ada memori user.', 'Gunakan satu bahasa utama, jangan dicampur kecuali diminta.'].join('\n\n');
 }
 
 function detectReplyLanguage(text) {
-  const value = String(text || '');
-  const hasJapanese = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(value);
-  const hasLatin = /[a-z]/iu.test(value);
-  
-  const strictSameLanguage = 'Reply entirely in the user message primary language. Do not mix languages unless requested.';
-
-  if (hasJapanese) {
-    return { code: 'ja', instruction: `Japanese. ${strictSameLanguage} Use natural Japanese only.` };
-  }
-  if (hasLatin) {
-    return { code: 'latin', instruction: `Use the same Latin-script language used by the user (Indonesian, English, etc). ${strictSameLanguage}` };
-  }
-
-  return { code: 'auto', instruction: strictSameLanguage };
+  const val = String(text || '');
+  if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(val)) return { code: 'ja', instruction: 'Japanese. Reply entirely in natural Japanese.' };
+  if (/[a-z]/iu.test(val)) return { code: 'latin', instruction: 'Use the same Latin-script language used by the user (Indonesian, English, etc). Reply entirely in that language.' };
+  return { code: 'auto', instruction: 'Reply entirely in the user message primary language.' };
 }
 
-async function createHuggingFaceCompletion(messages, maxTokens) {
-  const url = `https://api-inference.huggingface.co/models/${config.hfModel}/v1/chat/completions`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${config.hfKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: config.hfModel,
-      messages,
-      max_tokens: maxTokens
-    })
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Hugging Face API error ${response.status}: ${body}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
-}
-
-async function createMistralChatCompletion(messages, maxTokens) {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${config.mistralKey}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: config.mistralModel,
-      messages,
-      max_tokens: maxTokens
-    })
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Mistral API error ${response.status}: ${body}`);
-  }
-
-  return response.json();
-}
-
-async function maybeLearnMemory(userId, userMessage, assistantAnswer) {
-  if (userMessage.length < 12) return;
-
-  const profile = getUserProfile(userId);
-  const existing = profile.memories.map((memory) => memory.text).join('\n');
-
-  const prompt = `
-Ambil hanya fakta preferensi atau informasi jangka panjang tentang user dari percakapan ini.
-Jangan simpan rahasia, token, password, OTP, alamat lengkap, nomor kartu, atau data sangat sensitif.
-Jika tidak ada yang layak disimpan, balas [].
-Balas JSON array string saja, maksimal 3 item.
-
-Memori yang sudah ada:
-${existing || '-'}
-
-User:
-${userMessage}
-
-Assistant:
-${assistantAnswer}
-`.trim();
-
-  try {
-    const text = await generateText(prompt, 300);
-    const parsed = JSON.parse(stripCodeFence(text || '[]'));
-    if (!Array.isArray(parsed)) return;
-
-    for (const item of parsed) {
-      if (typeof item === 'string' && item.trim()) {
-        addMemory(userId, item.trim(), 'auto');
-      }
-    }
-  } catch {
-    // Silent fail untuk memory
-  }
-}
-
-async function generateText(prompt, maxTokens) {
-  if (config.aiProvider === 'huggingface') {
-    return await createHuggingFaceCompletion([
-      { role: 'user', content: prompt }
-    ], maxTokens);
-  }
-
-  const response = await createMistralChatCompletion([
-    { role: 'user', content: prompt }
-  ], maxTokens);
-
-  return extractMistralText(response);
-}
-
+// ==========================================
+// 6. RAG & UTILS
+// ==========================================
 async function retrieveLocalKnowledge(query) {
   const files = await listKnowledgeFiles(config.knowledgeDir);
   if (!files.length || !query) return '';
-
   const queryTokens = tokenize(query);
   const scoredChunks = [];
 
   for (const file of files) {
     const raw = await fs.readFile(file, 'utf8');
-    const chunks = chunkText(raw, 1200);
-    for (const chunk of chunks) {
+    chunkText(raw, 1200).forEach(chunk => {
       const score = scoreChunk(queryTokens, chunk);
-      if (score > 0) {
-        scoredChunks.push({ file: path.basename(file), score, chunk });
-      }
-    }
+      if (score > 0) scoredChunks.push({ file: path.basename(file), score, chunk });
+    });
   }
 
-  return scoredChunks
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map((item, index) => `[${index + 1}] ${item.file}\n${item.chunk}`)
-    .join('\n\n');
+  return scoredChunks.sort((a, b) => b.score - a.score).slice(0, 5).map((item, i) => `[${i + 1}] ${item.file}\n${item.chunk}`).join('\n\n');
 }
 
 async function listKnowledgeFiles(dir) {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = [];
-
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        files.push(...await listKnowledgeFiles(fullPath));
-      } else if (/\.(txt|md|json)$/i.test(entry.name)) {
-        files.push(fullPath);
-      }
+      if (entry.isDirectory()) files.push(...await listKnowledgeFiles(fullPath));
+      else if (/\.(txt|md|json)$/i.test(entry.name)) files.push(fullPath);
     }
-
     return files;
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function scoreChunk(queryTokens, chunk) {
   const chunkTokens = new Set(tokenize(chunk));
-  let score = 0;
-
-  for (const token of queryTokens) {
-    if (chunkTokens.has(token)) score += token.length > 5 ? 2 : 1;
-  }
-
-  return score;
+  return queryTokens.reduce((score, token) => chunkTokens.has(token) ? score + (token.length > 5 ? 2 : 1) : score, 0);
 }
 
-function tokenize(text) {
-  return String(text)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter((token) => token.length >= 3);
-}
-
+function tokenize(text) { return String(text).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(t => t.length >= 3); }
 function chunkText(text, maxChars) {
   const paragraphs = String(text).split(/\n{2,}/);
   const chunks = [];
   let current = '';
-
-  for (const paragraph of paragraphs) {
-    const next = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (next.length > maxChars && current) {
-      chunks.push(current);
-      current = paragraph;
-    } else {
-      current = next;
-    }
+  for (const p of paragraphs) {
+    const next = current ? `${current}\n\n${p}` : p;
+    if (next.length > maxChars && current) { chunks.push(current); current = p; } 
+    else { current = next; }
   }
-
   if (current) chunks.push(current);
   return chunks;
 }
@@ -560,190 +399,67 @@ function chunkText(text, maxChars) {
 function touchUser(ctx) {
   const userId = getUserId(ctx);
   const profile = getUserProfile(userId);
-  const from = ctx.from || {};
-
-  profile.telegram = {
-    id: userId,
-    username: from.username || null,
-    firstName: from.first_name || null,
-    lastName: from.last_name || null
-  };
+  profile.telegram = { id: userId, username: ctx.from?.username || null, firstName: ctx.from?.first_name || null, lastName: ctx.from?.last_name || null };
   profile.lastSeenAt = new Date().toISOString();
 }
 
 function getUserProfile(userId) {
-  state.users[userId] ||= {
-    mode: 'balanced',
-    memories: [],
-    createdAt: new Date().toISOString(),
-    lastSeenAt: null,
-    telegram: {}
-  };
-
-  state.users[userId].memories ||= [];
+  state.users[userId] ||= { mode: 'balanced', memories: [], createdAt: new Date().toISOString(), lastSeenAt: null, telegram: {} };
   return state.users[userId];
 }
 
 function getChatState(chatId) {
-  state.chats[chatId] ||= {
-    recent: [],
-    createdAt: new Date().toISOString()
-  };
-
-  state.chats[chatId].recent ||= [];
+  state.chats[chatId] ||= { recent: [], createdAt: new Date().toISOString() };
   return state.chats[chatId];
 }
 
 function addMemory(userId, text, source) {
   const profile = getUserProfile(userId);
-  const normalized = normalizeMemory(text);
-  if (!normalized) return;
-
-  const exists = profile.memories.some((memory) => normalizeMemory(memory.text) === normalized);
-  if (exists) return;
-
-  profile.memories.push({
-    text: normalized,
-    source,
-    createdAt: new Date().toISOString()
-  });
-
-  if (profile.memories.length > 60) {
-    profile.memories = profile.memories.slice(-60);
-  }
-}
-
-function normalizeMemory(text) {
-  return String(text).replace(/\s+/g, ' ').trim().slice(0, 240);
+  const normalized = String(text).replace(/\s+/g, ' ').trim().slice(0, 240);
+  if (!normalized || profile.memories.some(m => String(m.text).replace(/\s+/g, ' ').trim().slice(0, 240) === normalized)) return;
+  profile.memories.push({ text: normalized, source, createdAt: new Date().toISOString() });
+  if (profile.memories.length > 60) profile.memories = profile.memories.slice(-60);
 }
 
 function rememberRecent(chat, role, text) {
-  chat.recent.push({
-    role,
-    text: String(text || '').slice(0, 700),
-    at: new Date().toISOString()
-  });
-
-  if (chat.recent.length > 16) {
-    chat.recent = chat.recent.slice(-16);
-  }
+  chat.recent.push({ role, text: String(text || '').slice(0, 700), at: new Date().toISOString() });
+  if (chat.recent.length > 16) chat.recent = chat.recent.slice(-16);
 }
-
-function formatRecent(recent) {
-  return recent
-    .slice(-8)
-    .map((item) => `${item.role}: ${item.text}`)
-    .join('\n');
-}
-
-function extractMessageText(ctx) {
-  return (ctx.message.text || ctx.message.caption || '').trim();
-}
-
-function getCommandPayload(ctx) {
-  const text = extractMessageText(ctx);
-  return text.replace(/^\/\w+(?:@\w+)?\s*/i, '');
-}
-
+function formatRecent(recent) { return recent.slice(-8).map((item) => `${item.role}: ${item.text}`).join('\n'); }
+function extractMessageText(ctx) { return (ctx.message.text || ctx.message.caption || '').trim(); }
+function getCommandPayload(ctx) { return extractMessageText(ctx).replace(/^\/\w+(?:@\w+)?\s*/i, ''); }
 function allowRequest(ctx) {
-  const userId = getUserId(ctx);
-  const now = Date.now();
-  const bucket = rateLimiter.get(userId) || [];
-  const recent = bucket.filter((timestamp) => now - timestamp < config.rateLimitWindowMs);
-  recent.push(now);
-  rateLimiter.set(userId, recent);
+  const userId = getUserId(ctx), now = Date.now(), bucket = rateLimiter.get(userId) || [];
+  const recent = bucket.filter((t) => now - t < config.rateLimitWindowMs);
+  recent.push(now); rateLimiter.set(userId, recent);
   return recent.length <= config.rateLimitMessages;
 }
-
-function getUserId(ctx) {
-  return String(ctx.from?.id || 'unknown');
-}
-
-function getChatId(ctx) {
-  return String(ctx.chat?.id || 'unknown');
-}
-
-function isAdmin(ctx) {
-  return config.adminIds.has(getUserId(ctx));
-}
+function getUserId(ctx) { return String(ctx.from?.id || 'unknown'); }
+function getChatId(ctx) { return String(ctx.chat?.id || 'unknown'); }
+function isAdmin(ctx) { return config.adminIds.has(getUserId(ctx)); }
 
 async function replyLong(ctx, text) {
-  const chunks = splitTelegramMessage(text);
-  for (const chunk of chunks) {
-    try {
-      await ctx.reply(chunk, { parse_mode: 'Markdown' });
-    } catch (error) {
-      await ctx.reply(chunk);
-    }
-  }
-}
-
-function splitTelegramMessage(text) {
-  const max = 3900;
-  const chunks = [];
+  const chunks = [], max = 3900;
   let remaining = String(text);
-
   while (remaining.length > max) {
-    const cutAt = Math.max(
-      remaining.lastIndexOf('\n\n', max),
-      remaining.lastIndexOf('\n', max),
-      remaining.lastIndexOf('. ', max)
-    );
+    const cutAt = Math.max(remaining.lastIndexOf('\n\n', max), remaining.lastIndexOf('\n', max), remaining.lastIndexOf('. ', max));
     const index = cutAt > 1000 ? cutAt + 1 : max;
     chunks.push(remaining.slice(0, index).trim());
     remaining = remaining.slice(index).trim();
   }
-
   if (remaining) chunks.push(remaining);
-  return chunks;
-}
-
-async function safeDeleteMessage(ctx, messageId) {
-  try {
-    await ctx.deleteMessage(messageId);
-  } catch {
-    // Abaikan jika pesan sudah hilang
+  for (const chunk of chunks) {
+    try { await ctx.reply(chunk, { parse_mode: 'Markdown' }); } 
+    catch { await ctx.reply(chunk); }
   }
 }
+async function safeDeleteMessage(ctx, messageId) { try { await ctx.deleteMessage(messageId); } catch {} }
 
 async function loadState() {
-  try {
-    const raw = await fs.readFile(config.dataFile, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return {
-      users: {},
-      chats: {},
-      metrics: {
-        startedAt: null,
-        messagesHandled: 0,
-        errors: 0
-      }
-    };
-  }
+  try { return JSON.parse(await fs.readFile(config.dataFile, 'utf8')); } 
+  catch { return { users: {}, chats: {}, metrics: { startedAt: null, messagesHandled: 0, errors: 0 } }; }
 }
-
 async function saveState() {
   await fs.mkdir(path.dirname(config.dataFile), { recursive: true });
   await fs.writeFile(config.dataFile, JSON.stringify(state, null, 2));
-}
-
-function extractMistralText(response) {
-  const content = response?.choices?.[0]?.message?.content;
-
-  if (typeof content === 'string') {
-    return content.trim();
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === 'string') return part;
-        return part?.text || '';
-      })
-      .join('')
-      .trim();
-  }
-
-  return '';
 }
