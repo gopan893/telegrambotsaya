@@ -18,7 +18,7 @@ const config = {
   huggingfaceKey: process.env.HUGGINGFACE_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-5.2',
   mistralModel: process.env.MISTRAL_MODEL || 'mistral-large-latest',
-  huggingfaceModel: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-32B-Instruct',
+  huggingfaceModel: process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-Coder-7B-Instruct',
   reasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
   maxOutputTokens: numberFromEnv('MAX_OUTPUT_TOKENS', 1800),
   enableWebSearch: boolFromEnv('ENABLE_WEB_SEARCH', true),
