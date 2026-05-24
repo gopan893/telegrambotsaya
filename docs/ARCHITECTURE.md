@@ -19,12 +19,20 @@
 ## Struktur Target
 
 ```text
-src/
-  core/
-    logger.js
-    ttl-map.js
-    keyed-queue.js
-    circuit-breaker.js
+core/
+  logger.js
+  ttl-map.js
+  keyed-queue.js
+  circuit-breaker.js
+config/
+  env.js
+handlers/
+services/
+utils/
+storage/
+plugins/
+scheduler/
+middleware/
   ai/
     router.js
     providers/
@@ -48,9 +56,10 @@ src/
 
 ## Modul Yang Sudah Dipisah
 
-- `src/core/logger.js`
-- `src/core/ttl-map.js`
-- `src/core/keyed-queue.js`
-- `src/core/circuit-breaker.js`
+- `core/logger.js`
+- `core/ttl-map.js`
+- `core/keyed-queue.js`
+- `core/circuit-breaker.js`
+- `config/env.js`
 
 Modul ini sudah dipakai oleh `telebot.js` tanpa mengubah command Telegram lama.

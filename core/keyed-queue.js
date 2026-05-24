@@ -14,7 +14,6 @@ class KeyedQueue {
     const gate = new Promise((resolve) => {
       release = resolve;
     });
-
     const chained = current.then(() => gate);
 
     this.queues.set(id, {

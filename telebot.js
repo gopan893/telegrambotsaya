@@ -3,10 +3,11 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
-const { createLogger } = require('./src/core/logger');
-const { BoundedTTLMap } = require('./src/core/ttl-map');
-const { KeyedQueue } = require('./src/core/keyed-queue');
-const { CircuitBreaker } = require('./src/core/circuit-breaker');
+const { readEnv, validateConfig } = require('./config/env');
+const { createLogger } = require('./core/logger');
+const { BoundedTTLMap } = require('./core/ttl-map');
+const { KeyedQueue } = require('./core/keyed-queue');
+const { CircuitBreaker } = require('./core/circuit-breaker');
 
 let scheduleLib = null;
 let googleLib = null;
@@ -24,6 +25,15 @@ try { ({ Mistral: MistralClass } = require('@mistralai/mistralai')); } catch (_)
 try { RedisClass = require('ioredis'); } catch (_) {}
 try { pdfParseLib = require('pdf-parse'); } catch (_) {}
 
+const config = readEnv();
+
+try {
+  validateConfig(config);
+} catch (err) {
+  console.error(`❌ ${err.message}.`);
+  process.exit(1);
+}
+
 const {
   TELEGRAM_TOKEN,
   MISTRAL_API_KEY,
@@ -39,27 +49,14 @@ const {
   PORT = 10000,
   RENDER_EXTERNAL_HOSTNAME,
   OWNER_CHAT_ID = '',
-  ADMIN_IDS = ''
-} = process.env;
+  ADMIN_IDS = '',
+  ADMIN_SET,
+  TELEGRAM_API,
+  WEBHOOK_BASE_URL,
+  WEBHOOK_PATH
+} = config;
 
-if (!TELEGRAM_TOKEN) {
-  console.error('❌ TELEGRAM_TOKEN tidak ditemukan!');
-  process.exit(1);
-}
-
-if (!MISTRAL_API_KEY && !GROQ_API_KEY) {
-  console.error('❌ Set minimal MISTRAL_API_KEY atau GROQ_API_KEY.');
-  process.exit(1);
-}
-
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 const FILE_DIR = process.cwd();
-const ADMIN_SET = new Set(
-  String(OWNER_CHAT_ID || ADMIN_IDS)
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-);
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -4198,7 +4195,7 @@ app.get('/oauth2callback', async (req, res) => {
   }
 });
 
-app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
+app.post(WEBHOOK_PATH, async (req, res) => {
   try {
     const update = req.body;
     if (isDuplicateIncomingUpdate(update)) {
@@ -5055,13 +5052,8 @@ async function start() {
   await restoreAllReminders();
   await restoreAllDigests();
 
-  const baseUrl =
-    WEBHOOK_URL ||
-    TELEGRAM_WEBHOOK_URL ||
-    (RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : null);
-
-  const webhookUrl = baseUrl
-    ? `${baseUrl}/webhook/${TELEGRAM_TOKEN}`
+  const webhookUrl = WEBHOOK_BASE_URL
+    ? `${WEBHOOK_BASE_URL}/webhook/${TELEGRAM_TOKEN}`
     : null;
 
   server = app.listen(PORT, '0.0.0.0', async () => {
