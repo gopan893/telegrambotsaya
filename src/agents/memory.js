@@ -138,6 +138,65 @@ class MemoryAgent {
     scoredFacts.sort((a, b) => b.importance - a.importance);
     return scoredFacts.slice(0, maxLimit).map(f => `- ${f.text}`).join('\n');
   }
+
+  // --- Phase 7: Attachment Memory Store ---
+
+  /**
+   * Menyimpan hasil parsing file ke cache agar tidak perlu parsing ulang
+   */
+  cacheFileResult(userId, fileId, fileContext, botServices) {
+    const { ensureUser } = botServices;
+    const u = ensureUser(userId);
+    if (!u.fileMemory) u.fileMemory = {};
+
+    u.fileMemory[fileId] = {
+      ...fileContext,
+      cachedAt: Date.now()
+    };
+
+    // Batasi cache file max 10 entri per user
+    const keys = Object.keys(u.fileMemory);
+    if (keys.length > 10) {
+      delete u.fileMemory[keys[0]]; // Hapus entri tertua
+    }
+  }
+
+  /**
+   * Mengecek apakah file sudah pernah diparsing (deduplication)
+   */
+  getCachedFile(userId, fileId, botServices) {
+    const { ensureUser } = botServices;
+    const u = ensureUser(userId);
+    return (u.fileMemory && u.fileMemory[fileId]) || null;
+  }
+
+  /**
+   * Menyimpan insight penting dari file ke semantic memory (File-based Learning)
+   */
+  learnFromFile(traceId, userId, keyPoints, fileName, botServices) {
+    const { ensureUser, persist } = botServices;
+    const u = ensureUser(userId);
+    if (!u.semanticMemory) u.semanticMemory = [];
+
+    let learned = 0;
+    for (const point of (keyPoints || []).slice(0, 3)) {
+      const tagged = `[File: ${fileName}] ${point}`;
+      if (!u.semanticMemory.includes(tagged)) {
+        u.semanticMemory.push(tagged);
+        learned++;
+      }
+    }
+
+    // Prune jika membengkak
+    if (u.semanticMemory.length > this.maxSemanticFacts) {
+      u.semanticMemory = u.semanticMemory.slice(-this.maxSemanticFacts);
+    }
+
+    if (learned > 0) {
+      persist();
+      observability.logEvent(traceId, 'MemoryAgent', 'FILE_KNOWLEDGE_LEARNED', { learned, fileName });
+    }
+  }
 }
 
 module.exports = new MemoryAgent();
