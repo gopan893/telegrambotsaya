@@ -52,19 +52,19 @@ const AGENT_REGISTRY = {
     role: 'planner',
     priority: 90,
     capabilities: ['task_breakdown', 'workflow_strategy', 'goal_decomposition'],
-    modes: ['Strategic Planning', 'System Analysis']
+    modes: ['Strategic Planning', 'Strategic Thinking', 'System Analysis', 'Cognitive Workspace']
   },
   ResearchAgent: {
     role: 'research',
     priority: 70,
     capabilities: ['evidence_collection', 'source_validation', 'confidence_scoring'],
-    modes: ['Research Intelligence', 'Collaborative Thinking', 'System Analysis', 'Research File', 'Cross-Modal Reasoning']
+    modes: ['Research Intelligence', 'Deep Research OS', 'Collaborative Thinking', 'System Analysis', 'Research File', 'Cross-Modal Reasoning']
   },
   ReasoningAgent: {
     role: 'reasoning',
     priority: 80,
     capabilities: ['critical_thinking', 'assumption_check', 'tradeoff_analysis'],
-    modes: ['Collaborative Thinking', 'Research Intelligence', 'System Analysis', 'Strategic Planning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Cross-Modal Reasoning']
+    modes: ['Collaborative Thinking', 'Research Intelligence', 'Deep Research OS', 'System Analysis', 'Strategic Planning', 'Strategic Thinking', 'Meta Reasoning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Cross-Modal Reasoning']
   },
   VerifierAgent: {
     role: 'verifier',
@@ -177,6 +177,11 @@ class AgentCoordinator {
     if (['controlled-agent', 'controlled'].includes(mode)) return 'Controlled Agent';
     if (['explainability', 'explain'].includes(mode)) return 'Explainability';
     if (['recovery', 'recovery-mode'].includes(mode)) return 'Recovery';
+    if (['strategic-thinking', 'strategic-os'].includes(mode)) return 'Strategic Thinking';
+    if (['personal-intelligence', 'personal-os'].includes(mode)) return 'Personal Intelligence';
+    if (['deep-research-os', 'research-os'].includes(mode)) return 'Deep Research OS';
+    if (['cognitive-workspace', 'workspace-os'].includes(mode)) return 'Cognitive Workspace';
+    if (['meta-reasoning', 'meta'].includes(mode)) return 'Meta Reasoning';
     return null;
   }
 
@@ -236,15 +241,15 @@ class AgentCoordinator {
       { name: 'learning', agents: ['LearningAgent', 'SelfImprovementAgent'], maxIterations: 1 }
     ];
 
-    if (mode === 'Strategic Planning') {
+    if (mode === 'Strategic Planning' || mode === 'Strategic Thinking' || mode === 'Cognitive Workspace') {
       phases[2].agents.unshift('PlannerAgent');
     }
 
     const collaborationAgents = [];
-    if (['Collaborative Thinking', 'Research Intelligence', 'Deep Analysis', 'System Analysis', 'Strategic Planning', 'Cross-Modal Reasoning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Research File', 'Governance Review', 'Explainability', 'Recovery'].includes(mode)) {
+    if (['Collaborative Thinking', 'Research Intelligence', 'Deep Research OS', 'Deep Analysis', 'System Analysis', 'Strategic Planning', 'Strategic Thinking', 'Meta Reasoning', 'Personal Intelligence', 'Cognitive Workspace', 'Cross-Modal Reasoning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Research File', 'Governance Review', 'Explainability', 'Recovery'].includes(mode)) {
       collaborationAgents.push('ResearchAgent', 'ReasoningAgent');
     }
-    if (mode === 'System Analysis' || mode === 'Data Understanding' || mode === 'Cross-Modal Reasoning' || mode === 'Governance Review' || mode === 'Controlled Agent') {
+    if (mode === 'System Analysis' || mode === 'Data Understanding' || mode === 'Cross-Modal Reasoning' || mode === 'Governance Review' || mode === 'Controlled Agent' || mode === 'Cognitive Workspace') {
       collaborationAgents.push('ToolRouterAgent');
     }
     if (mode === 'Governance Review' || mode === 'Controlled Agent' || mode === 'Safe Mode' || mode === 'Recovery') {

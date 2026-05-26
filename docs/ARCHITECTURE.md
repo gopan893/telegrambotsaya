@@ -495,3 +495,77 @@ Untuk aksi yang mengubah state lokal seperti todo, reminder, mood, atau session,
 ### Hal Penting Untuk Dipelajari
 
 Autonomous AI yang aman harus punya batas: policy menentukan apa yang boleh, permission menentukan siapa yang boleh, risk assessment menentukan seberapa berbahaya, approval memberi kontrol manusia, audit membuat keputusan bisa diperiksa, dan rollback membuat kegagalan bisa dipulihkan.
+
+## Phase 9 - Unified AI Operating System
+
+Tahap 9 menambahkan layer `src/ai-os/` sebagai Mini AI Operating System yang persistent, context-aware, dan tetap ringan untuk Render free tier. Layer ini tidak mengganti command lama; ia menambah persistent cognition di atas autonomous engine.
+
+### AI OS Workflow
+
+```text
+INPUT
+-> Context Synchronization
+-> Goal Alignment
+-> Memory Graph Retrieval
+-> Strategic Planning bila perlu
+-> Multi-Agent Collaboration bila perlu
+-> Research & Reasoning bila perlu
+-> Reflection
+-> Workflow Update
+-> Knowledge Graph Evolution
+-> Learning Update
+-> Persistent State Sync
+-> Final Response
+```
+
+### Modul AI OS
+
+- `src/ai-os/cognitive-core.js`: orchestrator utama yang memilih layer aktif berdasarkan kompleksitas input.
+- `src/ai-os/context-sync.js`: selective context activation untuk memory, goals, workflows, graph, dan insights.
+- `src/ai-os/memory-bus.js`: global memory bus untuk publish, retrieve, update, prune, dan insight memory.
+- `src/ai-os/unified-memory.js`: persistent memory per user dengan type, confidence, importance, deduplication, pruning, dan compression.
+- `src/ai-os/goal-manager.js`: long-term goal management dengan progress, priority, milestone, dan workflow attachment.
+- `src/ai-os/workflow-engine.js`: workflow multi-hari/multi-minggu dengan step tracking dan context summary.
+- `src/ai-os/knowledge-graph.js`: graph ringan untuk concept node, relationship edge, ranking, dan graph summary.
+- `src/ai-os/semantic-relationship-engine.js`: heuristic relationship detection tanpa AI call tambahan.
+- `src/ai-os/strategic-reasoning.js`: fact/inference/speculation split, assumption, risk, trade-off, next action, dan confidence.
+- `src/ai-os/reflection-engine.js`: answer quality check, weak reasoning detection, insight extraction, dan reflective memory.
+- `src/ai-os/meta-reasoning.js`: memilih kapan cukup jawaban sederhana dan kapan perlu AI OS layer.
+- `src/ai-os/personal-intelligence.js`: personal layer berbasis memory tersimpan, tanpa mengarang profil user.
+- `src/ai-os/research-intelligence.js`: persistent research session, evidence synthesis, confidence, dan source summary.
+- `src/ai-os/cognitive-workspace.js`: workspace untuk ide, catatan, project thinking, dan link ke goal/workflow/graph.
+- `src/ai-os/learning-evolution.js`: belajar dari koreksi, feedback, dan insight.
+- `src/ai-os/cognitive-analytics.js`: observability ringan: memory, goal, workflow, graph, confidence, insight, stale item.
+- `src/ai-os/guards.js`: overload prevention, prompt injection memory guard, corruption recovery, stale cleanup, dan low-confidence action guard.
+
+### Command Baru
+
+- `/aios`: status ringkas AI OS.
+- `/goals`, `/goaladd`, `/goalupdate`: goal management.
+- `/workflows`, `/workflowadd`, `/workflowstep`, `/workflowdone`: workflow persistence.
+- `/graph`: ringkasan knowledge graph.
+- `/insights`: insight penting terakhir.
+- `/workspace`, `/workspaceadd`: cognitive workspace.
+- `/reflect`: reflection strategis ringan.
+- `/strategy`: strategic reasoning deterministik.
+- `/aios-reset`: reset data AI OS user, tanpa menghapus memory lama bot.
+
+### Mode Baru
+
+- `strategic-thinking`: roadmap, trade-off, risk analysis, dan next action.
+- `personal-intelligence`: adaptasi berbasis memory tersimpan.
+- `deep-research-os`: evidence synthesis, confidence, dan research continuity.
+- `cognitive-workspace`: organisasi ide, project thinking, dan graph.
+- `meta-reasoning`: evaluasi strategi berpikir AI dan batasan pendekatan.
+
+### Trade-off Tahap 9
+
+- AI OS memakai heuristic dulu agar hemat RAM/token. Trade-off: tidak sedalam LLM planner penuh, tetapi lebih stabil dan murah.
+- Memory disimpan di `userMemory[id].aios`. Trade-off: deployment mudah dan kompatibel, tetapi untuk skala besar nanti perlu database khusus.
+- Knowledge graph dibatasi jumlah node/edge per user. Trade-off: graph tidak tak terbatas, tetapi mencegah memory leak.
+- Reflection berjalan setelah respons dan tidak memblokir user. Trade-off: insight update bisa terlambat beberapa milidetik, tetapi respons Telegram tetap cepat.
+- Personal intelligence hanya memakai memory tersimpan. Trade-off: adaptasi lebih konservatif, tetapi menghindari profil palsu.
+
+### Hal Penting Untuk Dipelajari
+
+AI OS yang sehat bukan berarti semua layer aktif setiap saat. Kuncinya adalah selective activation: pertanyaan sederhana tetap sederhana, sementara goal, research, workflow, dan keputusan strategis mendapat memory, graph, reflection, dan analytics tambahan.

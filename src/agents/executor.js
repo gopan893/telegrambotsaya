@@ -82,10 +82,39 @@ class ExecutorAgent {
 
       case 'strategic planning':
       case 'strategis':
+      case 'strategic thinking':
         return `
 [OPERATIONAL MODE: STRATEGIC PLANNING]
 - Pecah tujuan menjadi workflow bertahap, dependency, risiko, dan metrik keberhasilan.
 - Buat prioritas yang realistis dan aman dieksekusi secara bertahap.
+        `.trim();
+
+      case 'personal intelligence':
+        return `
+[OPERATIONAL MODE: PERSONAL INTELLIGENCE]
+- Gunakan memory tersimpan secara hati-hati untuk menyesuaikan gaya belajar dan konteks jangka panjang user.
+- Jangan mengarang profil user; sebutkan batas confidence jika data personal belum cukup.
+        `.trim();
+
+      case 'deep research os':
+        return `
+[OPERATIONAL MODE: DEEP RESEARCH OS]
+- Susun jawaban berbasis evidence, confidence, gap informasi, dan research continuity.
+- Jika tidak ada sumber cukup, beri batas ketidakpastian dan langkah validasi berikutnya.
+        `.trim();
+
+      case 'cognitive workspace':
+        return `
+[OPERATIONAL MODE: COGNITIVE WORKSPACE]
+- Bantu mengorganisasi ide, project thinking, hubungan konsep, dan next action yang bisa disimpan.
+- Hubungkan gagasan baru dengan goal/workflow/memory yang relevan.
+        `.trim();
+
+      case 'meta reasoning':
+        return `
+[OPERATIONAL MODE: META REASONING]
+- Jelaskan strategi berpikir yang dipilih, asumsi, batasan, dan kapan perlu reasoning lebih dalam.
+- Hindari overthinking untuk pertanyaan sederhana.
         `.trim();
 
       case 'system analysis':
@@ -237,6 +266,9 @@ ${modePrompt}
 
 [SINYAL ADAPTIF DAN SELF-IMPROVEMENT]
 ${context.adaptiveRules || 'Tidak ada sinyal adaptif khusus.'}
+
+[AI OS PERSISTENT COGNITION]
+${context.aiOSContext || '-'}
 
 [MODE PIPELINE TERDETEKSI]
 ${activeMode || 'Standard'}

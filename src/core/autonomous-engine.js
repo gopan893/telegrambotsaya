@@ -21,6 +21,7 @@ const reasoning = require('../agents/reasoning');
 const reflection = require('../agents/reflection');
 const selfImprovement = require('../agents/self-improvement');
 const governance = require('../governance');
+const aiOS = require('../ai-os');
 
 const messageBus = require('./message-bus');
 const agentCoordinator = require('./agent-coordinator');
@@ -40,6 +41,12 @@ const crossModal = require('../multimodal/cross-modal-engine');
  */
 function detectAIMode(userMessage, intent, hasAttachment, attachmentType) {
   const lower = (userMessage || '').toLowerCase();
+
+  if (lower.includes('strategic thinking') || lower.includes('strategi jangka panjang')) return 'Strategic Thinking';
+  if (lower.includes('personal intelligence') || lower.includes('pola belajar saya')) return 'Personal Intelligence';
+  if (lower.includes('deep research os') || lower.includes('riset os')) return 'Deep Research OS';
+  if (lower.includes('cognitive workspace') || lower.includes('workspace berpikir')) return 'Cognitive Workspace';
+  if (lower.includes('meta reasoning') || lower.includes('evaluasi strategi berpikir')) return 'Meta Reasoning';
 
   if (lower.includes('safe mode') || lower.includes('mode aman')) return 'Safe Mode';
   if (lower.includes('governance review') || lower.includes('review governance')) return 'Governance Review';
@@ -99,6 +106,26 @@ function getRuntimeStatus() {
       collaboration: health.collaboration
     },
     governance: governance.getGovernanceStatus(),
+    aiOS: {
+      modules: [
+        'CognitiveCore',
+        'ContextSync',
+        'MemoryBus',
+        'UnifiedMemory',
+        'GoalManager',
+        'WorkflowEngine',
+        'KnowledgeGraph',
+        'StrategicReasoning',
+        'ReflectionEngine',
+        'MetaReasoning',
+        'PersonalIntelligence',
+        'ResearchIntelligence',
+        'CognitiveWorkspace',
+        'LearningEvolution',
+        'CognitiveAnalytics',
+        'AiosGuards'
+      ]
+    },
     issues: health.issues,
     recentErrorPatterns: health.recentErrorPatterns
   };
@@ -455,6 +482,30 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       history: memory.compressContext(traceId, botServices.shortMemory || []),
       fileContext // Cross-modal: gabungkan konteks file dengan konteks teks
     };
+
+    let aiOSPacket = null;
+    try {
+      aiOSPacket = aiOS.processInput(traceId, {
+        userId,
+        userMessage,
+        userMode: context.mode,
+        hasAttachment
+      }, botServices);
+      if (aiOSPacket?.ok) {
+        context.aiOSContext = aiOSPacket.promptContext;
+        context.aiOSRules = aiOSPacket.promptRules;
+        context.aiOSStrategy = aiOSPacket.strategy;
+        messageBus.updateContext(traceId, 'aiOS', {
+          mode: aiOSPacket.strategy?.mode,
+          shouldUseAIOS: aiOSPacket.strategy?.shouldUseAIOS,
+          stats: aiOSPacket.cognitiveContext?.stats || null
+        });
+      }
+    } catch (err) {
+      observability.recordErrorPattern('ai_os_prepare', err);
+      observability.logEvent(traceId, 'CognitiveCore', 'AI_OS_PREPARE_FAILED', { error: err.message });
+      context.aiOSRules = 'AI OS fallback: layer persistent cognition tidak tersedia, lanjutkan dengan pipeline lama.';
+    }
     const recentFileContexts = hasAttachment
       ? [
         fileContext,
@@ -637,7 +688,7 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
       // Sisipkan konteks file ke dalam prompt jika ada attachment
       const contextWithMods = {
         ...context,
-        adaptiveRules: [adaptiveModifiers, governanceDecision.promptConstraint].filter(Boolean).join('\n'),
+        adaptiveRules: [adaptiveModifiers, governanceDecision.promptConstraint, context.aiOSRules].filter(Boolean).join('\n'),
         currentMode
       };
       if (fileContext) {
@@ -741,6 +792,13 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
           latencyMs: Date.now() - startTime
         }, botServices);
         agentCoordinator.persistCollaborativeMemory(traceId, userId, workflowReport, botServices);
+        aiOS.afterResponse(traceId, {
+          userId,
+          userMessage,
+          userMode: context.mode,
+          mode: currentMode,
+          strategy: aiOSPacket?.strategy
+        }, sanitizedAnswer, botServices);
       })().catch((err) => {
         observability.recordErrorPattern('self_improvement', err);
         observability.logEvent(traceId, 'SelfImprovementAgent', 'LEARNING_UPDATE_FAILED', { error: err.message });

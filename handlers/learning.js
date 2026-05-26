@@ -65,6 +65,13 @@ function buildLearningGuide() {
     '- Audit logger menyimpan decision trail, policy violation, tool execution log, dan memory mutation log secara bounded agar tetap hemat RAM.',
     '- Rollback controller membuat snapshot kecil sebelum aksi yang mengubah state lokal, lalu bisa memulihkan jika eksekusi gagal.',
     '- Mode baru `/mode safe-mode`, `/mode governance-review`, `/mode controlled-agent`, `/mode explainability`, dan `/mode recovery` mengatur tingkat kontrol AI.',
+    '- Tahap 9 menambahkan AI OS: cognitive core, unified memory, goal manager, workflow engine, knowledge graph, strategic reasoning, dan cognitive workspace.',
+    '- Data AI OS disimpan per user di `userMemory[id].aios`, jadi ikut Redis/JSON lama dan tidak perlu database berat.',
+    '- AI OS memakai selective context activation: hanya memory, goal, workflow, graph, dan insight relevan yang masuk prompt.',
+    '- Knowledge graph dibuat ringan memakai heuristic konsep/relasi agar tidak memanggil AI tambahan untuk setiap pesan.',
+    '- Command baru seperti `/aios`, `/goals`, `/workflowadd`, `/graph`, `/reflect`, dan `/strategy` membantu user mengelola kerja jangka panjang langsung dari Telegram.',
+    '- Mode baru `/mode strategic-thinking`, `/mode personal-intelligence`, `/mode deep-research-os`, `/mode cognitive-workspace`, dan `/mode meta-reasoning` mengaktifkan layer kognitif yang sesuai.',
+    '- Guard AI OS mencegah overload, memory corruption, prompt injection di memory, workflow runaway, dan aksi strategis confidence rendah.',
     '',
     'Langkah berpikir ringkas:',
     '1. Cari bagian yang paling sering menyebabkan crash.',
@@ -76,8 +83,9 @@ function buildLearningGuide() {
     '7. Tambahkan kolaborasi antar agent hanya saat tugas memang butuh banyak perspektif.',
     '8. Untuk multimodal, mulai dari evidence yang bisa dibaca, beri citation, lalu jelaskan batasan jika confidence rendah.',
     '9. Untuk governance, pisahkan “boleh memahami permintaan” dari “boleh menjalankan aksi”.',
-    '10. Validasi sintaks dan test lokal sebelum deploy.',
-    '11. Commit perubahan per bagian agar mudah dilacak.'
+    '10. Untuk AI OS, pisahkan “mengingat semua hal” dari “mengaktifkan konteks yang relevan”.',
+    '11. Validasi sintaks dan test lokal sebelum deploy.',
+    '12. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 

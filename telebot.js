@@ -16,6 +16,7 @@ const { buildLearningGuide } = require('./handlers/learning');
 const autonomousEngine = require('./src/core/autonomous-engine');
 const agentLearning = require('./src/agents/learning');
 const selfImprovementAgent = require('./src/agents/self-improvement');
+const aiOS = require('./src/ai-os');
 
 
 let scheduleLib = null;
@@ -799,6 +800,26 @@ function getModePrompt(mode) {
 
   if (activeMode === 'recovery' || activeMode === 'recovery-mode') {
     return 'Fokus Recovery: rollback, incident handling, pemulihan aman, dan verifikasi setelah recovery.';
+  }
+
+  if (activeMode === 'strategic-thinking') {
+    return 'Fokus AI OS strategic thinking: tujuan jangka panjang, roadmap, trade-off, risiko, evidence, dan next action.';
+  }
+
+  if (activeMode === 'personal-intelligence') {
+    return 'Fokus AI OS personal intelligence: gunakan memory tersimpan secara hati-hati untuk memahami pola belajar, project aktif, dan preferensi user.';
+  }
+
+  if (activeMode === 'deep-research-os') {
+    return 'Fokus AI OS research: evidence synthesis, confidence analysis, gap informasi, dan research continuity.';
+  }
+
+  if (activeMode === 'cognitive-workspace') {
+    return 'Fokus AI OS cognitive workspace: organisasi ide, hubungan konsep, catatan project, workflow, dan knowledge graph.';
+  }
+
+  if (activeMode === 'meta-reasoning') {
+    return 'Fokus AI OS meta reasoning: evaluasi strategi berpikir, asumsi, kualitas insight, dan alasan memilih pendekatan.';
   }
 
   if (activeMode === 'auto') {
@@ -2298,6 +2319,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const t = status.telemetry || {};
   const c = status.collaboration || {};
   const g = status.governance?.audit || {};
+  const aios = status.aiOS || {};
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -2313,6 +2335,7 @@ Avg Consensus: ${(c.averageConsensusConfidence || 0).toFixed(2)}
 Governance Audit: ${g.recentAuditCount || 0}
 Blocked: ${g.blockedCount || 0}
 Approval Requests: ${g.approvalRequestCount || 0}
+AI OS Modules: ${aios.modules?.length || 0}
 Issues:
 - ${issues}`;
 
@@ -2368,6 +2391,259 @@ ${failuresText}`;
     text,
     { reply_to_message_id: msg.message_id }
   );
+}
+
+function getAiosServices() {
+  return {
+    ensureUser,
+    persist
+  };
+}
+
+function splitPipeArgs(args) {
+  return String(args || '')
+    .split('|')
+    .map(part => part.trim());
+}
+
+function formatGoalLine(goal, index) {
+  const pct = Math.round((goal.progress || 0) * 100);
+  return `${index + 1}. ${goal.id} - ${goal.title} [${goal.status}, ${goal.priority}, ${pct}%]`;
+}
+
+function formatWorkflowLine(workflow, index) {
+  const done = (workflow.steps || []).filter(step => step.done).length;
+  return `${index + 1}. ${workflow.id} - ${workflow.title} [${workflow.status}, ${done}/${(workflow.steps || []).length} step]`;
+}
+
+async function handleAiosCommands(chatId, userId, cmd, args, msg) {
+  const services = getAiosServices();
+  const replyOpt = { reply_to_message_id: msg.message_id };
+
+  if (cmd === '/aios') {
+    const status = aiOS.getStatus(userId, services);
+    const u = ensureUser(userId);
+    const text =
+`AI OS Status
+Mode aktif: ${u.mode}
+Active goals: ${status.activeGoals}
+Active workflows: ${status.activeWorkflows}
+Memory count: ${status.totalMemory}
+Graph: ${status.graphNodes} node, ${status.graphEdges} edge
+Recent insights: ${status.recentInsights.length}
+Average confidence: ${status.averageConfidence.toFixed(2)}
+Stale items: ${status.staleItems}
+
+Insight:
+${status.recentInsightsText}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/goals') {
+    const goals = aiOS.goalManager.listGoals(userId, {}, services);
+    const text = goals.length
+      ? goals.map(formatGoalLine).join('\n')
+      : 'Belum ada goal AI OS. Buat dengan /goaladd judul | deskripsi | prioritas | targetDate';
+    await sendChunkedMessage(chatId, `Goals:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/goaladd') {
+    const [title, description = '', priority = 'medium', targetDate = ''] = splitPipeArgs(args);
+    if (!title) {
+      await safeSendMessage(chatId, 'Format: /goaladd <judul> | <deskripsi> | <prioritas> | <targetDate optional>', replyOpt);
+      return true;
+    }
+    const result = aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
+    await safeSendMessage(
+      chatId,
+      result.ok
+        ? `Goal ditambahkan:\n${formatGoalLine(result.goal, 0)}`
+        : `Gagal menambah goal: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/goalupdate') {
+    const [goalId, field, value] = splitPipeArgs(args);
+    if (!goalId || !field || value === undefined) {
+      await safeSendMessage(chatId, 'Format: /goalupdate <goalId> | <status/progress/description/priority/target> | <value>', replyOpt);
+      return true;
+    }
+    const result = aiOS.goalManager.updateGoal(userId, goalId, field, value, services);
+    await safeSendMessage(
+      chatId,
+      result.ok
+        ? `Goal diperbarui:\n${formatGoalLine(result.goal, 0)}`
+        : `Gagal update goal: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/workflows') {
+    const workflows = aiOS.workflowEngine.listActiveWorkflows(userId, services, 20);
+    const text = workflows.length
+      ? workflows.map(formatWorkflowLine).join('\n')
+      : 'Belum ada workflow aktif. Buat dengan /workflowadd judul | deskripsi | goalId optional';
+    await sendChunkedMessage(chatId, `Workflow aktif:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/workflowadd') {
+    const [title, description = '', goalId = ''] = splitPipeArgs(args);
+    if (!title) {
+      await safeSendMessage(chatId, 'Format: /workflowadd <judul> | <deskripsi> | <goalId optional>', replyOpt);
+      return true;
+    }
+    const result = aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId }, services);
+    await safeSendMessage(
+      chatId,
+      result.ok
+        ? `Workflow dibuat:\n${formatWorkflowLine(result.workflow, 0)}`
+        : `Gagal membuat workflow: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/workflowstep') {
+    const [workflowId, step] = splitPipeArgs(args);
+    if (!workflowId || !step) {
+      await safeSendMessage(chatId, 'Format: /workflowstep <workflowId> | <step>', replyOpt);
+      return true;
+    }
+    const result = aiOS.workflowEngine.addStep(userId, workflowId, step, services);
+    await safeSendMessage(
+      chatId,
+      result.ok
+        ? `Step ${result.stepNumber} ditambahkan ke workflow ${workflowId}.`
+        : `Gagal menambah step: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/workflowdone') {
+    const [workflowId, stepNumber] = splitPipeArgs(args);
+    if (!workflowId || !stepNumber) {
+      await safeSendMessage(chatId, 'Format: /workflowdone <workflowId> | <stepNumber>', replyOpt);
+      return true;
+    }
+    const result = aiOS.workflowEngine.markStepDone(userId, workflowId, stepNumber, services);
+    await safeSendMessage(
+      chatId,
+      result.ok
+        ? `Step selesai: ${result.step.title}`
+        : `Gagal menandai step: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/graph') {
+    const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
+    const text =
+`Knowledge Graph
+Node: ${graph.nodeCount}
+Edge: ${graph.edgeCount}
+
+Konsep:
+${graph.nodesText}
+
+Relasi:
+${graph.edgesText}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/insights') {
+    const insights = aiOS.memoryBus.getRecentInsights(userId, services, 10);
+    const text = insights.length
+      ? insights.map((item, index) => `${index + 1}. ${item.text} (confidence ${item.confidence.toFixed(2)})`).join('\n')
+      : 'Belum ada insight AI OS.';
+    await sendChunkedMessage(chatId, `Insight penting:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/workspace') {
+    const workspaces = aiOS.cognitiveWorkspace.listWorkspaces(userId, services, 10);
+    const text = workspaces.length
+      ? workspaces.map((workspace, index) => `${index + 1}. ${workspace.id} - ${workspace.title} (${(workspace.notes || []).length} catatan)`).join('\n')
+      : 'Belum ada cognitive workspace. Buat dengan /workspaceadd judul | deskripsi';
+    await sendChunkedMessage(chatId, `Cognitive Workspace:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/workspaceadd') {
+    const [title, description = ''] = splitPipeArgs(args);
+    if (!title) {
+      await safeSendMessage(chatId, 'Format: /workspaceadd <judul> | <deskripsi>', replyOpt);
+      return true;
+    }
+    const result = aiOS.cognitiveWorkspace.createWorkspace(userId, { title, description }, services);
+    await safeSendMessage(
+      chatId,
+      result.ok
+        ? `Workspace dibuat: ${result.workspace.id} - ${result.workspace.title}`
+        : `Gagal membuat workspace: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/reflect') {
+    const topic = String(args || '').trim();
+    if (!topic) {
+      await safeSendMessage(chatId, 'Format: /reflect <teks atau topik>', replyOpt);
+      return true;
+    }
+    const analysis = aiOS.strategicReasoning.analyzeGoal(topic, aiOS.contextSync.syncContext(userId, topic, services));
+    const reflection = aiOS.reflectionEngine.storeReflectionMemory(userId, {
+      question: topic,
+      insight: analysis.nextActions[0] || topic,
+      quality: analysis.confidence,
+      confidence: analysis.confidence,
+      risks: analysis.risks
+    }, services);
+    const text =
+`Reflection
+Confidence: ${analysis.confidence.toFixed(2)}
+Asumsi:
+${analysis.assumptions.map(item => `- ${item}`).join('\n')}
+
+Risiko:
+${analysis.risks.map(item => `- ${item}`).join('\n')}
+
+Improvement:
+${aiOS.reflectionEngine.suggestImprovement({ answerQuality: analysis.confidence, clarity: 0.7, risk: 0.35 }, analysis.risks).map(item => `- ${item}`).join('\n')}
+
+Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/strategy') {
+    const topic = String(args || '').trim();
+    if (!topic) {
+      await safeSendMessage(chatId, 'Format: /strategy <goal atau masalah>', replyOpt);
+      return true;
+    }
+    const context = aiOS.contextSync.syncContext(userId, topic, services);
+    const analysis = aiOS.strategicReasoning.analyzeGoal(topic, context);
+    await sendChunkedMessage(chatId, aiOS.strategicReasoning.formatStrategicAnalysis(analysis), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/aios-reset') {
+    aiOS.resetUserData(userId, services);
+    await safeSendMessage(chatId, 'AI OS data untuk user ini sudah direset. Memory lama bot tidak ikut dihapus.', replyOpt);
+    return true;
+  }
+
+  return false;
 }
 
 async function handleFeedback(chatId, msg) {
@@ -3226,11 +3502,20 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     explain: 'explainability',
     explainability: 'explainability',
     recovery: 'recovery',
-    'recovery-mode': 'recovery'
+    'recovery-mode': 'recovery',
+    'strategic-thinking': 'strategic-thinking',
+    'strategic-os': 'strategic-thinking',
+    'personal-intelligence': 'personal-intelligence',
+    'deep-research-os': 'deep-research-os',
+    'research-os': 'deep-research-os',
+    'cognitive-workspace': 'cognitive-workspace',
+    'workspace-os': 'cognitive-workspace',
+    'meta-reasoning': 'meta-reasoning',
+    meta: 'meta-reasoning'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     await persist();
 
@@ -3242,7 +3527,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3568,6 +3853,21 @@ async function handleHelp(chatId, msg) {
 /stats - statistik
 /system - status agent production [admin]
 /improve - laporan self-improvement [admin]
+/aios - status ringkas AI OS
+/goals - daftar goal AI OS
+/goaladd judul | deskripsi | prioritas | targetDate
+/goalupdate goalId | status/progress/description | value
+/workflows - workflow aktif
+/workflowadd judul | deskripsi | goalId
+/workflowstep workflowId | step
+/workflowdone workflowId | stepNumber
+/graph - knowledge graph
+/insights - insight penting
+/workspace - cognitive workspace
+/workspaceadd judul | deskripsi
+/reflect <teks/topik>
+/strategy <goal/masalah>
+/aios-reset - reset data AI OS user
 /rollback - hapus aturan terakhir
 /feedback - log A/B
 /plugins - daftar plugin
@@ -3584,7 +3884,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning
 /alias nama_alias = /command
 /riwayat kata
 
@@ -3644,6 +3944,21 @@ function isUnknownCommand(cmd) {
     '/stats',
     '/system',
     '/improve',
+    '/aios',
+    '/goals',
+    '/goaladd',
+    '/goalupdate',
+    '/workflows',
+    '/workflowadd',
+    '/workflowstep',
+    '/workflowdone',
+    '/graph',
+    '/insights',
+    '/workspace',
+    '/workspaceadd',
+    '/reflect',
+    '/strategy',
+    '/aios-reset',
     '/rollback',
     '/feedback',
     '/image',
@@ -4590,6 +4905,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
   if (resolvedCmd === '/system') { await handleSystemStatus(chatId, userId, msg); return; }
   if (resolvedCmd === '/improve') { await handleImproveStatus(chatId, userId, msg); return; }
+  if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
   if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }
   if (resolvedCmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return; }
