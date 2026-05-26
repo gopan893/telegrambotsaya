@@ -676,3 +676,55 @@ Command Telegram yang perlu dicoba:
 /reflect Belajar backend terlalu luas, apa risiko utamanya?
 /strategy Saya ingin belajar backend selama 30 hari sambil membuat project
 ```
+
+## Phase 10 - AI Production Ecosystem
+
+Tahap 10 menambahkan `src/ops` sebagai AI Operations Layer ringan. Tujuannya bukan membuat bot lebih berat, tetapi membuat perilaku production bisa dipantau, diuji, dibandingkan, dan dipulihkan dengan aman.
+
+### Modul Utama
+
+- `health-monitor`: uptime, RAM, heap, queue, provider, Redis/webhook, dan recent errors.
+- `telemetry-collector`: request, command, AI call, tool, latency, token estimate, dan error secara compact.
+- `diagnostics-engine`: membedakan masalah model, tool, memory, workflow, infra, config, dan input user.
+- `benchmark-engine`: benchmark ringan manual untuk regression prevention.
+- `incident-handler`: klasifikasi info, warning, degraded, incident, dan critical.
+- `recovery-controller`: recovery non-destruktif seperti prune ops cache, pause evaluation, dan fallback recommendation.
+- `performance-profiler`: latency per operasi dan bottleneck ringkas.
+- `cost-optimizer` dan `token-analyzer`: estimasi token, token spike, dan rekomendasi efisiensi.
+- `reliability-scorer`: skor reliability 0-100 dari memory, error, provider, queue, latency, cost, dan safety.
+- `regression-detector`: membandingkan benchmark/telemetry terbaru dengan baseline.
+- `rollback-manager`: membuat rollback plan manual tanpa git rollback otomatis.
+- `tuning-controller`: rekomendasi setting tanpa auto-apply agresif.
+- `canary-controller`: canary draft/off by default.
+- `evaluation-scheduler`: evaluasi manual/light agar aman untuk Render free tier.
+- `ops-knowledge-base`: lesson, fix recipe, deployment checklist, rollback checklist.
+
+### Command Admin
+
+```text
+/ops
+/health
+/perf
+/benchmark [type]
+/diagnose
+/incidents
+/rollbackplan [alasan]
+/opslessons
+/canary
+/opsreset
+```
+
+### Trade-off
+
+- Telemetry dibatasi agar hemat RAM. Dampaknya, data historis tidak sedetail observability platform besar.
+- Benchmark dibuat deterministic dan ringan. Dampaknya, benchmark tidak menggantikan evaluasi kualitas AI berbasis manusia.
+- Recovery tidak destruktif otomatis. Dampaknya, beberapa masalah tetap perlu keputusan admin, tetapi risiko salah recovery jauh lebih rendah.
+- Canary default `draft/off`. Dampaknya, rollout tidak otomatis, tetapi aman untuk bot personal di Render free tier.
+
+### Manual Test
+
+```bash
+node --check telebot.js
+node scratch/test-ops.js
+npm run check
+```
