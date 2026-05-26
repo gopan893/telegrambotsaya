@@ -30,7 +30,17 @@ class SafetyAgent {
    * @returns {boolean} true jika terdeteksi tidak aman
    */
   validateInput(traceId, userMessage) {
-    if (!userMessage || typeof userMessage !== 'string') return true; // Tolak input malformed
+    if (!userMessage || typeof userMessage !== 'string') {
+      observability.logEvent(traceId, 'SafetyAgent', 'INPUT_REJECTED_MALFORMED');
+      return false;
+    }
+
+    if (userMessage.length > 12000) {
+      observability.logEvent(traceId, 'SafetyAgent', 'INPUT_REJECTED_TOO_LONG', {
+        inputLength: userMessage.length
+      });
+      return false;
+    }
     
     const lower = userMessage.toLowerCase();
     

@@ -14,6 +14,7 @@ const { cleanupRuntimeState } = require('./scheduler/cleanup');
 const { chooseProviderOrder, shouldUseSearchFallback } = require('./services/ai-router');
 const { buildLearningGuide } = require('./handlers/learning');
 const autonomousEngine = require('./src/core/autonomous-engine');
+const agentLearning = require('./src/agents/learning');
 
 
 let scheduleLib = null;
@@ -2179,6 +2180,38 @@ Plugin aktif: ${pluginModules.length}`;
   );
 }
 
+async function handleSystemStatus(chatId, userId, msg) {
+  if (!isAdmin(userId)) {
+    await safeSendMessage(
+      chatId,
+      '❌ Hanya admin yang boleh melihat status sistem produksi.',
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const status = autonomousEngine.getRuntimeStatus();
+  const q = status.queue || {};
+  const t = status.telemetry || {};
+  const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
+
+  const text =
+`Status: ${status.status}
+Uptime: ${Math.floor((t.uptimeSeconds || 0) / 60)} menit
+RAM RSS: ${t.memoryUsageMB?.rss || 0} MB
+Heap: ${t.memoryUsageMB?.heapUsed || 0}/${t.memoryUsageMB?.heapTotal || 0} MB
+Queue: ${q.activeCount || 0} aktif, ${q.queuedCount || 0}/${q.maxQueueSize || 0} antre
+Agents: ${status.agents.length}
+Issues:
+- ${issues}`;
+
+  await safeSendMessage(
+    chatId,
+    text,
+    { reply_to_message_id: msg.message_id }
+  );
+}
+
 async function handleFeedback(chatId, msg) {
   const last = abLog
     .slice(-5)
@@ -3344,6 +3377,7 @@ async function handleHelp(chatId, msg) {
 /help - bantuan
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
+/system - status agent production [admin]
 /rollback - hapus aturan terakhir
 /feedback - log A/B
 /plugins - daftar plugin
@@ -3418,6 +3452,7 @@ function isUnknownCommand(cmd) {
     '/help',
     '/belajar',
     '/stats',
+    '/system',
     '/rollback',
     '/feedback',
     '/image',
@@ -4224,6 +4259,9 @@ async function handleTools(msgText, userId = '0') {
 
 app.get('/', (req, res) => res.send('OK'));
 app.get('/health', (req, res) => res.send('OK'));
+app.get('/healthz', (req, res) => {
+  res.json(autonomousEngine.getRuntimeStatus());
+});
 
 app.get('/oauth2callback', async (req, res) => {
   const code = req.query.code;
@@ -4254,10 +4292,23 @@ app.post(WEBHOOK_PATH, async (req, res) => {
     if (update.callback_query) {
       const cb = update.callback_query;
       const chatId = cb.message?.chat?.id;
+      const feedbackUserId = cb.from?.id;
 
       if (cb.data === 'positive') {
+        if (feedbackUserId) {
+          await agentLearning.registerFeedback('telegram_callback', feedbackUserId, 'positive', {
+            ensureUser,
+            persist
+          });
+        }
         await safeSendMessage(chatId, '👍 Terima kasih!');
       } else if (cb.data === 'negative') {
+        if (feedbackUserId) {
+          await agentLearning.registerFeedback('telegram_callback', feedbackUserId, 'negative', {
+            ensureUser,
+            persist
+          });
+        }
         await safeSendMessage(chatId, '👎 Gunakan /koreksi untuk mengajari saya.');
       }
 
@@ -4341,6 +4392,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/help') { await handleHelp(chatId, msg); return; }
   if (resolvedCmd === '/belajar') { await sendChunkedMessage(chatId, buildLearningGuide(), { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
+  if (resolvedCmd === '/system') { await handleSystemStatus(chatId, userId, msg); return; }
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
   if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }
   if (resolvedCmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return; }

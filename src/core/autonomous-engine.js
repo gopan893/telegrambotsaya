@@ -53,6 +53,32 @@ function detectAIMode(userMessage, intent, hasAttachment, attachmentType) {
   return 'Standard';
 }
 
+function getRuntimeStatus() {
+  const queue = globalTaskQueue.getTelemetry();
+  const health = observability.diagnoseHealth({ queue });
+
+  return {
+    status: health.status,
+    generatedAt: health.timestamp,
+    agents: [
+      'PlannerAgent',
+      'ExecutorAgent',
+      'EvaluatorAgent',
+      'VerifierAgent',
+      'MemoryAgent',
+      'SafetyAgent',
+      'RecoveryAgent',
+      'ToolRouterAgent',
+      'LearningAgent',
+      'ObservabilityAgent'
+    ],
+    queue,
+    telemetry: health.telemetry,
+    issues: health.issues,
+    recentErrorPatterns: health.recentErrorPatterns
+  };
+}
+
 /**
  * Memproses pesan masuk melalui antrean (Task Queue)
  */
@@ -68,6 +94,8 @@ async function processMessage(userId, chatId, userMessage, msgObj, botServices) 
     const { safeSendMessage } = botServices;
     let userWarning = 'Maaf, ekosistem agen sedang sibuk. Silakan tunggu sebentar.';
     if (err.message.includes('DUPLICATE_REQUEST_BLOCKED')) userWarning = '⚠️ Sistem masih memproses pesan Anda sebelumnya.';
+    if (err.message.includes('QUEUE_OVERLOADED')) userWarning = '⚠️ Sistem sedang penuh. Coba ulang sebentar lagi.';
+    if (err.message.includes('TASK_TIMEOUT')) userWarning = '⚠️ Tugas terlalu lama diproses, jadi saya hentikan agar bot tetap stabil.';
 
     await safeSendMessage(chatId, userWarning, { reply_to_message_id: msgObj.message_id });
     return { processed: true, answerText: userWarning };
@@ -452,5 +480,6 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
 
 module.exports = {
   processMessage,
-  executeMultimodalPipeline
+  executeMultimodalPipeline,
+  getRuntimeStatus
 };

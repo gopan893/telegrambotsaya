@@ -10,6 +10,8 @@ class ObservabilityAgent {
     this.traces = new Map(); // traceId -> array of events
     this.circuitBreakers = new Map(); // serviceName -> { status: 'CLOSED'|'OPEN'|'HALF-OPEN', failures: 0, lastFailureTime: 0 }
     this.diagnosticsHistory = [];
+    this.healthState = new Map();
+    this.errorPatterns = new Map();
     this.startTime = Date.now();
   }
 
@@ -79,6 +81,35 @@ class ObservabilityAgent {
     this.circuitBreakers.set(serviceName, cb);
   }
 
+  setHealthState(component, status, metadata = {}) {
+    this.healthState.set(component, {
+      component,
+      status,
+      metadata,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  recordErrorPattern(scope, error) {
+    const key = `${scope}:${String(error?.message || error || 'UNKNOWN').slice(0, 120)}`;
+    const prev = this.errorPatterns.get(key) || {
+      scope,
+      message: String(error?.message || error || 'UNKNOWN').slice(0, 300),
+      count: 0,
+      firstSeenAt: new Date().toISOString(),
+      lastSeenAt: null
+    };
+
+    prev.count += 1;
+    prev.lastSeenAt = new Date().toISOString();
+    this.errorPatterns.set(key, prev);
+
+    if (this.errorPatterns.size > 80) {
+      const oldestKey = this.errorPatterns.keys().next().value;
+      this.errorPatterns.delete(oldestKey);
+    }
+  }
+
   /**
    * Memeriksa apakah suatu layanan eksternal sedang diblokir oleh Circuit Breaker
    */
@@ -119,13 +150,18 @@ class ObservabilityAgent {
    * Sistem Auto-Diagnostics Internal
    * Memindai seluruh status sistem dan memberikan kesimpulan kesehatan
    */
-  diagnoseHealth() {
+  diagnoseHealth(runtime = {}) {
     const issues = [];
     const telemetry = this.getSystemTelemetry();
+    const queue = runtime.queue || {};
 
     // 1. Cek batas RAM Render ( Render free tier membatasi RAM 512 MB )
     if (telemetry.memoryUsageMB.rss > 350) {
       issues.push('HIGH_RAM_USAGE: RAM RSS melebihi 350MB, memicu risiko Render OOM.');
+    }
+
+    if (queue.maxQueueSize && queue.queuedCount >= Math.ceil(queue.maxQueueSize * 0.8)) {
+      issues.push(`QUEUE_PRESSURE: Antrean ${queue.queuedCount}/${queue.maxQueueSize}, risiko respons melambat.`);
     }
 
     // 2. Cek status API eksternal
@@ -140,7 +176,12 @@ class ObservabilityAgent {
       timestamp: new Date().toISOString(),
       status: healthStatus,
       issues,
-      telemetry
+      telemetry,
+      queue,
+      healthState: Array.from(this.healthState.values()),
+      recentErrorPatterns: Array.from(this.errorPatterns.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8)
     };
 
     this.diagnosticsHistory.push(report);

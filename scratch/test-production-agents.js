@@ -21,6 +21,7 @@ const verifier = require('../src/agents/verifier');
 const learning = require('../src/agents/learning');
 const recovery = require('../src/agents/recovery');
 const orchestrator = require('../src/core/autonomous-engine');
+const { getSelectiveContext } = require('../src/memory/advanced-memory');
 
 // Mock data & services
 const mockUserDb = {};
@@ -123,6 +124,24 @@ async function runTests() {
       await queue.enqueue('user_1', 'pesan sangat berbeda', taskFn);
     }, /RATE_LIMIT_EXCEEDED|DUPLICATE_REQUEST_BLOCKED/, 'Gagal memblokir kueri yang terlalu beruntun.');
 
+    const timeoutQueue = new TaskQueue({ maxConcurrency: 1, userRateLimitMs: 0, idempotencyWindowMs: 100, maxQueueSize: 1, taskTimeoutMs: 10 });
+    await assert.rejects(
+      () => timeoutQueue.enqueue('user_timeout', 'slow task', () => new Promise(resolve => setTimeout(resolve, 50))),
+      /TASK_TIMEOUT/,
+      'Task timeout gagal menghentikan tugas yang terlalu lama.'
+    );
+
+    const overloadQueue = new TaskQueue({ maxConcurrency: 1, userRateLimitMs: 0, idempotencyWindowMs: 100, maxQueueSize: 1, taskTimeoutMs: 500 });
+    const holdTask = () => new Promise(resolve => setTimeout(() => resolve('done'), 80));
+    const runningTask = overloadQueue.enqueue('u1', 'aktif', holdTask);
+    const queuedTask = overloadQueue.enqueue('u2', 'antre', holdTask);
+    await assert.rejects(
+      () => overloadQueue.enqueue('u3', 'ditolak', holdTask),
+      /QUEUE_OVERLOADED/,
+      'Queue overload guard gagal menolak task ketika antrean penuh.'
+    );
+    await Promise.all([runningTask, queuedTask]);
+
     console.log('✅ TEST 1 PASSED: Antrean tugas bekerja secara aman.');
 
     // -----------------------------------------------------------------
@@ -138,6 +157,11 @@ async function runTests() {
     const diag = observability.diagnoseHealth();
     assert.ok(diag.status, 'Auto-diagnostics gagal memberikan kesimpulan status.');
     assert.ok(diag.telemetry.memoryUsageMB.rss > 0, 'Gagal mengumpulkan data RSS memori.');
+
+    observability.recordErrorPattern('test_scope', new Error('koneksi uji putus'));
+    const diagWithError = observability.diagnoseHealth({ queue: { queuedCount: 9, maxQueueSize: 10 } });
+    assert.ok(diagWithError.issues.some(issue => issue.includes('QUEUE_PRESSURE')), 'Diagnostik gagal menandai tekanan antrean.');
+    assert.ok(diagWithError.recentErrorPatterns.some(item => item.scope === 'test_scope'), 'Error pattern database tidak menyimpan pola error.');
 
     console.log('✅ TEST 2 PASSED: Telemetri dan audit logging berjalan mulus.');
 
@@ -180,6 +204,17 @@ async function runTests() {
     const pruned = memory.pruneMemory(traceId, hugeSummary);
     const prunedCount = pruned.split('\n').length;
     assert.ok(prunedCount <= 15, 'Pruning memori gagal memangkas limit facts.');
+
+    const staleUser = mockServices.ensureUser('stale_user');
+    staleUser.sessionState = {
+      activeTask: 'Tugas Lama',
+      steps: ['Langkah lama'],
+      currentStepIndex: 0,
+      contextData: {},
+      lastActiveAt: Date.now() - (7 * 60 * 60 * 1000)
+    };
+    const staleContext = getSelectiveContext('stale_user', mockServices);
+    assert.strictEqual(staleContext.rawSession.activeTask, null, 'Stale session guard gagal membersihkan task lama.');
 
     console.log('✅ TEST 4 PASSED: Pengurangan context memori bekerja hemat RAM.');
 
@@ -291,6 +326,10 @@ async function runTests() {
     );
     assert.strictEqual(pipelineResult.processed, true);
     assert.ok(pipelineResult.answerText.includes('Roadmap Baru Dibuat'));
+
+    const runtimeStatus = orchestrator.getRuntimeStatus();
+    assert.ok(runtimeStatus.agents.includes('PlannerAgent'), 'Runtime status tidak memuat registry agen internal.');
+    assert.ok(runtimeStatus.queue.maxQueueSize >= runtimeStatus.queue.queuedCount, 'Runtime status queue tidak valid.');
 
     console.log('✅ TEST 12 PASSED: Pipa 12-tahap otonom terpadu berjalan sukses.');
 

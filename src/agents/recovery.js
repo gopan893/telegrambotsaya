@@ -21,6 +21,7 @@ class RecoveryAgent {
     observability.logEvent(traceId, 'RecoveryAgent', 'PIPELINE_FAILURE_TRIGGERED', {
       error: error.message
     });
+    observability.recordErrorPattern('pipeline', error);
 
     const { ensureUser, persist } = botServices;
 

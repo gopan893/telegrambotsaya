@@ -6,10 +6,18 @@
  * Dioptimalkan untuk Render free tier.
  */
 class TaskQueue {
-  constructor({ maxConcurrency = 2, userRateLimitMs = 1000, idempotencyWindowMs = 5000 } = {}) {
+  constructor({
+    maxConcurrency = 2,
+    userRateLimitMs = 1000,
+    idempotencyWindowMs = 5000,
+    maxQueueSize = 30,
+    taskTimeoutMs = 45000
+  } = {}) {
     this.maxConcurrency = maxConcurrency;
     this.userRateLimitMs = userRateLimitMs;
     this.idempotencyWindowMs = idempotencyWindowMs;
+    this.maxQueueSize = maxQueueSize;
+    this.taskTimeoutMs = taskTimeoutMs;
     
     this.activeCount = 0;
     this.queue = [];
@@ -40,6 +48,10 @@ class TaskQueue {
   async enqueue(userId, text, taskFn) {
     const now = Date.now();
     const cleanText = String(text || '').trim();
+
+    if (this.queue.length >= this.maxQueueSize) {
+      throw new Error('QUEUE_OVERLOADED: Antrean penuh, sistem sedang melindungi stabilitas runtime.');
+    }
 
     // 1. Idempotency Protection: Jika request identik dalam jendela idempotensi sedang/baru diproses, kembalikan hasil sebelumnya
     const idempotencyKey = this.generateRequestHash(userId, cleanText);
@@ -80,6 +92,25 @@ class TaskQueue {
     });
   }
 
+  async runWithTimeout(taskFn) {
+    if (!this.taskTimeoutMs || this.taskTimeoutMs <= 0) {
+      return taskFn();
+    }
+
+    let timeoutId = null;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('TASK_TIMEOUT: Tugas melampaui batas waktu eksekusi.'));
+      }, this.taskTimeoutMs);
+    });
+
+    try {
+      return await Promise.race([taskFn(), timeout]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
   /**
    * Menjalankan antrean berikutnya jika kapasitas konkurensi mencukupi
    */
@@ -94,7 +125,7 @@ class TaskQueue {
     try {
       console.log(`[TaskQueue] Menjalankan tugas. Aktif: ${this.activeCount}/${this.maxConcurrency}. Sisa antrean: ${this.queue.length}`);
       
-      const result = await task.taskFn();
+      const result = await this.runWithTimeout(task.taskFn);
       
       // Simpan hasil untuk proteksi idempotensi
       this.processedRequests.set(task.idempotencyKey, {
@@ -147,7 +178,11 @@ class TaskQueue {
     return {
       activeCount: this.activeCount,
       queuedCount: this.queue.length,
-      maxConcurrency: this.maxConcurrency
+      maxConcurrency: this.maxConcurrency,
+      maxQueueSize: this.maxQueueSize,
+      taskTimeoutMs: this.taskTimeoutMs,
+      idempotencyCacheSize: this.processedRequests.size,
+      dedupeCacheSize: this.lastProcessedRequest.size
     };
   }
 }
@@ -156,7 +191,9 @@ class TaskQueue {
 const globalTaskQueue = new TaskQueue({
   maxConcurrency: 2,
   userRateLimitMs: 0,
-  idempotencyWindowMs: 5000
+  idempotencyWindowMs: 5000,
+  maxQueueSize: 30,
+  taskTimeoutMs: 45000
 });
 
 module.exports = {

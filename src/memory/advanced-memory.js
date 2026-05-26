@@ -10,6 +10,17 @@ const { BoundedTTLMap } = require('../../core/ttl-map');
 
 // Cache lokal berumur pendek untuk memory query guna menghindari overhead IO berulang
 const memoryQueryCache = new BoundedTTLMap({ ttlMs: 1 * 60 * 1000, max: 200 });
+const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+
+function getEmptySessionState() {
+  return {
+    activeTask: null,
+    steps: [],
+    currentStepIndex: -1,
+    contextData: {},
+    lastActiveAt: 0
+  };
+}
 
 /**
  * Mendeteksi upaya Prompt Injection di dalam teks memori sebelum menyimpannya.
@@ -55,13 +66,16 @@ function sanitizeMemoryText(text) {
  */
 function ensureSessionState(userObj) {
   if (!userObj.sessionState) {
-    userObj.sessionState = {
-      activeTask: null,
-      steps: [],
-      currentStepIndex: -1,
-      contextData: {},
-      lastActiveAt: 0
-    };
+    userObj.sessionState = getEmptySessionState();
+  }
+
+  const session = userObj.sessionState;
+  if (
+    session.activeTask &&
+    session.lastActiveAt &&
+    Date.now() - session.lastActiveAt > SESSION_TTL_MS
+  ) {
+    userObj.sessionState = getEmptySessionState();
   }
   return userObj.sessionState;
 }
@@ -214,13 +228,7 @@ async function clearSessionState(userId, botServices) {
   const { ensureUser, persist } = botServices;
   const u = ensureUser(userId);
   
-  u.sessionState = {
-    activeTask: null,
-    steps: [],
-    currentStepIndex: -1,
-    contextData: {},
-    lastActiveAt: 0
-  };
+  u.sessionState = getEmptySessionState();
 
   // Bersihkan cache lokal
   memoryQueryCache.delete(`ctx:${userId}`);
