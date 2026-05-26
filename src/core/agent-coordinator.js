@@ -6,6 +6,48 @@ const MAX_WORKFLOW_HISTORY = 40;
 const MAX_COLLAB_MEMORY = 20;
 
 const AGENT_REGISTRY = {
+  PolicyEngine: {
+    role: 'policy',
+    priority: 99,
+    capabilities: ['policy_validation', 'behavioral_constraints', 'capability_control'],
+    modes: ['all']
+  },
+  PermissionEngine: {
+    role: 'permission',
+    priority: 99,
+    capabilities: ['rbac', 'capability_permission', 'admin_gate'],
+    modes: ['all']
+  },
+  RiskAssessmentEngine: {
+    role: 'risk',
+    priority: 99,
+    capabilities: ['risk_scoring', 'context_trust', 'high_risk_detection'],
+    modes: ['all']
+  },
+  SafetyValidator: {
+    role: 'governance_safety',
+    priority: 100,
+    capabilities: ['decision_review', 'execution_control', 'safe_fallback'],
+    modes: ['all']
+  },
+  AuditLogger: {
+    role: 'audit',
+    priority: 94,
+    capabilities: ['decision_audit', 'policy_violation_log', 'risk_event_log'],
+    modes: ['all']
+  },
+  ActionApprovalLayer: {
+    role: 'approval',
+    priority: 98,
+    capabilities: ['human_oversight', 'sensitive_action_confirmation'],
+    modes: ['all']
+  },
+  RollbackController: {
+    role: 'recovery',
+    priority: 92,
+    capabilities: ['state_snapshot', 'rollback', 'safe_recovery'],
+    modes: ['Recovery', 'Governance Review']
+  },
   PlannerAgent: {
     role: 'planner',
     priority: 90,
@@ -130,6 +172,11 @@ class AgentCoordinator {
     if (['data-understanding', 'data', 'spreadsheet', 'tabel'].includes(mode)) return 'Data Understanding';
     if (['cross-modal', 'cross-modal-reasoning', 'multimodal'].includes(mode)) return 'Cross-Modal Reasoning';
     if (['research-file', 'riset-file'].includes(mode)) return 'Research File';
+    if (['safe', 'safe-mode', 'aman'].includes(mode)) return 'Safe Mode';
+    if (['governance-review', 'governance'].includes(mode)) return 'Governance Review';
+    if (['controlled-agent', 'controlled'].includes(mode)) return 'Controlled Agent';
+    if (['explainability', 'explain'].includes(mode)) return 'Explainability';
+    if (['recovery', 'recovery-mode'].includes(mode)) return 'Recovery';
     return null;
   }
 
@@ -182,6 +229,7 @@ class AgentCoordinator {
     const mode = input.currentMode || 'Standard';
     const phases = [
       { name: 'safety', agents: ['SafetyAgent'], maxIterations: 1 },
+      { name: 'governance', agents: ['PolicyEngine', 'PermissionEngine', 'RiskAssessmentEngine', 'SafetyValidator', 'AuditLogger'], maxIterations: 1 },
       { name: 'context', agents: ['MemoryAgent', 'ObservabilityAgent'], maxIterations: 1 },
       { name: 'execution', agents: ['ExecutorAgent'], maxIterations: 1 },
       { name: 'verification', agents: ['EvaluatorAgent', 'VerifierAgent', 'ReflectionAgent'], maxIterations: 1 },
@@ -193,11 +241,14 @@ class AgentCoordinator {
     }
 
     const collaborationAgents = [];
-    if (['Collaborative Thinking', 'Research Intelligence', 'Deep Analysis', 'System Analysis', 'Strategic Planning', 'Cross-Modal Reasoning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Research File'].includes(mode)) {
+    if (['Collaborative Thinking', 'Research Intelligence', 'Deep Analysis', 'System Analysis', 'Strategic Planning', 'Cross-Modal Reasoning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Research File', 'Governance Review', 'Explainability', 'Recovery'].includes(mode)) {
       collaborationAgents.push('ResearchAgent', 'ReasoningAgent');
     }
-    if (mode === 'System Analysis' || mode === 'Data Understanding' || mode === 'Cross-Modal Reasoning') {
+    if (mode === 'System Analysis' || mode === 'Data Understanding' || mode === 'Cross-Modal Reasoning' || mode === 'Governance Review' || mode === 'Controlled Agent') {
       collaborationAgents.push('ToolRouterAgent');
+    }
+    if (mode === 'Governance Review' || mode === 'Controlled Agent' || mode === 'Safe Mode' || mode === 'Recovery') {
+      phases[1].agents.push('ActionApprovalLayer', 'RollbackController');
     }
     if (collaborationAgents.length > 0) {
       phases.splice(3, 0, {

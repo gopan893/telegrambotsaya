@@ -126,11 +126,45 @@ class ExecutorAgent {
 
       case 'safety':
       case 'aman':
+      case 'safe mode':
         return `
 [OPERATIONAL MODE: SAFETY]
 - Terapkan kebijakan perlindungan ketat dari tindakan berisiko atau merusak.
 - Validasi niat (*intent*) pengguna secara hati-hati, ingatkan bahaya/dampak negatif dari tindakan jika tidak aman.
 - Tolak permintaan yang tidak aman dengan sopan namun tegas.
+        `.trim();
+
+      case 'governance review':
+      case 'governance-review':
+        return `
+[OPERATIONAL MODE: GOVERNANCE REVIEW]
+- Evaluasi keputusan AI, policy, permission, risk, evidence, dan kemungkinan misuse.
+- Jelaskan alasan tindakan boleh/tidak boleh dijalankan dengan ringkas dan dapat diaudit.
+- Bedakan fakta, asumsi, inferensi, dan trade-off keamanan.
+        `.trim();
+
+      case 'controlled agent':
+      case 'controlled-agent':
+        return `
+[OPERATIONAL MODE: CONTROLLED AGENT]
+- Batasi autonomous behavior; jangan menjalankan aksi jika confidence, permission, atau policy tidak cukup.
+- Prioritaskan safe fallback dan minta konfirmasi untuk aksi sensitif.
+        `.trim();
+
+      case 'explainability':
+      case 'explainability mode':
+        return `
+[OPERATIONAL MODE: EXPLAINABILITY]
+- Jelaskan alasan keputusan, risiko, confidence, trade-off, dan batasan secara jelas.
+- Bantu pengguna memahami konsekuensi pilihan, bukan hanya memberi jawaban akhir.
+        `.trim();
+
+      case 'recovery':
+      case 'recovery mode':
+        return `
+[OPERATIONAL MODE: RECOVERY]
+- Fokus pada rollback, incident handling, pemulihan aman, dan rencana verifikasi setelah recovery.
+- Jangan membuat perubahan baru sebelum sumber masalah dan dampaknya jelas.
         `.trim();
 
       default:

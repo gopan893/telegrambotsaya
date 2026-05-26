@@ -410,3 +410,88 @@ Jika jawaban membahas file tetapi tidak menyebut sumber, `CrossModalEngine` mena
 ### Hal Penting Untuk Dipelajari
 
 Multimodal AI yang aman tidak cukup hanya “membaca file”. Sistem harus tahu sumber klaimnya, confidence pembacaan, bagian yang tidak terbaca, dan kapan harus menolak menebak. Alur berpikir yang benar adalah: baca data yang tersedia, pisahkan fakta dari inferensi, beri rujukan, lalu jelaskan batasan.
+
+## Tahap 8: Governance Intelligence & Autonomous Control
+
+Tahap 8 menambahkan lapisan kendali di atas autonomous agent. Tujuannya adalah memisahkan kemampuan AI untuk memahami permintaan dari izin untuk menjalankan aksi.
+
+### Governance Workflow
+
+```text
+INPUT
+-> Intent Validation
+-> Context Integrity Check
+-> Risk Assessment
+-> Policy Validation
+-> Permission Validation
+-> Planning
+-> Tool Safety Review
+-> Execution Simulation
+-> Controlled Execution
+-> Reflection
+-> Audit Logging
+-> Governance Feedback Update
+-> Persist Safe State
+```
+
+### Modul Governance
+
+- `src/governance/policy-engine.js`: daftar policy per intent/capability, risk level, approval requirement, admin requirement, dan batas risk score.
+- `src/governance/permission-engine.js`: role-based access control sederhana: `owner`, `admin`, dan `user`.
+- `src/governance/risk-assessment.js`: dynamic risk scoring, context trust scoring, suspicious context detection, destructive language detection, dan sensitive-data signal.
+- `src/governance/safety-validator.js`: decision reviewer yang menggabungkan policy, permission, risk, simulation, approval, dan safe fallback.
+- `src/governance/approval-layer.js`: human oversight untuk aksi sensitif dengan format `konfirmasi <id>`.
+- `src/governance/rollback-controller.js`: snapshot kecil sebelum aksi yang mengubah state lokal, lalu rollback jika eksekusi gagal.
+- `src/governance/audit-logger.js`: decision audit trail, tool execution log, memory mutation log, dan governance analytics.
+- `src/governance/explainability.js`: penjelasan keputusan, risk, policy, confidence, dan trade-off.
+- `src/governance/index.js`: router utama governance agar orchestrator tidak bergantung pada detail tiap module.
+
+### Autonomous Control System
+
+Sebelum tool berjalan, `AutonomousEngine` sekarang membuat `governanceDecision`:
+
+- `ALLOW`: aksi aman dan bisa berjalan.
+- `CONTROLLED_EXECUTION`: aksi boleh berjalan karena sudah dikonfirmasi atau masih dalam batas policy, tetapi tetap diaudit.
+- `APPROVAL_REQUIRED`: aksi ditahan sampai user mengetik `konfirmasi <id>`.
+- `SAFE_FALLBACK`: bot menjawab sebagai percakapan biasa, tanpa tool execution.
+- `BLOCKED`: aksi ditolak karena permission, context, simulation, atau risk terlalu bermasalah.
+
+### Policy & Risk
+
+Contoh policy:
+
+- `HITUNG`, `JAM`, `TANGGAL`: low risk, read-only/lokal.
+- `SEARCH`, `GAMBAR`: medium risk, memakai provider eksternal.
+- `TAMBAH_TUGAS`, `TAMBAH_PENGINGAT`: medium risk, mengubah state user.
+- `TAMBAH_EVENT`: high risk, menulis ke Google Calendar, butuh approval.
+- `RELOADPLUGINS`, `RESET_SYSTEM`, `BAN_MEMBER`: high/critical, butuh admin dan approval.
+
+Risk score mempertimbangkan intent, confidence parser, context trust, attachment, bahasa destruktif, dan sinyal data sensitif.
+
+### Audit & Explainability
+
+Governance menyimpan audit yang terbatas agar aman di Render free tier:
+
+- decision audit trail
+- tool execution governance log
+- memory modification log
+- risk level analytics
+- blocked/approval count
+
+`/system` menampilkan ringkasan governance audit, blocked count, dan approval request count tanpa membocorkan parameter sensitif.
+
+### Rollback & Recovery
+
+Untuk aksi yang mengubah state lokal seperti todo, reminder, mood, atau session, sistem membuat recovery snapshot kecil sebelum execution. Jika tool gagal, snapshot terakhir bisa dipulihkan agar state lokal tidak setengah berubah.
+
+### Trade-off Tahap 8
+
+- Approval untuk aksi sensitif menambah satu langkah, tetapi mencegah autonomous write yang tidak disengaja.
+- Risk scoring dibuat heuristic agar hemat RAM/token. Trade-off: tidak sedalam LLM judge, tetapi lebih cepat dan stabil.
+- Audit log dibatasi in-memory. Trade-off: ringan untuk Render, tetapi histori audit lama hilang saat restart.
+- Rollback hanya untuk state lokal. Aksi eksternal seperti Google Calendar tetap perlu verifikasi provider karena tidak semua API mudah di-rollback otomatis.
+- Policy registry statis lebih aman daripada policy dinamis dari prompt. Trade-off: menambah policy baru harus lewat kode.
+
+### Hal Penting Untuk Dipelajari
+
+Autonomous AI yang aman harus punya batas: policy menentukan apa yang boleh, permission menentukan siapa yang boleh, risk assessment menentukan seberapa berbahaya, approval memberi kontrol manusia, audit membuat keputusan bisa diperiksa, dan rollback membuat kegagalan bisa dipulihkan.

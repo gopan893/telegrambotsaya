@@ -59,6 +59,12 @@ function buildLearningGuide() {
     '- File memory index menyimpan insight pendek, semantic tag, confidence, dan source attribution agar dokumen lama bisa dipakai ulang secara selektif.',
     '- Mode baru `/mode document-analysis`, `/mode visual-analysis`, `/mode data-understanding`, `/mode cross-modal`, dan `/mode research-file` membantu bot memilih cara analisis attachment.',
     '- Attachment direct tanpa slash command sekarang masuk ke autonomous engine; command lama `/ringkasfile` dan `/tanyafile` tetap dipertahankan.',
+    '- Tahap 8 menambahkan governance layer: Policy Engine, Permission Engine, Risk Assessment, Safety Validator, Audit Logger, Approval Layer, dan Rollback Controller.',
+    '- Governance memeriksa risiko sebelum tool berjalan; aksi sensitif seperti Calendar write harus dikonfirmasi dengan format `konfirmasi <id>`.',
+    '- Risk assessment mengecek confidence, context trust, kata destruktif, data sensitif, attachment berisiko, dan policy tiap capability.',
+    '- Audit logger menyimpan decision trail, policy violation, tool execution log, dan memory mutation log secara bounded agar tetap hemat RAM.',
+    '- Rollback controller membuat snapshot kecil sebelum aksi yang mengubah state lokal, lalu bisa memulihkan jika eksekusi gagal.',
+    '- Mode baru `/mode safe-mode`, `/mode governance-review`, `/mode controlled-agent`, `/mode explainability`, dan `/mode recovery` mengatur tingkat kontrol AI.',
     '',
     'Langkah berpikir ringkas:',
     '1. Cari bagian yang paling sering menyebabkan crash.',
@@ -69,8 +75,9 @@ function buildLearningGuide() {
     '6. Tambahkan learning loop yang bounded agar sistem bisa adaptif tanpa belajar liar.',
     '7. Tambahkan kolaborasi antar agent hanya saat tugas memang butuh banyak perspektif.',
     '8. Untuk multimodal, mulai dari evidence yang bisa dibaca, beri citation, lalu jelaskan batasan jika confidence rendah.',
-    '9. Validasi sintaks dan test lokal sebelum deploy.',
-    '10. Commit perubahan per bagian agar mudah dilacak.'
+    '9. Untuk governance, pisahkan “boleh memahami permintaan” dari “boleh menjalankan aksi”.',
+    '10. Validasi sintaks dan test lokal sebelum deploy.',
+    '11. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 

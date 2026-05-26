@@ -781,6 +781,26 @@ function getModePrompt(mode) {
     return 'Fokus research file: validasi isi dokumen, ekstrak evidence, sebutkan source/citation, confidence, dan keterbatasan.';
   }
 
+  if (activeMode === 'safe-mode' || activeMode === 'safe' || activeMode === 'aman') {
+    return 'Fokus Safe Mode: minimalkan aksi otomatis, validasi tinggi, dan prioritaskan jawaban aman.';
+  }
+
+  if (activeMode === 'governance-review' || activeMode === 'governance') {
+    return 'Fokus Governance Review: evaluasi policy, permission, risk, evidence, dan alasan keputusan AI.';
+  }
+
+  if (activeMode === 'controlled-agent' || activeMode === 'controlled') {
+    return 'Fokus Controlled Agent: autonomous behavior terbatas, strict policy enforcement, dan konfirmasi untuk aksi sensitif.';
+  }
+
+  if (activeMode === 'explainability' || activeMode === 'explain') {
+    return 'Fokus Explainability: jelaskan alasan keputusan, risiko, confidence, trade-off, dan konsekuensi.';
+  }
+
+  if (activeMode === 'recovery' || activeMode === 'recovery-mode') {
+    return 'Fokus Recovery: rollback, incident handling, pemulihan aman, dan verifikasi setelah recovery.';
+  }
+
   if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
@@ -2277,6 +2297,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const q = status.queue || {};
   const t = status.telemetry || {};
   const c = status.collaboration || {};
+  const g = status.governance?.audit || {};
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -2289,6 +2310,9 @@ Agents: ${status.agents.length}
 Agent Registry: ${status.agentRegistry?.length || 0}
 Collab Workflows: ${c.recentWorkflowCount || 0}
 Avg Consensus: ${(c.averageConsensusConfidence || 0).toFixed(2)}
+Governance Audit: ${g.recentAuditCount || 0}
+Blocked: ${g.blockedCount || 0}
+Approval Requests: ${g.approvalRequestCount || 0}
 Issues:
 - ${issues}`;
 
@@ -3191,11 +3215,22 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     'cross-modal-reasoning': 'cross-modal',
     'cross-modal': 'cross-modal',
     'research-file': 'research-file',
-    'riset-file': 'research-file'
+    'riset-file': 'research-file',
+    safe: 'safe-mode',
+    aman: 'safe-mode',
+    'safe-mode': 'safe-mode',
+    governance: 'governance-review',
+    'governance-review': 'governance-review',
+    controlled: 'controlled-agent',
+    'controlled-agent': 'controlled-agent',
+    explain: 'explainability',
+    explainability: 'explainability',
+    recovery: 'recovery',
+    'recovery-mode': 'recovery'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     await persist();
 
@@ -3207,7 +3242,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3549,7 +3584,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery
 /alias nama_alias = /command
 /riwayat kata
 
@@ -4655,6 +4690,10 @@ await withUserActionLock(userId, async () => {
     getCurrentTime,
     getCurrentDate,
     downloadFile: downloadTelegramFile,
+    env: {
+      OWNER_CHAT_ID,
+      ADMIN_SET
+    },
     shortMemory
   });
 

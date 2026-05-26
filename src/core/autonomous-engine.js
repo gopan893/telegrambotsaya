@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Phase 7: Multimodal Intelligence System & Cross-Modal Reasoning Engine
- * Mengoordinasikan teks, gambar, dokumen, dan data tabular melalui
- * Distributed Reasoning Pipeline dengan ekosistem multi-agen kolaboratif.
+ * Phase 8: Governance Intelligence & Autonomous Control System
+ * Mengoordinasikan text/multimodal reasoning dengan policy, risk, permission,
+ * approval, audit, dan recovery layer yang ringan untuk production.
  */
 
 const observability = require('../agents/observability');
@@ -20,6 +20,7 @@ const research = require('../agents/research');
 const reasoning = require('../agents/reasoning');
 const reflection = require('../agents/reflection');
 const selfImprovement = require('../agents/self-improvement');
+const governance = require('../governance');
 
 const messageBus = require('./message-bus');
 const agentCoordinator = require('./agent-coordinator');
@@ -39,6 +40,12 @@ const crossModal = require('../multimodal/cross-modal-engine');
  */
 function detectAIMode(userMessage, intent, hasAttachment, attachmentType) {
   const lower = (userMessage || '').toLowerCase();
+
+  if (lower.includes('safe mode') || lower.includes('mode aman')) return 'Safe Mode';
+  if (lower.includes('governance review') || lower.includes('review governance')) return 'Governance Review';
+  if (lower.includes('controlled agent') || lower.includes('agen terkendali')) return 'Controlled Agent';
+  if (lower.includes('explainability') || lower.includes('jelaskan keputusan')) return 'Explainability';
+  if (lower.includes('recovery mode') || lower.includes('mode recovery')) return 'Recovery';
 
   // Mode Multimodal (Phase 7)
   if (hasAttachment) {
@@ -65,6 +72,13 @@ function getRuntimeStatus() {
     status: health.status,
     generatedAt: health.timestamp,
     agents: [
+      'PolicyEngine',
+      'PermissionEngine',
+      'RiskAssessmentEngine',
+      'SafetyValidator',
+      'AuditLogger',
+      'ActionApprovalLayer',
+      'RollbackController',
       'PlannerAgent',
       'ExecutorAgent',
       'EvaluatorAgent',
@@ -84,6 +98,7 @@ function getRuntimeStatus() {
     observability: {
       collaboration: health.collaboration
     },
+    governance: governance.getGovernanceStatus(),
     issues: health.issues,
     recentErrorPatterns: health.recentErrorPatterns
   };
@@ -389,6 +404,27 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       return { processed: true, answerText: '⚠️ Input ditolak.' };
     }
 
+    const approvedAction = governance.consumeApprovedAction(traceId, userId, userMessage, botServices);
+    if (approvedAction.denied) {
+      const deniedText = 'Baik, aksi sensitif dibatalkan dan tidak dijalankan.';
+      messageBus.cleanupContext(traceId);
+      await safeSendMessage(chatId, deniedText, { reply_to_message_id: msgObj.message_id });
+      return { processed: true, answerText: deniedText };
+    }
+    if (approvedAction.expired) {
+      const expiredText = 'Konfirmasi sebelumnya sudah kedaluwarsa. Kirim ulang instruksi jika masih ingin menjalankannya.';
+      messageBus.cleanupContext(traceId);
+      await safeSendMessage(chatId, expiredText, { reply_to_message_id: msgObj.message_id });
+      return { processed: true, answerText: expiredText };
+    }
+    if (approvedAction.approved && approvedAction.originalUserMessage) {
+      userMessage = approvedAction.originalUserMessage;
+      messageBus.updateContext(traceId, 'approvedAction', {
+        intent: approvedAction.intent,
+        approvalId: approvedAction.approvalId
+      });
+    }
+
     // 2. Multimodal Attachment Detection & Processing
     const attachment = extractAttachmentInfo(msgObj);
     const hasAttachment = !!attachment;
@@ -443,8 +479,16 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
     ].filter(Boolean).join('\n');
 
     // 5. Intent Analysis. Untuk goal kompleks, langsung masuk planner agar tidak membuang 1 call AI parser.
-    const complexGoalRequest = planner.isComplexGoalRequest(userMessage);
-    const nlpResult = complexGoalRequest
+    const complexGoalRequest = !approvedAction.approved && planner.isComplexGoalRequest(userMessage);
+    const nlpResult = approvedAction.approved
+      ? {
+        intent: approvedAction.intent,
+        confidence: 0.96,
+        params: approvedAction.params || {},
+        reason: 'Aksi sensitif sudah dikonfirmasi user melalui Governance Approval Layer.',
+        governanceApproved: true
+      }
+      : complexGoalRequest
       ? {
         intent: 'NONE',
         confidence: 0.95,
@@ -478,6 +522,34 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       agents: delegationPlan.agents
     });
     observability.logEvent(traceId, 'Orchestrator', 'AI_MODE_DETECTED', { mode: currentMode, hasAttachment });
+
+    const governanceDecision = governance.reviewDecision(traceId, {
+      userId,
+      userMessage,
+      intent,
+      params: nlpResult.params || {},
+      nlpConfidence: nlpResult.confidence,
+      context,
+      hasAttachment,
+      attachmentType,
+      mode: currentMode,
+      botServices,
+      approved: !!nlpResult.governanceApproved
+    });
+    context.governance = governanceDecision;
+    messageBus.updateContext(traceId, 'governance', {
+      decision: governanceDecision.decision,
+      riskLevel: governanceDecision.risk.riskLevel,
+      riskScore: governanceDecision.risk.riskScore,
+      policy: governanceDecision.policy.capability,
+      violations: governanceDecision.violations
+    });
+
+    if (governanceDecision.decision === 'BLOCKED' || governanceDecision.decision === 'APPROVAL_REQUIRED') {
+      messageBus.cleanupContext(traceId);
+      await safeSendMessage(chatId, governanceDecision.userMessage, { reply_to_message_id: msgObj.message_id });
+      return { processed: true, answerText: governanceDecision.userMessage };
+    }
 
     // 6. Hierarchical Planning Check
     const session = context.rawSession;
@@ -530,11 +602,27 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     // 8. Reasoning & Execution
     let draftAnswer = '';
     let executionResult = null;
-    const isToolRequest = toolRouter.canRoute(traceId, intent, nlpResult.params) && nlpResult.confidence >= 0.7;
+    const isToolRequest = toolRouter.canRoute(traceId, intent, nlpResult.params) &&
+      nlpResult.confidence >= 0.7 &&
+      governanceDecision.executionAllowed;
 
     if (isToolRequest && !hasAttachment) {
       if (observability.isServiceAvailable(intent)) {
+        const snapshot = governanceDecision.simulation?.wouldMutateState
+          ? governance.createRecoverySnapshot(traceId, userId, `before_${intent}`, botServices)
+          : null;
         executionResult = await executor.executeTool(traceId, intent, nlpResult.params, chatId, userId, msgObj, botServices);
+        governance.logToolExecution(traceId, {
+          userId,
+          intent,
+          params: nlpResult.params,
+          riskLevel: governanceDecision.risk.riskLevel,
+          success: !!executionResult.ok,
+          error: executionResult.error
+        });
+        if (snapshot && !executionResult.ok) {
+          governance.rollbackLastSnapshot(traceId, userId, botServices);
+        }
         draftAnswer = executionResult.ok ? executionResult.resultText : recovery.getDegradedFallback(traceId, intent);
         memory.recordToolPerformance(userId, intent, executionResult.ok, botServices);
         messageBus.recordAgentMessage(traceId, 'ToolRouterAgent', 'ExecutorAgent', 'TOOL_EXECUTED', {
@@ -547,7 +635,11 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
       }
     } else {
       // Sisipkan konteks file ke dalam prompt jika ada attachment
-      const contextWithMods = { ...context, adaptiveRules: adaptiveModifiers, currentMode };
+      const contextWithMods = {
+        ...context,
+        adaptiveRules: [adaptiveModifiers, governanceDecision.promptConstraint].filter(Boolean).join('\n'),
+        currentMode
+      };
       if (fileContext) {
         contextWithMods.fileContent = fileContext.primaryContent;
         contextWithMods.fileName = fileContext.fileName;
