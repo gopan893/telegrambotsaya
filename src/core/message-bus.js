@@ -79,7 +79,11 @@ class MessageBus extends EventEmitter {
    */
   cleanupContext(traceId) {
     this.sharedContexts.delete(traceId);
-    this.removeAllListeners(traceId); // Hapus semua listener khusus trace ini
+    for (const eventName of this.eventNames()) {
+      if (String(eventName).startsWith(`${traceId}:`)) {
+        this.removeAllListeners(eventName);
+      }
+    }
     observability.logEvent(traceId, 'MessageBus', 'CONTEXT_CLEANUP');
   }
 }

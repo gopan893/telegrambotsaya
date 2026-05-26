@@ -73,3 +73,65 @@ Modul ini sudah dipakai oleh `telebot.js` tanpa mengubah command Telegram lama.
 2. Pisahkan provider AI menjadi `services/providers/groq.js` dan `services/providers/mistral.js`.
 3. Pisahkan memory/context manager agar prompt panjang bisa dikontrol lebih baik.
 4. Tambahkan test smoke untuk command penting sebelum deploy.
+
+## Tahap 3: Autonomous AI System
+
+Alur utama sekarang diarahkan ke `src/core/autonomous-engine.js` setelah command Telegram lama selesai diproses.
+
+```text
+INPUT
+-> Safety Check
+-> Context Analysis
+-> Selective Memory Loading
+-> Intent Analysis / Planner Shortcut
+-> Confidence Scoring
+-> Tool Selection
+-> Planning atau Chat Execution
+-> Consensus / Reflection
+-> Evaluation
+-> Verification
+-> Output Sanitization
+-> Final Response
+```
+
+### Modul Autonomous
+
+- `src/core/autonomous-engine.js`: orchestrator utama untuk workflow autonomous.
+- `src/core/task-queue.js`: queue ringan dengan concurrency, idempotency, dan deduplication.
+- `src/core/message-bus.js`: shared context sementara antar agen dalam satu request.
+- `src/intent/semantic-parser.js`: semantic intent parser dengan confidence threshold.
+- `src/action/action-executor.js`: eksekutor tool natural language yang tervalidasi.
+- `src/agents/executor.js`: chat/tool executor dan mode belajar/kritis/riset/builder.
+- `src/agents/planner.js`: multi-step planning dan goal tracking.
+- `src/agents/evaluator.js`: self-review dan scoring kualitas jawaban.
+- `src/agents/verifier.js`: confidence scoring dan circular reasoning guard.
+- `src/agents/reflection.js`: consensus dan reflection after response.
+- `src/agents/learning.js`: correction memory, feedback stats, dan adaptive style.
+- `src/agents/recovery.js`: graceful fallback saat pipeline error.
+- `src/agents/safety.js`: prompt injection, unsafe action, dan output leak protection.
+- `src/agents/memory.js`: memory importance scoring, pruning, context compression.
+- `src/memory/advanced-memory.js`: session state dan selective context loading.
+
+### Keputusan Arsitektur
+
+- Router intent dibuat konservatif: tool hanya jalan jika confidence cukup. Trade-off: beberapa perintah natural mungkin dijawab sebagai chat biasa, tetapi risiko tool salah jalan jauh lebih kecil.
+- Planner goal kompleks melewati parser intent untuk menghemat satu AI call. Trade-off: heuristic planner harus dijaga agar tidak terlalu luas.
+- Queue autonomous tidak memakai rate limit keras karena bot utama sudah punya antispam. Trade-off: queue fokus pada deduplication dan concurrency, sedangkan spam tetap dikontrol di lapisan Telegram.
+- Memory diseleksi dan dipangkas sebelum masuk prompt. Trade-off: tidak semua riwayat dibawa, tetapi RAM dan token lebih hemat.
+- Reflection dibuat ringan dan bounded. Trade-off: tidak semua jawaban direwrite, tetapi latency dan biaya AI tetap terkendali.
+
+### Risiko Yang Dikurangi
+
+- Tool misuse saat intent ambigu.
+- Halusinasi status tool, misalnya mengaku berhasil menjadwalkan padahal gagal.
+- Loop respons berulang.
+- Prompt injection dari teks atau file.
+- Memory leak dari trace dan message bus.
+- JSON/session state korup melalui recovery layer.
+
+### Hal Penting Untuk Dipelajari
+
+- Autonomous assistant bukan berarti semua tindakan otomatis dilakukan. Sistem yang aman harus punya confidence threshold dan fallback chat biasa.
+- Reasoning pipeline yang baik memisahkan “memahami maksud”, “memilih tool”, “mengeksekusi”, dan “memvalidasi jawaban”.
+- Untuk Render free tier, arsitektur ringan lebih penting daripada banyak package berat.
+- Multi-step planning harus menyimpan state kecil, bukan seluruh percakapan mentah.

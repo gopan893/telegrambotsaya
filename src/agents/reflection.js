@@ -76,7 +76,7 @@ class ReflectionAgent {
     // Gunakan introspection logic untuk mengecek uncertainty final
     const introResult = introspection.introspect(traceId, consensusDecision, 0.8, intent);
     if (!introResult.passed) {
-      return introResult.fallbackText;
+      return introResult.fallbackText || consensusDecision;
     }
     return consensusDecision;
   }

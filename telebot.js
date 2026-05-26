@@ -13,6 +13,8 @@ const { installProcessGuards } = require('./middleware/process-guards');
 const { cleanupRuntimeState } = require('./scheduler/cleanup');
 const { chooseProviderOrder, shouldUseSearchFallback } = require('./services/ai-router');
 const { buildLearningGuide } = require('./handlers/learning');
+const autonomousEngine = require('./src/core/autonomous-engine');
+
 
 let scheduleLib = null;
 let googleLib = null;
@@ -703,11 +705,25 @@ function scoreAnswerQuality(question, answer) {
 }
 
 function getModePrompt(mode) {
-  if (mode === 'kerja') {
+  const activeMode = safeLower(mode);
+
+  if (activeMode === 'kerja' || activeMode === 'builder') {
     return 'Jawab profesional, ringkas, dan terstruktur.';
   }
 
-  if (mode === 'auto') {
+  if (activeMode === 'belajar' || activeMode === 'learning') {
+    return 'Fokus edukasi: jelaskan konsep, alasan, trade-off, risiko, dan langkah berpikir secara runtut.';
+  }
+
+  if (activeMode === 'kritis' || activeMode === 'critical') {
+    return 'Fokus berpikir kritis: identifikasi asumsi, pro-kontra, risiko, kelemahan solusi, dan alternatif.';
+  }
+
+  if (activeMode === 'riset' || activeMode === 'research') {
+    return 'Fokus riset: bedakan fakta, inferensi, dan opini; beri confidence level jika relevan.';
+  }
+
+  if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
 
@@ -2978,19 +2994,26 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   const u = ensureUser(userId);
   const mode = safeLower(args).trim();
 
-  if (['kerja', 'santai', 'auto'].includes(mode)) {
-    u.mode = mode;
+  const modeAliases = {
+    learning: 'belajar',
+    critical: 'kritis',
+    research: 'riset'
+  };
+  const normalizedMode = modeAliases[mode] || mode;
+
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder'].includes(normalizedMode)) {
+    u.mode = normalizedMode;
     await persist();
 
     await safeSendMessage(
       chatId,
-      `✅ Mode disetel ke "${mode}".`,
+      `✅ Mode disetel ke "${normalizedMode}".`,
       { reply_to_message_id: msg.message_id }
     );
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3337,7 +3360,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto
+/mode kerja | santai | auto | belajar | kritis | riset | builder
 /alias nama_alias = /command
 /riwayat kata
 
@@ -4391,77 +4414,39 @@ await withUserActionLock(userId, async () => {
     return;
   }
 
-  const toolRes = await handleTools(text, userId);
-  if (toolRes) {
-    await sendChunkedMessage(chatId, toolRes, {
-      reply_to_message_id: msg.message_id,
-      disable_web_page_preview: true
-    });
-    return;
-  }
-
-  const nlpResult = await universalNLP(text, userId);
-
-  if (nlpResult && nlpResult.intent && nlpResult.intent !== 'NONE') {
-    const executed = await executeUniversalIntent(nlpResult.intent, nlpResult.params || {}, chatId, userId, msg);
-    if (executed) return;
-  } else if (isLikelyActionRequest(text)) {
-    await askClarification(chatId, userId, text, msg);
-    return;
-  }
-
-  const lang = simpleDetectLanguage(text);
-  let prompt = text;
-  if (lang === 'ja') prompt = `Jawab dalam bahasa Jepang: ${text}`;
-  else if (lang === 'ko') prompt = `Jawab dalam bahasa Korea: ${text}`;
-  else if (lang === 'vi') prompt = `Jawab dalam bahasa Vietnam: ${text}`;
-
-  const systemPrompt = getSystemPrompt(userId);
-  let answer;
-  try {
-    answer = await getSmartAnswer(prompt, userId, systemPrompt, nlpResult.intent || null);
-  } catch (e) {
-    console.error('AI fallback error:', e.message);
-    answer = 'Maaf, aku lagi kesulitan menjawab. Coba ulang atau gunakan perintah yang lebih spesifik.';
-  }
-
-  if (!answer || !String(answer).trim()) answer = 'Maaf, aku belum bisa memproses itu.';
-  if (calcEntropyScore(answer) < 0.01) answer = 'Maaf, aku belum mendapat jawaban yang cukup jelas.';
-
-  let quality = scoreAnswerQuality(text, answer);
-  if (quality < 0.45 && TAVILY_API_KEY && !resolvedCmd) {
-    try {
-      const webVersion = await summarizeSearchWithRefs(text, userId, systemPrompt);
-      if (webVersion && webVersion.length > answer.length * 0.6) {
-        answer = webVersion;
-        quality = scoreAnswerQuality(text, answer);
-      }
-    } catch (_) {}
-  }
-
-  await sendStreamingAnswer(chatId, answer, {
-    reply_to_message_id: msg.message_id,
-    disable_web_page_preview: true,
-    reply_markup: {
-      inline_keyboard: [[
-        { text: '👍', callback_data: 'positive' },
-        { text: '👎', callback_data: 'negative' }
-      ]]
-    }
+  // Salurkan ke modul Autonomous AI Engine baru
+  const autonomousResult = await autonomousEngine.processMessage(userId, chatId, text, msg, {
+    telegramPost,
+    safeSendMessage,
+    sendChunkedMessage,
+    sendStreamingAnswer,
+    askAI,
+    getWeather,
+    searchLocation,
+    summarizeSearchWithRefs,
+    generateImage,
+    sendPhotoUrl,
+    getCalendarClient,
+    ensureUser,
+    persist,
+    getSystemPrompt,
+    getSmartAnswer,
+    pushChatHistory,
+    autoSummarizeMemory,
+    saveConversationPair,
+    scheduleReminderFromParams,
+    parseFlexibleDateTime,
+    isValidDate,
+    calculate,
+    getCurrentTime,
+    getCurrentDate,
+    shortMemory
   });
 
-  pushChatHistory({
-    userId,
-    chatId,
-    role: 'assistant',
-    text: answer,
-    timestamp: nowMs()
-  });
-
-  updateUserTags(u, answer);
-
-  await autoSummarizeMemory(userId);
-  if (u.digest?.enabled) scheduleDigestJob(userId);
+  if (autonomousResult && autonomousResult.processed) {
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+    return;
+  }
 });
 
     return res.sendStatus(200);

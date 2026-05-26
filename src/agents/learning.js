@@ -20,6 +20,7 @@ class LearningAgent {
 
     const u = ensureUser(userId);
     if (!u.correctionMemory) u.correctionMemory = []; // Phase 5: Correction Memory khusus
+    if (!u.nlpPatterns) u.nlpPatterns = [];
     
     const cleanQuestion = String(question || '').toLowerCase().trim();
 
@@ -34,6 +35,16 @@ class LearningAgent {
       params: correctParams || {},
       timestamp: Date.now()
     });
+
+    if (!u.nlpPatterns.some(pat => pat.question === cleanQuestion && pat.intent === correctIntent)) {
+      u.nlpPatterns.push({
+        question: cleanQuestion,
+        intent: correctIntent,
+        params: correctParams || {},
+        timestamp: Date.now()
+      });
+      if (u.nlpPatterns.length > 100) u.nlpPatterns.shift();
+    }
 
     if (u.correctionMemory.length > 30) {
       u.correctionMemory.shift(); // RAM-optimized
@@ -95,6 +106,34 @@ class LearningAgent {
     }
 
     await persist();
+  }
+
+  async registerFeedback(traceId, userId, feedbackType, botServices) {
+    const { ensureUser, persist } = botServices;
+    const u = ensureUser(userId);
+
+    if (!u.feedbackStats) {
+      u.feedbackStats = {
+        positive: 0,
+        negative: 0,
+        neutral: 0
+      };
+    }
+
+    const key = feedbackType === 'positive'
+      ? 'positive'
+      : feedbackType === 'negative'
+        ? 'negative'
+        : 'neutral';
+
+    u.feedbackStats[key] += 1;
+    await this.adaptBehavior(traceId, userId, feedbackType, botServices);
+    await persist();
+
+    observability.logEvent(traceId, 'LearningAgent', 'FEEDBACK_REGISTERED', {
+      userId,
+      feedbackType: key
+    });
   }
 
   /**

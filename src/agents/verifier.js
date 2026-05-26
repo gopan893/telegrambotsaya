@@ -89,7 +89,7 @@ class VerifierAgent {
 
     if (confidence < 0.4) { // Ditingkatkan ambangnya dari 0.3 ke 0.4
       annotation = 'LOW_CONFIDENCE_WARNING';
-      finalAnswer = `${finalAnswer}\n\n⚠️ *(Sistem AI mendeteksi tingkat keyakinan rendah pada penalaran ini. Mohon lakukan verifikasi mandiri.)*`;
+      finalAnswer = `${finalAnswer}\n\n⚠️ *(Tingkat keyakinan argumen ini rendah. Sistem AI menyarankan verifikasi mandiri sebelum mengambil keputusan.)*`;
       failedReason = 'CONFIDENCE_TOO_LOW';
       
       observability.logEvent(traceId, 'VerifierAgent', 'LOW_CONFIDENCE_WARNING_ANNOTATED', { confidence });

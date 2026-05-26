@@ -301,8 +301,16 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
     // 4. Adaptive Intelligence Modifiers
     const adaptiveModifiers = learning.generateAdaptivePromptModifiers(userId, botServices);
 
-    // 5. Intent Analysis
-    const nlpResult = await parseSemanticIntent(userMessage, userId, botServices);
+    // 5. Intent Analysis. Untuk goal kompleks, langsung masuk planner agar tidak membuang 1 call AI parser.
+    const complexGoalRequest = planner.isComplexGoalRequest(userMessage);
+    const nlpResult = complexGoalRequest
+      ? {
+        intent: 'NONE',
+        confidence: 0.95,
+        params: {},
+        reason: 'Goal kompleks dideteksi oleh planner heuristic.'
+      }
+      : await parseSemanticIntent(userMessage, userId, botServices);
     const intent = nlpResult.intent || 'NONE';
 
     const attachmentType = hasAttachment ? fileHandler.classifyContentType(attachment.fileName, attachment.mimeType) : null;
@@ -318,11 +326,37 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       return { processed: true, answerText: stepResponse };
     }
 
-    if (planner.isComplexGoalRequest(userMessage)) {
+    if (complexGoalRequest) {
       await safeSendMessage(chatId, `🧠 **[${currentMode}]** AI Planner Aktif...`);
       const newPlan = await planner.generatePlan(traceId, userMessage, userId, botServices);
+      await updateSessionState(
+        userId,
+        {
+          activeTask: newPlan.taskName,
+          steps: newPlan.steps,
+          currentStepIndex: 0,
+          contextData: newPlan.initialData || {}
+        },
+        botServices
+      );
+
+      const planLines = newPlan.steps
+        .map((step, index) => `${index + 1}. ${step}`)
+        .join('\n');
+
+      const planText = `
+🧭 **Roadmap Baru Dibuat: ${newPlan.taskName}**
+
+${newPlan.explanation || 'Saya menyusun rencana bertahap agar tujuan ini bisa dijalankan sebagai sesi percakapan.'}
+
+${planLines}
+
+Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk menghentikan sesi.
+      `.trim();
+
+      await sendStreamingAnswer(chatId, planText, { reply_to_message_id: msgObj.message_id });
       messageBus.cleanupContext(traceId);
-      return { processed: true, answerText: `Rencana Dibuat: ${newPlan.taskName}` };
+      return { processed: true, answerText: planText };
     }
 
     // 7. Action Gating
