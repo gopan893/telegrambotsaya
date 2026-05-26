@@ -79,6 +79,63 @@ function identifySystemicConsequences(text) {
   return consequences;
 }
 
+function evaluateEvidenceQuality(text, context = {}) {
+  let score = 0.45;
+  const evidenceSignals = [];
+  if (context.graph?.edges?.length) {
+    score += 0.1;
+    evidenceSignals.push('Knowledge graph punya relasi pendukung.');
+  }
+  if (context.memories?.length) {
+    score += 0.08;
+    evidenceSignals.push('Ada memory relevan.');
+  }
+  if (/(sumber|evidence|data|dokumen|file|riset|berdasarkan)/i.test(text)) {
+    score += 0.08;
+    evidenceSignals.push('User meminta/menyebut evidence.');
+  }
+  if (!evidenceSignals.length) evidenceSignals.push('Evidence eksplisit masih terbatas.');
+  return {
+    score: guards.clamp01(score, 0.45),
+    summary: evidenceSignals
+  };
+}
+
+function buildOptions(text) {
+  const lower = guards.sanitizeText(text, 2400).toLowerCase();
+  const options = [];
+  options.push({
+    name: 'Mulai kecil dan iteratif',
+    benefit: 'Cepat divalidasi dan risiko rendah.',
+    cost: 'Cakupan awal lebih terbatas.'
+  });
+  if (/(arsitektur|sistem|workflow|project|bot|kode)/i.test(lower)) {
+    options.push({
+      name: 'Bangun fondasi modular',
+      benefit: 'Lebih mudah dirawat untuk jangka panjang.',
+      cost: 'Butuh disiplin testing dan dokumentasi.'
+    });
+  }
+  if (/(riset|evidence|fakta|keputusan)/i.test(lower)) {
+    options.push({
+      name: 'Validasi berbasis evidence',
+      benefit: 'Mengurangi hallucination dan keputusan lemah.',
+      cost: 'Lebih lambat dan perlu sumber.'
+    });
+  }
+  return options.slice(0, 4);
+}
+
+function buildMentalModel(text) {
+  if (/(goal|workflow|roadmap|tujuan)/i.test(text)) {
+    return 'Pikirkan sistem sebagai rantai: goal menentukan arah, workflow mengubah arah menjadi langkah, memory menjaga konteks, graph menghubungkan konsep, reflection memperbaiki keputusan.';
+  }
+  if (/(research|riset|evidence)/i.test(text)) {
+    return 'Pikirkan riset sebagai peta bukti: sumber memberi fakta, confidence menilai kekuatan bukti, graph menghubungkan evidence ke keputusan.';
+  }
+  return 'Pikirkan masalah sebagai sistem: input, constraint, opsi, trade-off, risiko, feedback, lalu next action terkecil.';
+}
+
 function recommendNextSteps(text, context = {}) {
   const steps = [];
   if (context.activeGoals?.length) steps.push('Pilih satu goal aktif sebagai fokus utama agar workflow tidak tersebar.');
@@ -102,15 +159,30 @@ function analyzeGoal(goalOrText, context = {}) {
   const text = typeof goalOrText === 'string'
     ? goalOrText
     : `${goalOrText?.title || ''}. ${goalOrText?.description || ''}`;
+  const separated = separateFactInferenceSpeculation(text, context);
+  const evidenceQuality = evaluateEvidenceQuality(text, context);
+  const options = buildOptions(text);
+  const nextActions = recommendNextSteps(text, context);
+  const confidence = produceConfidenceLevel(text, context);
   return {
-    facts: separateFactInferenceSpeculation(text, context).facts,
+    problemSummary: guards.compactText(text || 'Masalah belum dijelaskan.', 260),
+    goal: typeof goalOrText === 'string'
+      ? inferGoalFromText(text)
+      : guards.compactText(goalOrText?.title || text, 180),
+    facts: separated.facts,
+    knownFacts: separated.facts,
     assumptions: identifyAssumptions(text),
-    inferences: separateFactInferenceSpeculation(text, context).inferences,
+    inferences: separated.inferences,
+    speculation: separated.speculation,
     risks: identifyRisks(text),
     tradeOffs: analyzeTradeOff(text),
-    nextActions: recommendNextSteps(text, context),
-    confidence: produceConfidenceLevel(text, context),
-    systemicConsequences: identifySystemicConsequences(text)
+    options,
+    recommendation: chooseRecommendation(options, nextActions, confidence),
+    nextActions,
+    confidence,
+    evidenceQuality,
+    systemicConsequences: identifySystemicConsequences(text),
+    mentalModel: buildMentalModel(text)
   };
 }
 
@@ -118,12 +190,25 @@ function formatStrategicAnalysis(analysis) {
   return [
     'Analisis Strategis',
     `Confidence: ${(analysis.confidence || 0).toFixed(2)}`,
+    `Evidence quality: ${(analysis.evidenceQuality?.score || 0).toFixed(2)}`,
+    '',
+    'Ringkasan masalah:',
+    `- ${analysis.problemSummary || '-'}`,
+    '',
+    'Tujuan:',
+    `- ${analysis.goal || '-'}`,
     '',
     'Fakta:',
-    ...(analysis.facts || ['-']).map((item) => `- ${item}`),
+    ...(analysis.knownFacts || analysis.facts || ['-']).map((item) => `- ${item}`),
     '',
     'Asumsi:',
     ...(analysis.assumptions || ['-']).map((item) => `- ${item}`),
+    '',
+    'Inferensi:',
+    ...(analysis.inferences?.length ? analysis.inferences : ['-']).map((item) => `- ${item}`),
+    '',
+    'Spekulasi:',
+    ...(analysis.speculation?.length ? analysis.speculation : ['-']).map((item) => `- ${item}`),
     '',
     'Trade-off:',
     ...(analysis.tradeOffs || ['-']).map((item) => `- ${item}`),
@@ -131,9 +216,35 @@ function formatStrategicAnalysis(analysis) {
     'Risiko:',
     ...(analysis.risks || ['-']).map((item) => `- ${item}`),
     '',
+    'Opsi:',
+    ...(analysis.options || []).map((item) => `- ${item.name}: ${item.benefit} Trade-off: ${item.cost}`),
+    '',
+    'Rekomendasi:',
+    `- ${analysis.recommendation || '-'}`,
+    '',
     'Next action:',
-    ...(analysis.nextActions || ['-']).map((item) => `- ${item}`)
+    ...(analysis.nextActions || ['-']).map((item) => `- ${item}`),
+    '',
+    'Mental model:',
+    `- ${analysis.mentalModel || '-'}`
   ].join('\n');
+}
+
+function inferGoalFromText(text) {
+  const clean = guards.compactText(text, 180);
+  if (/(belajar|roadmap|menguasai)/i.test(clean)) return 'Membangun roadmap belajar yang realistis.';
+  if (/(deploy|production|stabil)/i.test(clean)) return 'Meningkatkan stabilitas dan kesiapan produksi.';
+  if (/(keputusan|pilih|opsi)/i.test(clean)) return 'Membuat keputusan dengan trade-off yang jelas.';
+  return clean || 'Menentukan arah dan next action yang paling masuk akal.';
+}
+
+function chooseRecommendation(options = [], nextActions = [], confidence = 0.5) {
+  const prefix = confidence < 0.56
+    ? 'Rekomendasi sementara: '
+    : 'Rekomendasi: ';
+  const option = options[0]?.name || 'mulai dari langkah kecil';
+  const action = nextActions[0] || 'klarifikasi outcome yang diinginkan.';
+  return `${prefix}${option}, lalu ${action}`;
 }
 
 module.exports = {
@@ -142,6 +253,7 @@ module.exports = {
   identifyAssumptions,
   identifyRisks,
   identifySystemicConsequences,
+  evaluateEvidenceQuality,
   recommendNextSteps,
   produceConfidenceLevel,
   separateFactInferenceSpeculation,

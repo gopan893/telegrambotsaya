@@ -28,8 +28,21 @@ function chooseStrategy(input = {}) {
   const needsResearch = mode === 'deep-research-os' || /(riset|sumber|fakta terbaru|validasi)/i.test(lower);
   const needsStrategy = mode === 'strategic-thinking' || /(strategi|roadmap|trade-off|risiko|keputusan|goal)/i.test(lower);
   const needsWorkflow = /(workflow|multi-hari|multi minggu|langkah|roadmap|progress)/i.test(lower);
+  const needsGovernance = hasAction || /(izin|konfirmasi|policy|governance|aman|risiko aksi)/i.test(lower);
+  const needsMultimodal = !!input.hasAttachment || /(file|gambar|dokumen|pdf|spreadsheet|attachment)/i.test(lower);
   const needsMemory = !overload.allowDeepPipeline ? /(ingat|memori|goal|workflow|project)/i.test(lower) : true;
   const needsReflection = mode === 'meta-reasoning' || /(refleksi|evaluasi|kelemahan|asumsi)/i.test(lower);
+  const moduleBudget = computeModuleBudget({
+    mode,
+    needsResearch,
+    needsStrategy,
+    needsWorkflow,
+    needsMemory,
+    needsReflection,
+    needsGovernance,
+    needsMultimodal,
+    allowDeepPipeline: overload.allowDeepPipeline
+  });
 
   return {
     mode,
@@ -42,6 +55,11 @@ function chooseStrategy(input = {}) {
     needResearch: needsResearch,
     needReflection: needsReflection || needsStrategy,
     needGraphEvolution: overload.allowDeepPipeline || /(project|ide|konsep|hubungan|arsitektur)/i.test(lower),
+    needGovernance: needsGovernance,
+    needMultimodal: needsMultimodal,
+    moduleBudget,
+    maxActiveModules: moduleBudget.maxActiveModules,
+    preventOverthinking: !overload.allowDeepPipeline && mode === 'standard',
     maxContextChars: overload.maxContextChars,
     reason: overload.reason
   };
@@ -56,11 +74,35 @@ function explainStrategy(strategy = {}) {
   if (strategy.needResearch) active.push('research continuity');
   if (strategy.needReflection) active.push('reflection');
   if (strategy.needGraphEvolution) active.push('knowledge graph evolution');
-  return `Mode ${strategy.mode || 'standard'} memakai ${active.join(', ') || 'jawaban langsung'} karena ${strategy.reason || 'konteks cukup sederhana'}.`;
+  if (strategy.needGovernance) active.push('governance');
+  if (strategy.needMultimodal) active.push('multimodal');
+  return `Mode ${strategy.mode || 'standard'} memakai ${active.slice(0, strategy.maxActiveModules || active.length).join(', ') || 'jawaban langsung'} karena ${strategy.reason || 'konteks cukup sederhana'}.`;
+}
+
+function computeModuleBudget(flags) {
+  const requested = [
+    flags.needsMemory,
+    flags.needsStrategy,
+    flags.needsWorkflow,
+    flags.needsResearch,
+    flags.needsReflection,
+    flags.needsGovernance,
+    flags.needsMultimodal
+  ].filter(Boolean).length;
+  const maxActiveModules = flags.allowDeepPipeline ? 6 : 3;
+  return {
+    requested,
+    maxActiveModules,
+    shouldDeferLowPriority: requested > maxActiveModules,
+    reason: requested > maxActiveModules
+      ? 'Terlalu banyak layer diminta; defer layer prioritas rendah agar tidak overload.'
+      : 'Jumlah layer masih aman.'
+  };
 }
 
 module.exports = {
   detectRequestedMode,
   chooseStrategy,
-  explainStrategy
+  explainStrategy,
+  computeModuleBudget
 };

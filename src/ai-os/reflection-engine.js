@@ -35,6 +35,24 @@ function detectWeakReasoning(answer = '') {
   return issues;
 }
 
+function detectWeakAssumptions(question = '', answer = '') {
+  const combined = guards.sanitizeText(`${question} ${answer}`, 3000).toLowerCase();
+  const assumptions = [];
+  if (/(tentu|pasti|selalu|semua orang)/i.test(combined)) assumptions.push('Ada klaim umum/absolut yang perlu dibatasi.');
+  if (/(mudah|cepat|langsung)/i.test(combined) && !/(syarat|tergantung|asumsi|jika)/i.test(combined)) assumptions.push('Asumsi kemudahan belum dijelaskan syaratnya.');
+  if (/(berdasarkan|evidence|sumber)/i.test(combined) && !/(http|file:|sumber|dokumen|data)/i.test(combined)) assumptions.push('Klaim berbasis evidence belum punya rujukan jelas.');
+  return assumptions;
+}
+
+function detectRisks(question = '', answer = '') {
+  const combined = guards.sanitizeText(`${question} ${answer}`, 3000).toLowerCase();
+  const risks = [];
+  if (/(hapus|reset|deploy|push|token|password|calendar|bayar)/i.test(combined)) risks.push('Ada potensi aksi sensitif; butuh permission dan/atau konfirmasi.');
+  if (/(medical|hukum|financial|keuangan|diagnosis)/i.test(combined)) risks.push('Topik high-stakes; perlu verifikasi dan batasan.');
+  if (/(pasti|dijamin|100%)/i.test(combined)) risks.push('Risiko overconfidence karena klaim terlalu pasti.');
+  return risks;
+}
+
 function extractInsight(question = '', answer = '') {
   const combined = guards.sanitizeText(`${question} ${answer}`, 2600);
   if (!combined) return null;
@@ -53,6 +71,7 @@ function storeReflectionMemory(userId, reflection = {}, botServices) {
     quality: guards.clamp01(reflection.quality, 0.6),
     confidence: guards.clamp01(reflection.confidence, 0.6),
     risks: guards.safeArray(reflection.risks).slice(0, 5),
+    weakAssumptions: guards.safeArray(reflection.weakAssumptions).slice(0, 5),
     createdAt: guards.nowIso()
   };
   if (entry.insight) state.reflections.push(entry);
@@ -104,19 +123,24 @@ function detectLowConfidence(evaluation = {}) {
 function reflect(userId, question, answer, botServices) {
   const evaluation = evaluateAnswerQuality(question, answer);
   const weakReasoning = detectWeakReasoning(answer);
+  const weakAssumptions = detectWeakAssumptions(question, answer);
+  const risks = detectRisks(question, answer);
   const insight = extractInsight(question, answer);
   const result = storeReflectionMemory(userId, {
     question,
     insight,
     quality: evaluation.answerQuality,
     confidence: evaluation.confidence,
-    risks: weakReasoning
+    risks: [...weakReasoning, ...risks],
+    weakAssumptions
   }, botServices);
   return {
     evaluation,
     weakReasoning,
+    weakAssumptions,
+    risks,
     insight,
-    suggestions: suggestImprovement(evaluation, weakReasoning),
+    suggestions: suggestImprovement(evaluation, [...weakReasoning, ...weakAssumptions, ...risks]),
     stored: result.ok
   };
 }
@@ -124,6 +148,8 @@ function reflect(userId, question, answer, botServices) {
 module.exports = {
   evaluateAnswerQuality,
   detectWeakReasoning,
+  detectWeakAssumptions,
+  detectRisks,
   extractInsight,
   storeReflectionMemory,
   suggestImprovement,
