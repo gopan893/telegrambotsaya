@@ -2,6 +2,7 @@
 
 const guards = require('./guards');
 const memoryBus = require('./memory-bus');
+const knowledgeGraph = require('./knowledge-graph');
 
 function createResearchSession(userId, topic, botServices, options = {}) {
   const state = guards.ensureAIOSState(userId, botServices);
@@ -17,12 +18,15 @@ function createResearchSession(userId, topic, botServices, options = {}) {
     sourceSummary: '',
     confidence: 0.5,
     openQuestions: [],
+    linkedGoalIds: guards.safeArray(options.linkedGoalIds).slice(0, 20),
+    linkedWorkflowIds: guards.safeArray(options.linkedWorkflowIds).slice(0, 20),
+    graphNodeIds: [],
     createdAt: ts,
     updatedAt: ts
   };
   state.researchSessions.push(session);
   state.researchSessions = guards.pruneListByScore(state.researchSessions, guards.DEFAULT_LIMITS.researchSessions, scoreSession);
-  memoryBus.publish(userId, {
+  const memory = memoryBus.publish(userId, {
     type: 'research',
     content: `Research session: ${cleanTopic}`,
     tags: ['research'],
@@ -30,6 +34,13 @@ function createResearchSession(userId, topic, botServices, options = {}) {
     confidence: 0.72,
     importance: 0.7
   }, botServices);
+  const graph = knowledgeGraph.evolveGraphFromText(userId, `Research topic ${cleanTopic}`, botServices, {
+    source: 'research-intelligence',
+    confidence: 0.7,
+    maxConcepts: 5
+  });
+  if (graph.ok) session.graphNodeIds = graph.nodes.map((node) => node.id).slice(0, 30);
+  if (memory.ok && memory.memory?.id) session.memoryId = memory.memory.id;
   guards.touchState(state);
   guards.persistAsync(botServices);
   return { ok: true, session };
@@ -53,10 +64,36 @@ function addEvidence(userId, sessionId, evidence = {}, botServices) {
   session.evidence = session.evidence.slice(-20);
   session.confidence = confidenceAnalysis(session.evidence).confidence;
   session.sourceSummary = synthesizeEvidence(session.evidence).summary;
+  const link = knowledgeGraph.linkEvidenceToResearch(userId, session.topic, entry, botServices);
+  if (link.ok) {
+    session.graphNodeIds = [...new Set([...(session.graphNodeIds || []), link.from.id, link.to.id])].slice(-30);
+  }
   session.updatedAt = guards.nowIso();
   guards.touchState(state);
   guards.persistAsync(botServices);
   return { ok: true, session, evidence: entry };
+}
+
+function linkResearchToGoal(userId, sessionId, goalId, botServices) {
+  return linkResearchField(userId, sessionId, 'linkedGoalIds', goalId, botServices);
+}
+
+function linkResearchToWorkflow(userId, sessionId, workflowId, botServices) {
+  return linkResearchField(userId, sessionId, 'linkedWorkflowIds', workflowId, botServices);
+}
+
+function linkResearchField(userId, sessionId, field, value, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  const session = state.researchSessions.find((item) => item.id === sessionId);
+  if (!session) return { ok: false, reason: 'RESEARCH_SESSION_NOT_FOUND' };
+  const clean = guards.sanitizeText(value, 100);
+  if (!clean) return { ok: false, reason: 'VALUE_REQUIRED' };
+  if (!session[field].includes(clean)) session[field].push(clean);
+  session[field] = session[field].slice(-20);
+  session.updatedAt = guards.nowIso();
+  guards.touchState(state);
+  guards.persistAsync(botServices);
+  return { ok: true, session };
 }
 
 function synthesizeEvidence(evidence = []) {
@@ -113,6 +150,11 @@ function buildResearchContext(userId, query = '', botServices) {
   ].join('\n')).join('\n');
 }
 
+function getSearchFallbackMessage(hasSearchApi) {
+  if (hasSearchApi) return '';
+  return 'Search API belum tersedia. Saya bisa menyimpan research session dan menganalisis evidence yang Anda berikan, tetapi belum bisa mencari sumber baru otomatis.';
+}
+
 function scoreSession(session) {
   const active = session.status === 'active' ? 0.25 : 0;
   const evidence = Math.min(0.25, guards.safeArray(session.evidence).length * 0.05);
@@ -133,9 +175,12 @@ function resetResearch(userId, botServices) {
 module.exports = {
   createResearchSession,
   addEvidence,
+  linkResearchToGoal,
+  linkResearchToWorkflow,
   synthesizeEvidence,
   confidenceAnalysis,
   getActiveResearch,
   buildResearchContext,
+  getSearchFallbackMessage,
   resetResearch
 };

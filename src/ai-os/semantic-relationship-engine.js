@@ -11,7 +11,9 @@ const RELATIONSHIP_PATTERNS = [
   { relationship: 'improves', patterns: ['meningkatkan', 'improves', 'optimasi', 'lebih baik'] },
   { relationship: 'blocks', patterns: ['menghambat', 'blocks', 'terhalang', 'risiko'] },
   { relationship: 'belongs_to_project', patterns: ['project', 'proyek', 'repo', 'aplikasi'] },
-  { relationship: 'relates_to_goal', patterns: ['goal', 'tujuan', 'target', 'roadmap'] }
+  { relationship: 'linked_to_goal', patterns: ['goal', 'tujuan', 'target', 'roadmap'] },
+  { relationship: 'derived_from', patterns: ['berasal dari', 'derived from', 'berdasarkan', 'diambil dari'] },
+  { relationship: 'evidence_for', patterns: ['evidence for', 'bukti untuk', 'membuktikan', 'validasi'] }
 ];
 
 function extractConcepts(text, max = 8) {
@@ -60,6 +62,12 @@ function classifyConceptType(label, sourceText = '') {
   const text = `${label} ${sourceText}`.toLowerCase();
   if (/(project|proyek|repo|bot|app|sistem|architecture|arsitektur)/i.test(text)) return 'project';
   if (/(goal|tujuan|target|roadmap|milestone)/i.test(text)) return 'goal';
+  if (/(workflow|step|langkah|progress|blocker|decision)/i.test(text)) return 'workflow';
+  if (/(orang|user|admin|mentor|person|nama)/i.test(text)) return 'person';
+  if (/(insight|pelajaran|lesson|catatan)/i.test(text)) return 'insight';
+  if (/(evidence|sumber|source|referensi|bukti)/i.test(text)) return 'evidence';
+  if (/(keputusan|decision|opsi|rekomendasi)/i.test(text)) return 'decision';
+  if (/(asumsi|assumption)/i.test(text)) return 'assumption';
   if (/(error|bug|risk|risiko|crash|gagal)/i.test(text)) return 'risk';
   if (/(file|pdf|dokumen|gambar|spreadsheet|data)/i.test(text)) return 'source';
   return 'concept';

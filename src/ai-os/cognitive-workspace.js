@@ -1,6 +1,7 @@
 'use strict';
 
 const guards = require('./guards');
+const knowledgeGraph = require('./knowledge-graph');
 
 function createWorkspace(userId, input = {}, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
@@ -21,6 +22,12 @@ function createWorkspace(userId, input = {}, botServices) {
   };
   state.workspaces.push(workspace);
   state.workspaces = guards.pruneListByScore(state.workspaces, guards.DEFAULT_LIMITS.workspaces, scoreWorkspace);
+  const graph = knowledgeGraph.evolveGraphFromText(userId, `Workspace ${workspace.title}. ${workspace.description}`, botServices, {
+    source: 'cognitive-workspace',
+    confidence: 0.68,
+    maxConcepts: 5
+  });
+  if (graph.ok) workspace.graphNodeIds = graph.nodes.map((node) => node.id).slice(0, 40);
   guards.touchState(state);
   guards.persistAsync(botServices);
   return { ok: true, workspace };
@@ -36,7 +43,18 @@ function updateWorkspace(userId, workspaceId, patch = {}, botServices) {
     workspace.title = title;
   }
   if (patch.description !== undefined) workspace.description = guards.sanitizeText(patch.description, 800);
-  if (patch.note) workspace.notes.push(normalizeNote(patch.note));
+  if (patch.note) {
+    const note = normalizeNote(patch.note);
+    workspace.notes.push(note);
+    const graph = knowledgeGraph.evolveGraphFromText(userId, note.text, botServices, {
+      source: 'workspace-note',
+      confidence: 0.64,
+      maxConcepts: 5
+    });
+    if (graph.ok) {
+      workspace.graphNodeIds = [...new Set([...(workspace.graphNodeIds || []), ...graph.nodes.map((node) => node.id)])].slice(-40);
+    }
+  }
   workspace.notes = workspace.notes.slice(-60);
   workspace.updatedAt = guards.nowIso();
   guards.touchState(state);
@@ -49,6 +67,10 @@ function listWorkspaces(userId, botServices, limit = 10) {
   return state.workspaces
     .sort((a, b) => scoreWorkspace(b) - scoreWorkspace(a))
     .slice(0, limit);
+}
+
+function getActiveWorkspace(userId, botServices) {
+  return listWorkspaces(userId, botServices, 1)[0] || null;
 }
 
 function attachGoal(userId, workspaceId, goalId, botServices) {
@@ -77,6 +99,10 @@ function synthesizeNotes(userId, workspaceId, botServices) {
     `Linked workflows: ${workspace.workflowIds.length}`,
     `Linked graph nodes: ${workspace.graphNodeIds.length}`
   ].join('\n');
+}
+
+function addNote(userId, workspaceId, note, botServices) {
+  return updateWorkspace(userId, workspaceId, { note }, botServices);
 }
 
 function attachToWorkspace(userId, workspaceId, field, value, botServices) {
@@ -123,9 +149,11 @@ module.exports = {
   createWorkspace,
   updateWorkspace,
   listWorkspaces,
+  getActiveWorkspace,
   attachGoal,
   attachWorkflow,
   attachGraphNode,
+  addNote,
   synthesizeNotes,
   resetWorkspaces
 };

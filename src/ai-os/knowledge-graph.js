@@ -12,9 +12,16 @@ function getOrCreateNode(state, userId, label, options = {}) {
   if (node) {
     node.lastSeenAt = ts;
     node.updatedAt = ts;
+    node.seenCount = Number(node.seenCount || 1) + 1;
     node.importance = Math.max(node.importance || 0.45, guards.clamp01(options.importance, 0.45));
     node.confidence = Math.max(node.confidence || 0.5, guards.clamp01(options.confidence, 0.6));
     if (options.summary) node.summary = guards.compactText(`${node.summary || ''} ${options.summary}`, 400);
+    if (options.evolutionNote) {
+      node.evolution = guards.safeArray(node.evolution).concat({
+        note: guards.compactText(options.evolutionNote, 220),
+        at: ts
+      }).slice(-8);
+    }
     return node;
   }
 
@@ -27,12 +34,76 @@ function getOrCreateNode(state, userId, label, options = {}) {
     importance: guards.clamp01(options.importance, guards.importanceFromText(cleanLabel, 'cognitive_graph')),
     confidence: guards.clamp01(options.confidence, 0.62),
     source: guards.compactText(options.source || 'knowledge-graph', 80),
+    seenCount: 1,
+    evolution: options.evolutionNote
+      ? [{ note: guards.compactText(options.evolutionNote, 220), at: ts }]
+      : [],
     createdAt: ts,
     updatedAt: ts,
     lastSeenAt: ts
   };
   state.graph.nodes.push(node);
   return node;
+}
+
+function linkEntities(userId, fromInput, toInput, relationship = 'related_to', botServices, options = {}) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  const from = getOrCreateNode(state, userId, fromInput.label || fromInput, {
+    type: fromInput.type,
+    summary: fromInput.summary || options.evidence,
+    source: options.source || 'link',
+    importance: options.importance || 0.62,
+    confidence: options.confidence || 0.65
+  });
+  const to = getOrCreateNode(state, userId, toInput.label || toInput, {
+    type: toInput.type,
+    summary: toInput.summary || options.evidence,
+    source: options.source || 'link',
+    importance: options.importance || 0.62,
+    confidence: options.confidence || 0.65
+  });
+  const edge = upsertEdge(state, userId, from, to, relationship, {
+    weight: options.weight || 0.62,
+    confidence: options.confidence || 0.65,
+    evidence: options.evidence || ''
+  });
+  pruneGraph(userId, botServices);
+  guards.touchState(state);
+  guards.persistAsync(botServices);
+  return { ok: !!edge, from, to, edge };
+}
+
+function linkGoalWorkflow(userId, goal, workflow, botServices) {
+  return linkEntities(
+    userId,
+    { label: goal.title || goal.id, type: 'goal', summary: goal.description || goal.title },
+    { label: workflow.title || workflow.id, type: 'workflow', summary: workflow.description || workflow.title },
+    'linked_to_goal',
+    botServices,
+    { source: 'goal-workflow-link', evidence: `Goal ${goal.id} linked to workflow ${workflow.id}`, weight: 0.8, confidence: 0.86 }
+  );
+}
+
+function linkMemoryToProject(userId, projectLabel, memory, botServices) {
+  return linkEntities(
+    userId,
+    { label: projectLabel, type: 'project', summary: projectLabel },
+    { label: guards.compactText(memory.content || memory.text || memory.id, 80), type: 'concept', summary: memory.content || memory.text || '' },
+    'belongs_to_project',
+    botServices,
+    { source: 'project-memory-link', evidence: memory.content || memory.text || '', weight: 0.68, confidence: memory.confidence || 0.62 }
+  );
+}
+
+function linkEvidenceToResearch(userId, researchTopic, evidence, botServices) {
+  return linkEntities(
+    userId,
+    { label: evidence.title || evidence.url || 'evidence', type: 'evidence', summary: evidence.text || evidence.url || '' },
+    { label: researchTopic, type: 'topic', summary: researchTopic },
+    'evidence_for',
+    botServices,
+    { source: 'research-evidence-link', evidence: evidence.text || evidence.url || '', weight: 0.72, confidence: evidence.confidence || 0.62 }
+  );
 }
 
 function upsertEdge(state, userId, from, to, relationship, options = {}) {
@@ -123,6 +194,7 @@ function summarizeGraph(userId, botServices, query = '') {
   const state = guards.ensureAIOSState(userId, botServices);
   const graph = searchGraph(userId, query, botServices, 8);
   const labelById = new Map(state.graph.nodes.map((node) => [node.id, node.label]));
+  const typeCounts = countNodeTypes(state.graph.nodes);
   const nodesText = graph.nodes.map((node) => `- ${node.label} (${node.type}, importance ${(node.importance || 0).toFixed(2)})`).join('\n') || '-';
   const edgesText = graph.edges.map((edge) => {
     return `- ${labelById.get(edge.from) || edge.from} ${edge.relationship} ${labelById.get(edge.to) || edge.to}`;
@@ -130,6 +202,8 @@ function summarizeGraph(userId, botServices, query = '') {
   return {
     nodeCount: state.graph.nodes.length,
     edgeCount: state.graph.edges.length,
+    typeCounts,
+    typeSummary: Object.entries(typeCounts).map(([type, count]) => `${type}:${count}`).join(', ') || '-',
     nodesText,
     edgesText,
     nodes: graph.nodes,
@@ -161,6 +235,32 @@ function pruneGraph(userId, botServices) {
   };
 }
 
+function cleanupStaleGraph(userId, botServices, staleDays = 150) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000;
+  const beforeNodes = state.graph.nodes.length;
+  state.graph.nodes = state.graph.nodes.filter((node) => {
+    const seen = Date.parse(node.lastSeenAt || node.updatedAt || node.createdAt || 0);
+    return (node.importance || 0) >= 0.72 || !seen || seen >= cutoff;
+  });
+  const valid = new Set(state.graph.nodes.map((node) => node.id));
+  const beforeEdges = state.graph.edges.length;
+  state.graph.edges = state.graph.edges.filter((edge) => valid.has(edge.from) && valid.has(edge.to));
+  guards.touchState(state);
+  guards.persistAsync(botServices);
+  return {
+    removedNodes: beforeNodes - state.graph.nodes.length,
+    removedEdges: beforeEdges - state.graph.edges.length
+  };
+}
+
+function countNodeTypes(nodes = []) {
+  return guards.safeArray(nodes).reduce((acc, node) => {
+    acc[node.type || 'concept'] = (acc[node.type || 'concept'] || 0) + 1;
+    return acc;
+  }, {});
+}
+
 function getGraphStats(userId, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   return {
@@ -184,9 +284,15 @@ module.exports = {
   getOrCreateNode,
   upsertEdge,
   evolveGraphFromText,
+  linkEntities,
+  linkGoalWorkflow,
+  linkMemoryToProject,
+  linkEvidenceToResearch,
   searchGraph,
   summarizeGraph,
   pruneGraph,
+  cleanupStaleGraph,
+  countNodeTypes,
   getGraphStats,
   resetGraph
 };
