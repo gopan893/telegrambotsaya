@@ -761,6 +761,26 @@ function getModePrompt(mode) {
     return 'Fokus system analysis: evaluasi arsitektur, bottleneck, stability, observability, security, dan scalability.';
   }
 
+  if (activeMode === 'document-analysis' || activeMode === 'dokumen') {
+    return 'Fokus document analysis: baca file, ringkas isi, ambil poin penting, bedakan fakta/inferensi, dan jawab berbasis citation.';
+  }
+
+  if (activeMode === 'visual-analysis' || activeMode === 'visual' || activeMode === 'gambar') {
+    return 'Fokus visual analysis: jelaskan elemen visual, batasan pembacaan gambar, dan jangan menebak detail yang tidak terlihat.';
+  }
+
+  if (activeMode === 'data-understanding' || activeMode === 'data' || activeMode === 'spreadsheet') {
+    return 'Fokus data understanding: baca tabel, pola, nilai kosong, insight numerik, batasan sampling, dan risiko salah interpretasi.';
+  }
+
+  if (activeMode === 'cross-modal' || activeMode === 'cross-modal-reasoning' || activeMode === 'multimodal') {
+    return 'Fokus cross-modal reasoning: gabungkan teks, file, gambar, dan data; cari konsistensi antar sumber dan jawab berbasis bukti.';
+  }
+
+  if (activeMode === 'research-file' || activeMode === 'riset-file') {
+    return 'Fokus research file: validasi isi dokumen, ekstrak evidence, sebutkan source/citation, confidence, dan keterbatasan.';
+  }
+
   if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
@@ -1212,6 +1232,23 @@ async function sendPhotoUrl(chatId, photoUrl, caption = '', extra = {}) {
     console.error('Send photo URL error:', e.response?.data || e.message);
     return false;
   }
+}
+
+async function downloadTelegramFile(fileId) {
+  const fileInfo = await telegramPost('getFile', { file_id: fileId });
+  const filePath = fileInfo.data?.result?.file_path;
+
+  if (!filePath) {
+    throw new Error('Telegram file_path tidak tersedia.');
+  }
+
+  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+  const fileRes = await axios.get(fileUrl, {
+    responseType: 'arraybuffer',
+    timeout: 30000
+  });
+
+  return Buffer.from(fileRes.data);
 }
 
 async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = null) {
@@ -3140,11 +3177,25 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     strategic: 'strategis',
     'strategic-planning': 'strategis',
     'system-analysis': 'system-analysis',
-    'analisis-sistem': 'system-analysis'
+    'analisis-sistem': 'system-analysis',
+    document: 'document-analysis',
+    dokumen: 'document-analysis',
+    'document-analysis': 'document-analysis',
+    visual: 'visual-analysis',
+    gambar: 'visual-analysis',
+    'visual-analysis': 'visual-analysis',
+    data: 'data-understanding',
+    spreadsheet: 'data-understanding',
+    'data-understanding': 'data-understanding',
+    multimodal: 'cross-modal',
+    'cross-modal-reasoning': 'cross-modal',
+    'cross-modal': 'cross-modal',
+    'research-file': 'research-file',
+    'riset-file': 'research-file'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     await persist();
 
@@ -3156,7 +3207,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3382,10 +3433,11 @@ async function handleDocumentSmart(chatId, userId, msg) {
   const fileName = String(doc.file_name || 'file').toLowerCase();
   const mime = String(doc.mime_type || '');
 
-  const fileInfo = await telegramPost('getFile', { file_id: doc.file_id });
-  const filePath = fileInfo.data?.result?.file_path;
-
-  if (!filePath) {
+  let buffer;
+  try {
+    buffer = await downloadTelegramFile(doc.file_id);
+  } catch (err) {
+    console.error('Document download error:', err.message);
     await safeSendMessage(
       chatId,
       'Gagal mengambil file dari Telegram.',
@@ -3393,14 +3445,6 @@ async function handleDocumentSmart(chatId, userId, msg) {
     );
     return true;
   }
-
-  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
-  const fileRes = await axios.get(fileUrl, {
-    responseType: 'arraybuffer',
-    timeout: 30000
-  });
-
-  const buffer = Buffer.from(fileRes.data);
 
   let text = '';
 
@@ -3505,7 +3549,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file
 /alias nama_alias = /command
 /riwayat kata
 
@@ -4449,6 +4493,8 @@ const userId = normalizeId(msg.from.id);
 
 await withUserActionLock(userId, async () => {
   const text = String(msg.text || '').trim();
+  const captionText = String(msg.caption || '').trim();
+  const userText = text || captionText || ((msg.photo || msg.document || msg.voice) ? 'Analisis attachment ini.' : '');
   const cmd = getCommandBase(text);
   const args = getCommandArgs(text);
 
@@ -4478,11 +4524,11 @@ await withUserActionLock(userId, async () => {
     userId,
     chatId,
     role: 'user',
-    text: text || msg.caption || '',
+    text: userText,
     timestamp: nowMs()
   });
 
-  updateUserTags(u, text || msg.caption || '');
+  updateUserTags(u, userText);
 
   const modAction = moderationCheckIncoming(msg);
   if (modAction?.type === 'delete') {
@@ -4493,11 +4539,6 @@ await withUserActionLock(userId, async () => {
   if (modAction?.type === 'welcome') {
     await safeSendMessage(chatId, modAction.text);
     return;
-  }
-
-  if (msg.document) {
-    const handledDoc = await handleDocumentSmart(chatId, userId, msg);
-    if (handledDoc) return;
   }
 
   const resolvedCmd = resolveAlias(userId, cmd);
@@ -4557,7 +4598,7 @@ await withUserActionLock(userId, async () => {
     chatId,
     userId,
     msg,
-    text,
+    text: userText,
     cmd: resolvedCmd,
     args,
     bot: {
@@ -4588,7 +4629,7 @@ await withUserActionLock(userId, async () => {
   }
 
   // Salurkan ke modul Autonomous AI Engine baru
-  const autonomousResult = await autonomousEngine.processMessage(userId, chatId, text, msg, {
+  const autonomousResult = await autonomousEngine.processMessage(userId, chatId, userText, msg, {
     telegramPost,
     safeSendMessage,
     sendChunkedMessage,
@@ -4613,6 +4654,7 @@ await withUserActionLock(userId, async () => {
     calculate,
     getCurrentTime,
     getCurrentDate,
+    downloadFile: downloadTelegramFile,
     shortMemory
   });
 

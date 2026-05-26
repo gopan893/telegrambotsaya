@@ -161,6 +161,46 @@ class MemoryAgent {
     }
   }
 
+  indexFileContext(traceId, userId, fileId, fileContext, botServices) {
+    const { ensureUser, persist } = botServices;
+    const u = ensureUser(userId);
+    if (!u.fileIndex) u.fileIndex = [];
+
+    const existingIndex = u.fileIndex.findIndex(item => item.fileId === fileId);
+    const indexEntry = {
+      fileId,
+      fileName: fileContext.fileName,
+      contentType: fileContext.contentType,
+      semanticTags: fileContext.semanticTags || [],
+      keyPoints: (fileContext.keyPoints || []).slice(0, 5),
+      sourceAttribution: (fileContext.sourceAttribution || []).slice(0, 5),
+      confidence: fileContext.confidence || 0.5,
+      hash: fileContext.hash || null,
+      indexedAt: Date.now()
+    };
+
+    if (existingIndex >= 0) {
+      u.fileIndex[existingIndex] = indexEntry;
+    } else {
+      u.fileIndex.push(indexEntry);
+    }
+
+    if (u.fileIndex.length > 12) u.fileIndex.shift();
+
+    if (typeof persist === 'function') {
+      const maybePromise = persist();
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch(err => observability.recordErrorPattern('file_index_persist', err));
+      }
+    }
+
+    observability.logEvent(traceId, 'MemoryAgent', 'FILE_CONTEXT_INDEXED', {
+      fileName: fileContext.fileName,
+      contentType: fileContext.contentType,
+      confidence: fileContext.confidence
+    });
+  }
+
   /**
    * Mengecek apakah file sudah pernah diparsing (deduplication)
    */
@@ -168,6 +208,15 @@ class MemoryAgent {
     const { ensureUser } = botServices;
     const u = ensureUser(userId);
     return (u.fileMemory && u.fileMemory[fileId]) || null;
+  }
+
+  getRecentFileContexts(userId, botServices, limit = 3) {
+    const { ensureUser } = botServices;
+    const u = ensureUser(userId);
+    const fileMemory = u.fileMemory || {};
+    return Object.values(fileMemory)
+      .sort((a, b) => (b.cachedAt || b.extractedAt || 0) - (a.cachedAt || a.extractedAt || 0))
+      .slice(0, limit);
   }
 
   /**

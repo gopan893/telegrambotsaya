@@ -1,7 +1,7 @@
 'use strict';
 
 const observability = require('../agents/observability');
-const { chunkText } = require('./file-handler');
+const { chunkText, createSourceCitations, scoreTextRelevance } = require('./file-handler');
 
 /**
  * Document Parser (Phase 7)
@@ -73,6 +73,65 @@ function extractKeyPoints(text, maxPoints = 8) {
   return scored.slice(0, maxPoints).map(s => s.text);
 }
 
+function extractFactsAndInferences(text, maxItems = 8) {
+  const sentences = String(text || '')
+    .split(/[.\n!?]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 20 && s.length < 500);
+
+  const facts = [];
+  const inferences = [];
+
+  for (const sentence of sentences) {
+    const lower = sentence.toLowerCase();
+    if (/\d/.test(sentence) || lower.includes('adalah') || lower.includes('terdiri dari') || lower.includes('hasil')) {
+      facts.push(sentence);
+    } else if (lower.includes('mungkin') || lower.includes('kemungkinan') || lower.includes('dapat') || lower.includes('sebaiknya')) {
+      inferences.push(sentence);
+    }
+    if (facts.length >= maxItems && inferences.length >= maxItems) break;
+  }
+
+  return {
+    facts: facts.slice(0, maxItems),
+    inferences: inferences.slice(0, maxItems)
+  };
+}
+
+function buildDocumentAnalysis(traceId, rawText, fileName, query = '') {
+  const text = String(rawText || '');
+  const chunks = chunkText(text);
+  const keyPoints = extractKeyPoints(text);
+  const extracted = extractFactsAndInferences(text);
+  const citations = createSourceCitations(fileName, chunks.slice(0, 6));
+  const readable = text.trim().length > 40 && !text.startsWith('[FALLBACK]');
+  const relevance = scoreTextRelevance(query, text);
+  const confidence = readable ? Math.max(0.45, Math.min(0.92, 0.55 + relevance * 0.35)) : 0.22;
+  const warnings = [];
+
+  if (!readable) warnings.push('Dokumen tidak terbaca penuh atau parser memakai fallback.');
+  if (chunks.length > 6) warnings.push('Dokumen panjang; hanya chunk paling relevan yang dimasukkan ke prompt.');
+  if (text.length < 120) warnings.push('Konten dokumen sangat pendek, confidence analisis terbatas.');
+
+  observability.logEvent(traceId, 'DocumentParser', 'DOCUMENT_ANALYSIS_BUILT', {
+    fileName,
+    chunks: chunks.length,
+    confidence,
+    warningCount: warnings.length
+  });
+
+  return {
+    keyPoints,
+    facts: extracted.facts,
+    inferences: extracted.inferences,
+    citations,
+    confidence,
+    evidenceScore: Math.max(0.2, Math.min(1, (keyPoints.length / 8) * 0.4 + confidence * 0.6)),
+    limitations: warnings.join(' ') || null,
+    warnings
+  };
+}
+
 /**
  * Membuat ringkasan terstruktur dari dokumen
  */
@@ -102,5 +161,7 @@ module.exports = {
   parsePDF,
   parsePlainDocument,
   extractKeyPoints,
+  extractFactsAndInferences,
+  buildDocumentAnalysis,
   summarizeDocument
 };

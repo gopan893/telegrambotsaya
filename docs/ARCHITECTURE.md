@@ -341,3 +341,72 @@ Data ini dibatasi agar tidak membengkak di Render free tier.
 ### Hal Penting Untuk Dipelajari
 
 Multi-agent system yang baik bukan berarti semua agent selalu aktif. Prinsip utamanya adalah routing selektif: aktifkan agent tambahan hanya saat nilai analisisnya lebih besar dari biaya latency, token, dan kompleksitas.
+
+## Tahap 7: Multimodal Intelligence System
+
+Tahap 7 mengubah bot dari text-only agent menjadi multimodal assistant yang bisa membaca attachment dan menggabungkannya dengan pesan user, memory, dan reasoning pipeline.
+
+### Alur Multimodal
+
+```text
+INPUT ATTACHMENT
+-> Content Type Detection
+-> Safety + Integrity Check
+-> Parsing / Vision / OCR Fallback
+-> Chunking + Extraction
+-> Semantic Tagging
+-> File Cache + File Memory Index
+-> Cross-Modal Context Builder
+-> Reasoning + Grounded Answer
+-> Verification + Citation Guard
+-> Learning Update
+```
+
+### Modul Multimodal
+
+- `src/multimodal/file-handler.js`: klasifikasi format, size guard, integrity check, chunking, semantic tag, citation, compression, dan hash cache.
+- `src/multimodal/document-parser.js`: parsing PDF/dokumen teks, key point extraction, facts vs inferences, confidence, dan limitation warning.
+- `src/multimodal/image-vision.js`: pipeline vision dengan fallback metadata dan OCR hook ringan.
+- `src/multimodal/data-interpreter.js`: parsing CSV/TSV/Excel/JSON, sample rows, statistik sederhana, empty-value insight, dan data citation.
+- `src/multimodal/cross-modal-engine.js`: ranking file relevan, context merging, evidence scoring, source attribution, citation mismatch guard, dan low-confidence annotation.
+- `src/agents/memory.js`: attachment memory store, recent file context retrieval, dan file index terbatas per user.
+
+### Mode Multimodal
+
+- `/mode document-analysis`: fokus ringkasan, poin penting, Q&A dokumen, fakta/inferensi.
+- `/mode visual-analysis`: fokus gambar, deskripsi visual, OCR fallback, dan batasan pembacaan.
+- `/mode data-understanding`: fokus tabel, pola data, statistik dasar, dan risiko sampling.
+- `/mode cross-modal`: menggabungkan chat + file + memory untuk jawaban terpadu.
+- `/mode research-file`: validasi isi file, evidence, citation, confidence, dan keterbatasan.
+
+### Source Grounding
+
+Jawaban berbasis file diberi konteks:
+
+- `sourceCitations`: rujukan chunk unik seperti `[file:1.1]`, `[image:1.1]`, atau `[data:1.1]`.
+- `sourceAttribution`: label file/chunk untuk laporan sumber.
+- `mergedEvidence`: evidence ringkas yang paling relevan terhadap pertanyaan user.
+- `limitations`: batasan parsing, OCR, truncation, confidence rendah, atau format tidak terbaca.
+
+Jika jawaban membahas file tetapi tidak menyebut sumber, `CrossModalEngine` menambahkan catatan sumber file secara otomatis.
+
+### Trade-off Tahap 7
+
+- Parsing dibatasi ukuran dan jumlah chunk. Trade-off: hemat RAM/token, tetapi dokumen sangat panjang hanya dianalisis dari bagian paling relevan.
+- OCR lokal belum dipasang karena berat untuk Render free tier. Trade-off: gambar tetap bisa diproses dengan vision API jika tersedia, atau fallback metadata jika belum.
+- PDF memakai `pdf-parse` secara lazy. Trade-off: startup tetap cepat, tetapi PDF corrupt atau parser gagal akan diberi limitation.
+- Cache file berbasis hash mengurangi parsing ulang. Trade-off: memory file harus dibatasi agar tidak membengkak.
+- Citation guard memakai heuristic ringan. Trade-off: cepat dan murah, tetapi belum setajam verifier berbasis LLM khusus.
+
+### Risiko Yang Dikurangi
+
+- Prompt injection dari isi dokumen melalui `SafetyAgent.validateFileContent`.
+- File rusak atau salah format melalui integrity check.
+- Halusinasi analisis file melalui source citation dan grounding guard.
+- Parsing ulang file yang sama melalui content hash cache.
+- Memory pollution melalui file index dan semantic memory yang dibatasi.
+- Token berlebih melalui chunk compression dan selective file context.
+
+### Hal Penting Untuk Dipelajari
+
+Multimodal AI yang aman tidak cukup hanya “membaca file”. Sistem harus tahu sumber klaimnya, confidence pembacaan, bagian yang tidak terbaca, dan kapan harus menolak menebak. Alur berpikir yang benar adalah: baca data yang tersedia, pisahkan fakta dari inferensi, beri rujukan, lalu jelaskan batasan.

@@ -52,6 +52,13 @@ function buildLearningGuide() {
     '- Consensus mechanism memakai confidence antar agent agar jawaban final bukan hanya output agent terakhir.',
     '- Collaborative memory menyimpan riwayat workflow kompleks secara terbatas agar bot belajar pola kerja multi-agent tanpa membengkakkan RAM.',
     '- Mode baru `/mode kolaborasi`, `/mode research-intelligence`, `/mode mentor-intelligence`, `/mode strategis`, dan `/mode system-analysis` mengaktifkan routing agent yang lebih kaya.',
+    '- Tahap 7 menambahkan multimodal pipeline: attachment diklasifikasi, dicek aman, diparse, di-chunk, diberi citation, lalu digabung ke context AI.',
+    '- Bot sekarang bisa menangani foto, PDF, dokumen teks, CSV/TSV/Excel, JSON, dan audio dengan fallback transcription.',
+    '- Cross-modal engine menggabungkan pesan user, memory, dan evidence file agar jawaban berbasis sumber, bukan tebakan.',
+    '- File cache memakai hash isi file supaya file yang sama tidak diparse berulang dan RAM/token tetap hemat.',
+    '- File memory index menyimpan insight pendek, semantic tag, confidence, dan source attribution agar dokumen lama bisa dipakai ulang secara selektif.',
+    '- Mode baru `/mode document-analysis`, `/mode visual-analysis`, `/mode data-understanding`, `/mode cross-modal`, dan `/mode research-file` membantu bot memilih cara analisis attachment.',
+    '- Attachment direct tanpa slash command sekarang masuk ke autonomous engine; command lama `/ringkasfile` dan `/tanyafile` tetap dipertahankan.',
     '',
     'Langkah berpikir ringkas:',
     '1. Cari bagian yang paling sering menyebabkan crash.',
@@ -61,8 +68,9 @@ function buildLearningGuide() {
     '5. Tambahkan guard produksi sebelum menambah fitur yang lebih kompleks.',
     '6. Tambahkan learning loop yang bounded agar sistem bisa adaptif tanpa belajar liar.',
     '7. Tambahkan kolaborasi antar agent hanya saat tugas memang butuh banyak perspektif.',
-    '8. Validasi sintaks dan test lokal sebelum deploy.',
-    '9. Commit perubahan per bagian agar mudah dilacak.'
+    '8. Untuk multimodal, mulai dari evidence yang bisa dibaca, beri citation, lalu jelaskan batasan jika confidence rendah.',
+    '9. Validasi sintaks dan test lokal sebelum deploy.',
+    '10. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const observability = require('../agents/observability');
+const { createSourceCitations } = require('./file-handler');
 
 /**
  * Data Interpreter (Phase 7)
@@ -119,6 +120,17 @@ function analyzeDataPatterns(traceId, parsedData) {
     }
   }
 
+  // Cek kolom kosong dan nilai unik untuk insight kualitas data
+  for (const h of headers.slice(0, 12)) {
+    const values = rows.map(r => String(r[h] || '').trim());
+    const emptyCount = values.filter(v => !v).length;
+    const uniqueCount = new Set(values.filter(Boolean)).size;
+    if (emptyCount > 0) insights.push(`Kolom "${h}" memiliki ${emptyCount} nilai kosong.`);
+    if (uniqueCount > 0 && uniqueCount <= Math.max(3, rows.length * 0.15)) {
+      insights.push(`Kolom "${h}" memiliki ${uniqueCount} kategori unik.`);
+    }
+  }
+
   observability.logEvent(traceId, 'DataInterpreter', 'PATTERN_ANALYSIS_COMPLETE', {
     insightCount: insights.length
   });
@@ -132,13 +144,31 @@ function analyzeDataPatterns(traceId, parsedData) {
 function buildDataContext(traceId, parsedData, analysisResult, fileName) {
   const headerStr = (parsedData.headers || []).join(', ');
   const insightStr = (analysisResult.insights || []).join('\n');
+  const sampleRows = (parsedData.rows || [])
+    .slice(0, 5)
+    .map((row, index) => `${index + 1}. ${JSON.stringify(row).slice(0, 350)}`)
+    .join('\n');
+  const content = `Kolom: ${headerStr}\n\nInsight:\n${insightStr}\n\nSample rows:\n${sampleRows || '-'}`;
+  const citations = createSourceCitations(fileName, [content]);
+  const hasRows = (parsedData.rows || []).length > 0;
+  const confidence = hasRows ? (parsedData.truncated ? 0.68 : 0.78) : 0.3;
 
   return {
     contentType: 'spreadsheet',
     fileName: fileName || 'data',
-    primaryContent: `Kolom: ${headerStr}\n\n${insightStr}`,
+    primaryContent: content,
+    chunks: [content],
+    keyPoints: analysisResult.insights || [],
+    sourceCitations: citations,
+    sourceAttribution: citations.map(c => c.label),
+    semanticTags: ['spreadsheet', 'data', 'table'],
+    confidence,
+    evidenceScore: confidence,
+    stats: analysisResult.stats || {},
     rowCount: parsedData.rowCount || 0,
     truncated: parsedData.truncated || false,
+    limitations: parsedData.error || (parsedData.truncated ? 'Data dipotong pada 200 baris agar hemat RAM.' : null),
+    warnings: [parsedData.error, parsedData.truncated ? 'Analisis hanya memakai sebagian baris.' : null].filter(Boolean),
     extractedAt: Date.now()
   };
 }

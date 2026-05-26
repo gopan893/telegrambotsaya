@@ -45,8 +45,20 @@ async function analyzeImage(traceId, imageData, userQuery, botServices) {
     }
   }
 
-  // Fallback: Deskripsi berbasis metadata
-  return generateFallbackDescription(traceId, imageData);
+  // Fallback: Deskripsi berbasis metadata + OCR jika suatu hari tersedia
+  const fallback = generateFallbackDescription(traceId, imageData);
+  if (Buffer.isBuffer(imageData) && userQuery && /teks|tulisan|ocr|baca/i.test(userQuery)) {
+    const ocr = await performOCR(traceId, imageData);
+    if (ocr.success && ocr.text) {
+      fallback.ocrText = ocr.text;
+      fallback.description += `\n\nTeks terdeteksi: ${ocr.text.slice(0, 1000)}`;
+      fallback.confidence = Math.max(fallback.confidence, 0.55);
+      fallback.source = 'OCR_FALLBACK';
+    } else {
+      fallback.limitations = `${fallback.limitations || ''} OCR belum tersedia, jadi teks kecil di gambar mungkin tidak terbaca.`.trim();
+    }
+  }
+  return fallback;
 }
 
 /**
@@ -86,13 +98,31 @@ async function performOCR(traceId, imageBuffer) {
  * Membangun konteks visual untuk digabungkan dengan konteks teks
  */
 function buildVisualContext(analysisResult, fileName) {
+  const limitations = analysisResult.limitations || (analysisResult.confidence < 0.5
+    ? 'Analisis visual confidence rendah; jangan jadikan satu-satunya dasar keputusan.'
+    : null);
   return {
     contentType: 'image',
     fileName: fileName || 'image',
     primaryContent: analysisResult.description || '',
+    chunks: [analysisResult.description || ''].filter(Boolean),
+    keyPoints: [
+      analysisResult.description ? `Deskripsi visual: ${analysisResult.description.slice(0, 220)}` : null,
+      analysisResult.ocrText ? `OCR: ${analysisResult.ocrText.slice(0, 220)}` : null
+    ].filter(Boolean),
+    sourceCitations: [{
+      id: 'image:1',
+      label: `${fileName || 'image'}#visual-analysis`,
+      chunkIndex: 0,
+      preview: String(analysisResult.description || '').slice(0, 220)
+    }],
+    sourceAttribution: [`${fileName || 'image'}#visual-analysis`],
+    semanticTags: ['image', 'visual'],
     confidence: analysisResult.confidence || 0.3,
+    evidenceScore: analysisResult.confidence || 0.3,
     source: analysisResult.source || 'UNKNOWN',
-    limitations: analysisResult.limitations || null,
+    limitations,
+    warnings: limitations ? [limitations] : [],
     extractedAt: Date.now()
   };
 }

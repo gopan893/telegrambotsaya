@@ -32,6 +32,7 @@ const fileHandler = require('../multimodal/file-handler');
 const documentParser = require('../multimodal/document-parser');
 const imageVision = require('../multimodal/image-vision');
 const dataInterpreter = require('../multimodal/data-interpreter');
+const crossModal = require('../multimodal/cross-modal-engine');
 
 /**
  * Deteksi Mode AI (termasuk mode multimodal baru)
@@ -156,8 +157,6 @@ function extractAttachmentInfo(msgObj) {
  * Memproses attachment melalui multimodal pipeline
  */
 async function processAttachment(traceId, userId, attachment, userQuery, botServices) {
-  const { safeSendMessage } = botServices;
-
   // 1. Content Type Detection
   const contentType = fileHandler.classifyContentType(attachment.fileName, attachment.mimeType);
   observability.logEvent(traceId, 'Orchestrator', 'ATTACHMENT_CLASSIFIED', { contentType, fileName: attachment.fileName });
@@ -173,16 +172,15 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
   }
 
   // 3. Cek cache (deduplication: jangan parse ulang file yang sama)
-  const fileId = fileHandler.generateFileId(attachment.fileName, attachment.fileSize);
-  const cached = memory.getCachedFile(userId, fileId, botServices);
+  const initialFileId = fileHandler.generateFileId(attachment.fileName, attachment.fileSize, attachment.fileId || '');
+  const cached = memory.getCachedFile(userId, initialFileId, botServices);
   if (cached) {
-    observability.logEvent(traceId, 'Orchestrator', 'FILE_CACHE_HIT', { fileId });
+    observability.logEvent(traceId, 'Orchestrator', 'FILE_CACHE_HIT', { fileId: initialFileId });
     return { success: true, context: cached, fromCache: true };
   }
 
   // 4. Download file dari Telegram (jika botServices menyediakan fungsi download)
   let fileBuffer = null;
-  let fileText = '';
 
   if (botServices.downloadFile && typeof botServices.downloadFile === 'function') {
     try {
@@ -197,6 +195,36 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
     }
   }
 
+  const integrity = fileBuffer
+    ? fileHandler.inspectFileIntegrity(fileBuffer, contentType, attachment.fileName)
+    : {
+      ok: false,
+      reason: 'NO_FILE_BUFFER',
+      hash: attachment.fileId || null,
+      size: attachment.fileSize || 0
+    };
+  const fileId = fileHandler.generateFileId(attachment.fileName, attachment.fileSize, integrity.hash || attachment.fileId || '');
+
+  if (fileId !== initialFileId) {
+    const cachedByHash = memory.getCachedFile(userId, fileId, botServices);
+    if (cachedByHash) {
+      observability.logEvent(traceId, 'Orchestrator', 'FILE_CACHE_HIT_BY_HASH', { fileId });
+      return { success: true, context: cachedByHash, fromCache: true };
+    }
+  }
+
+  if (fileBuffer && !integrity.ok && ['pdf', 'image'].includes(contentType)) {
+    observability.logEvent(traceId, 'Orchestrator', 'FILE_INTEGRITY_FAILED', {
+      fileName: attachment.fileName,
+      reason: integrity.reason
+    });
+    return {
+      success: false,
+      context: null,
+      errorMessage: `⚠️ File tidak lolos integrity check (${integrity.reason}). Coba kirim ulang file yang tidak rusak.`
+    };
+  }
+
   // 5. Parsing berdasarkan tipe konten (Lazy Loading)
   let fileContext = null;
 
@@ -204,6 +232,8 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
     case 'image': {
       const analysis = await imageVision.analyzeImage(traceId, fileBuffer, userQuery, botServices);
       fileContext = imageVision.buildVisualContext(analysis, attachment.fileName);
+      fileContext.integrity = integrity;
+      fileContext.hash = integrity.hash;
       break;
     }
 
@@ -218,11 +248,21 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
           errorMessage: `🛡️ File ditolak: Konten berbahaya terdeteksi di dalam dokumen (${fileSafety.threats.join(', ')}).`
         };
       }
-      const summary = documentParser.summarizeDocument(traceId, rawText, attachment.fileName);
-      fileContext = fileHandler.buildFileContext(traceId, 'pdf', rawText, attachment.fileName);
-      fileContext.keyPoints = summary.keyPoints;
+      const analysis = documentParser.buildDocumentAnalysis(traceId, rawText, attachment.fileName, userQuery);
+      fileContext = fileHandler.buildFileContext(traceId, 'pdf', rawText, attachment.fileName, {
+        query: userQuery,
+        integrity,
+        hash: integrity.hash,
+        keyPoints: analysis.keyPoints,
+        facts: analysis.facts,
+        inferences: analysis.inferences,
+        confidence: analysis.confidence,
+        evidenceScore: analysis.evidenceScore,
+        limitations: analysis.limitations,
+        warnings: analysis.warnings
+      });
       // Simpan insight ke semantic memory
-      memory.learnFromFile(traceId, userId, summary.keyPoints, attachment.fileName, botServices);
+      memory.learnFromFile(traceId, userId, analysis.keyPoints, attachment.fileName, botServices);
       break;
     }
 
@@ -236,10 +276,20 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
           errorMessage: `🛡️ File ditolak: Konten berbahaya terdeteksi (${fileSafety.threats.join(', ')}).`
         };
       }
-      const summary = documentParser.summarizeDocument(traceId, rawText, attachment.fileName);
-      fileContext = fileHandler.buildFileContext(traceId, 'document', rawText, attachment.fileName);
-      fileContext.keyPoints = summary.keyPoints;
-      memory.learnFromFile(traceId, userId, summary.keyPoints, attachment.fileName, botServices);
+      const analysis = documentParser.buildDocumentAnalysis(traceId, rawText, attachment.fileName, userQuery);
+      fileContext = fileHandler.buildFileContext(traceId, 'document', rawText, attachment.fileName, {
+        query: userQuery,
+        integrity,
+        hash: integrity.hash,
+        keyPoints: analysis.keyPoints,
+        facts: analysis.facts,
+        inferences: analysis.inferences,
+        confidence: analysis.confidence,
+        evidenceScore: analysis.evidenceScore,
+        limitations: analysis.limitations,
+        warnings: analysis.warnings
+      });
+      memory.learnFromFile(traceId, userId, analysis.keyPoints, attachment.fileName, botServices);
       break;
     }
 
@@ -254,6 +304,8 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
       }
       const analysis = dataInterpreter.analyzeDataPatterns(traceId, parsedData);
       fileContext = dataInterpreter.buildDataContext(traceId, parsedData, analysis, attachment.fileName);
+      fileContext.integrity = integrity;
+      fileContext.hash = integrity.hash;
       break;
     }
 
@@ -262,6 +314,36 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
       const parsedData = dataInterpreter.parseJSON(rawText);
       const analysis = dataInterpreter.analyzeDataPatterns(traceId, parsedData);
       fileContext = dataInterpreter.buildDataContext(traceId, parsedData, analysis, attachment.fileName);
+      fileContext.contentType = 'json';
+      fileContext.semanticTags = [...new Set([...(fileContext.semanticTags || []), 'json', 'structured-data'])];
+      fileContext.integrity = integrity;
+      fileContext.hash = integrity.hash;
+      if (parsedData.rawPreview) {
+        fileContext.primaryContent += `\n\nRaw JSON preview:\n${parsedData.rawPreview}`;
+      }
+      break;
+    }
+
+    case 'audio': {
+      let transcript = '';
+      if (typeof botServices.transcribeAudio === 'function' && fileBuffer) {
+        try {
+          transcript = await botServices.transcribeAudio(fileBuffer, attachment);
+        } catch (err) {
+          observability.logEvent(traceId, 'Orchestrator', 'AUDIO_TRANSCRIPTION_FAILED', { error: err.message });
+        }
+      }
+      const rawText = transcript || 'Audio diterima, tetapi transcription belum dikonfigurasi.';
+      fileContext = fileHandler.buildFileContext(traceId, 'audio', rawText, attachment.fileName, {
+        query: userQuery,
+        integrity,
+        hash: integrity.hash,
+        confidence: transcript ? 0.7 : 0.25,
+        evidenceScore: transcript ? 0.65 : 0.2,
+        keyPoints: transcript ? [`Transkrip audio: ${transcript.slice(0, 240)}`] : [],
+        limitations: transcript ? null : 'Audio transcription belum dikonfigurasi, jadi isi audio belum bisa dianalisis penuh.',
+        warnings: transcript ? [] : ['Transcription tidak tersedia.']
+      });
       break;
     }
 
@@ -269,14 +351,18 @@ async function processAttachment(traceId, userId, attachment, userQuery, botServ
       return {
         success: false,
         context: null,
-        errorMessage: `⚠️ Format file "${contentType}" belum didukung. Format yang didukung: gambar, PDF, dokumen teks, CSV, Excel, JSON.`
+        errorMessage: `⚠️ Format file "${contentType}" belum didukung. Format yang didukung: gambar, PDF, dokumen teks, CSV, Excel, JSON, dan audio dengan transcriber.`
       };
     }
   }
 
   // 6. Cache hasil parsing
   if (fileContext) {
+    fileContext.fileId = fileId;
+    fileContext.integrity = fileContext.integrity || integrity;
+    fileContext.hash = fileContext.hash || integrity.hash;
     memory.cacheFileResult(userId, fileId, fileContext, botServices);
+    memory.indexFileContext(traceId, userId, fileId, fileContext, botServices);
   }
 
   return { success: true, context: fileContext, fromCache: false };
@@ -333,7 +419,21 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       history: memory.compressContext(traceId, botServices.shortMemory || []),
       fileContext // Cross-modal: gabungkan konteks file dengan konteks teks
     };
+    const recentFileContexts = hasAttachment
+      ? [
+        fileContext,
+        ...memory.getRecentFileContexts(userId, botServices, 3)
+          .filter(ctx => ctx && ctx.fileId !== fileContext?.fileId)
+      ].filter(Boolean)
+      : memory.getRecentFileContexts(userId, botServices, 3);
+    const crossModalContext = crossModal.buildCrossModalContext(traceId, userMessage, context, recentFileContexts);
+    context.crossModalContext = crossModalContext;
     messageBus.updateContext(traceId, 'sharedMemory', context.summary);
+    if (crossModalContext.hasFiles) {
+      messageBus.updateContext(traceId, 'multimodalEvidence', crossModalContext.mergedEvidence);
+      messageBus.updateContext(traceId, 'sourceCitations', crossModalContext.sourceCitations);
+      messageBus.recordMemoryAccess(traceId, 'MemoryAgent', 'attachment_memory', 'cross_modal_load', crossModalContext.evidenceScore);
+    }
     messageBus.recordMemoryAccess(traceId, 'MemoryAgent', 'semantic+short_term', 'selective_load', context.summary ? 0.7 : 0.4);
 
     // 4. Adaptive Intelligence Modifiers
@@ -452,6 +552,10 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
         contextWithMods.fileContent = fileContext.primaryContent;
         contextWithMods.fileName = fileContext.fileName;
         contextWithMods.fileContentType = fileContext.contentType;
+        contextWithMods.fileConfidence = crossModalContext.confidence;
+        contextWithMods.fileSourceCitations = (crossModalContext.sourceAttribution || []).join('\n');
+        contextWithMods.fileGrounding = crossModalContext.mergedEvidence;
+        contextWithMods.multimodalLimitations = (crossModalContext.limitations || []).join('\n');
         if (fileContext.keyPoints) {
           contextWithMods.fileKeyPoints = fileContext.keyPoints.join('\n');
         }
@@ -507,7 +611,9 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     const verification = verifier.verify(traceId, intent, evaluation.finalAnswer, evaluation.qualityScore);
 
     // 12. Output Sanitization
-    const sanitizedAnswer = safety.sanitizeOutput(traceId, verification.finalAnswer);
+    const groundedAnswer = crossModal.applyGroundingGuard(traceId, verification.finalAnswer, context.crossModalContext);
+    if (groundedAnswer.annotation && !verification.annotation) verification.annotation = groundedAnswer.annotation;
+    const sanitizedAnswer = safety.sanitizeOutput(traceId, groundedAnswer.answer);
     const workflowReport = agentCoordinator.finalizeWorkflow(
       traceId,
       delegationPlan,

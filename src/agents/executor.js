@@ -210,9 +210,21 @@ ${activeMode || 'Standard'}
 [KONTEKS FILE JIKA ADA]
 Nama File: ${context.fileName || '-'}
 Tipe File: ${context.fileContentType || '-'}
+Confidence File: ${context.fileConfidence ?? '-'}
 Isi Utama: ${context.fileContent || '-'}
 Poin Penting: ${context.fileKeyPoints || '-'}
+Evidence Terpilih:
+${context.fileGrounding || '-'}
+Source / Citation:
+${context.fileSourceCitations || '-'}
 Batasan: ${context.fileLimitations || '-'}
+Batasan Multimodal: ${context.multimodalLimitations || '-'}
+
+[ATURAN GROUNDING FILE]
+- Untuk klaim tentang file, gambar, tabel, atau dokumen, gunakan evidence di atas.
+- Jika source citation tersedia, sebutkan rujukan seperti [file:1.1], [image:1.1], [data:1.1], atau sumber yang diberikan.
+- Bedakan fakta dari isi file, inferensi Anda, dan bagian yang confidence-nya rendah.
+- Jika file tidak terbaca jelas, katakan batasannya daripada menebak.
 
 [PESAN USER]
 ${userMessage}

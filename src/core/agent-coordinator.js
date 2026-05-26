@@ -16,13 +16,13 @@ const AGENT_REGISTRY = {
     role: 'research',
     priority: 70,
     capabilities: ['evidence_collection', 'source_validation', 'confidence_scoring'],
-    modes: ['Research Intelligence', 'Collaborative Thinking', 'System Analysis']
+    modes: ['Research Intelligence', 'Collaborative Thinking', 'System Analysis', 'Research File', 'Cross-Modal Reasoning']
   },
   ReasoningAgent: {
     role: 'reasoning',
     priority: 80,
     capabilities: ['critical_thinking', 'assumption_check', 'tradeoff_analysis'],
-    modes: ['Collaborative Thinking', 'Research Intelligence', 'System Analysis', 'Strategic Planning']
+    modes: ['Collaborative Thinking', 'Research Intelligence', 'System Analysis', 'Strategic Planning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Cross-Modal Reasoning']
   },
   VerifierAgent: {
     role: 'verifier',
@@ -125,6 +125,11 @@ class AgentCoordinator {
     if (['strategis', 'strategic', 'strategic-planning'].includes(mode)) return 'Strategic Planning';
     if (['system-analysis', 'analisis-sistem', 'arsitektur'].includes(mode)) return 'System Analysis';
     if (['deep', 'deep-analysis', 'kritis', 'critical'].includes(mode)) return 'Deep Analysis';
+    if (['document-analysis', 'document', 'dokumen'].includes(mode)) return 'Document Analysis';
+    if (['visual-analysis', 'visual', 'gambar'].includes(mode)) return 'Visual Analysis';
+    if (['data-understanding', 'data', 'spreadsheet', 'tabel'].includes(mode)) return 'Data Understanding';
+    if (['cross-modal', 'cross-modal-reasoning', 'multimodal'].includes(mode)) return 'Cross-Modal Reasoning';
+    if (['research-file', 'riset-file'].includes(mode)) return 'Research File';
     return null;
   }
 
@@ -141,8 +146,10 @@ class AgentCoordinator {
     if (modeFromUser) return modeFromUser;
     if (currentMode && currentMode !== 'Standard') return currentMode;
     if (hasAttachment) {
-      if (attachmentType === 'pdf' || attachmentType === 'document') return 'System Analysis';
-      return 'Collaborative Thinking';
+      if (attachmentType === 'pdf' || attachmentType === 'document') return 'Document Analysis';
+      if (attachmentType === 'image') return 'Visual Analysis';
+      if (attachmentType === 'spreadsheet' || attachmentType === 'json') return 'Data Understanding';
+      return 'Cross-Modal Reasoning';
     }
 
     if (containsAny(userMessage, ['kolaborasi', 'diskusikan', 'beberapa sudut pandang', 'multi perspektif', 'pro kontra'])) {
@@ -186,10 +193,10 @@ class AgentCoordinator {
     }
 
     const collaborationAgents = [];
-    if (['Collaborative Thinking', 'Research Intelligence', 'Deep Analysis', 'System Analysis', 'Strategic Planning', 'Cross-Modal Reasoning'].includes(mode)) {
+    if (['Collaborative Thinking', 'Research Intelligence', 'Deep Analysis', 'System Analysis', 'Strategic Planning', 'Cross-Modal Reasoning', 'Document Analysis', 'Visual Analysis', 'Data Understanding', 'Research File'].includes(mode)) {
       collaborationAgents.push('ResearchAgent', 'ReasoningAgent');
     }
-    if (mode === 'System Analysis') {
+    if (mode === 'System Analysis' || mode === 'Data Understanding' || mode === 'Cross-Modal Reasoning') {
       collaborationAgents.push('ToolRouterAgent');
     }
     if (collaborationAgents.length > 0) {
