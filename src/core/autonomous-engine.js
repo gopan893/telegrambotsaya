@@ -42,6 +42,12 @@ const crossModal = require('../multimodal/cross-modal-engine');
 function detectAIMode(userMessage, intent, hasAttachment, attachmentType) {
   const lower = (userMessage || '').toLowerCase();
 
+  if (lower.includes('health watch') || lower.includes('pantau kesehatan sistem')) return 'Health Watch';
+  if (lower.includes('benchmark') || lower.includes('uji regresi')) return 'Benchmark';
+  if (lower.includes('incident response') || lower.includes('respons insiden')) return 'Incident Response';
+  if (lower.includes('cost optimization') || lower.includes('optimasi biaya')) return 'Cost Optimization';
+  if (lower.includes('continuous improvement') || lower.includes('perbaikan berkelanjutan')) return 'Continuous Improvement';
+
   if (lower.includes('strategic thinking') || lower.includes('strategi jangka panjang')) return 'Strategic Thinking';
   if (lower.includes('personal intelligence') || lower.includes('pola belajar saya')) return 'Personal Intelligence';
   if (lower.includes('deep research os') || lower.includes('riset os')) return 'Deep Research OS';
@@ -123,7 +129,8 @@ function getRuntimeStatus() {
         'CognitiveWorkspace',
         'LearningEvolution',
         'CognitiveAnalytics',
-        'AiosGuards'
+        'AiosGuards',
+        'AIOperationsLayer'
       ]
     },
     issues: health.issues,

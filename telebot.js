@@ -17,6 +17,7 @@ const autonomousEngine = require('./src/core/autonomous-engine');
 const agentLearning = require('./src/agents/learning');
 const selfImprovementAgent = require('./src/agents/self-improvement');
 const aiOS = require('./src/ai-os');
+const opsSystem = require('./src/ops');
 
 
 let scheduleLib = null;
@@ -822,6 +823,26 @@ function getModePrompt(mode) {
     return 'Fokus AI OS meta reasoning: evaluasi strategi berpikir, asumsi, kualitas insight, dan alasan memilih pendekatan.';
   }
 
+  if (activeMode === 'health-watch') {
+    return 'Fokus AI Operations health-watch: pantau stabilitas, health, latency, error, queue, provider, dan risiko Render free tier.';
+  }
+
+  if (activeMode === 'benchmark') {
+    return 'Fokus AI Operations benchmark: ukur kualitas, regression risk, latency, safety, dan bandingkan hasil secara ringkas.';
+  }
+
+  if (activeMode === 'incident-response') {
+    return 'Fokus incident response: klasifikasikan masalah, cari root cause, beri recovery plan aman, dan hindari aksi destruktif.';
+  }
+
+  if (activeMode === 'cost-optimization') {
+    return 'Fokus cost optimization: hemat token, cache, context compression, latency, RAM, dan trade-off kualitas vs efisiensi.';
+  }
+
+  if (activeMode === 'continuous-improvement') {
+    return 'Fokus continuous improvement: evaluasi telemetry, benchmark, lesson operasional, tuning, dan pencegahan regresi.';
+  }
+
   if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
@@ -1158,14 +1179,21 @@ async function saveData(key, data) {
 }
 
 async function saveAll() {
+  const safeShortMemory = Array.isArray(shortMemory) ? shortMemory : [];
+  const safeKnowledgeBase = Array.isArray(knowledgeBase) ? knowledgeBase : [];
+  const safeAbLog = Array.isArray(abLog) ? abLog : [];
+  const safeChatHistory = Array.isArray(chatHistory) ? chatHistory : [];
+  const safeLessons = lessons && typeof lessons === 'object' ? lessons : { rules: [] };
+  if (!Array.isArray(safeLessons.rules)) safeLessons.rules = [];
+
   await Promise.all([
-    saveData('memory', shortMemory.slice(-botSettings.maxShortMemory)),
-    saveData('lessons', lessons),
+    saveData('memory', safeShortMemory.slice(-botSettings.maxShortMemory)),
+    saveData('lessons', safeLessons),
     saveData('user_memory', userMemory),
-    saveData('ab_log', abLog.slice(-botSettings.maxAbLog)),
-    saveData('knowledge', knowledgeBase.slice(-botSettings.maxKnowledge)),
+    saveData('ab_log', safeAbLog.slice(-botSettings.maxAbLog)),
+    saveData('knowledge', safeKnowledgeBase.slice(-botSettings.maxKnowledge)),
     saveData('bot_settings', botSettings),
-    saveData('chat_history', chatHistory.slice(-400))
+    saveData('chat_history', safeChatHistory.slice(-400))
   ]);
 }
 
@@ -1202,6 +1230,14 @@ async function loadAllMemories() {
   knowledgeBase = await loadData('knowledge', []);
   chatHistory = await loadData('chat_history', []);
   botSettings = { ...botSettings, ...(await loadData('bot_settings', {})) };
+
+  if (!Array.isArray(shortMemory)) shortMemory = [];
+  if (!lessons || typeof lessons !== 'object') lessons = { rules: [] };
+  if (!Array.isArray(lessons.rules)) lessons.rules = [];
+  if (!userMemory || typeof userMemory !== 'object' || Array.isArray(userMemory)) userMemory = {};
+  if (!Array.isArray(abLog)) abLog = [];
+  if (!Array.isArray(knowledgeBase)) knowledgeBase = [];
+  if (!Array.isArray(chatHistory)) chatHistory = [];
 
   console.log(`📂 Memori: ${shortMemory.length} chat, ${lessons.rules.length} aturan, ${knowledgeBase.length} pengetahuan`);
 }
@@ -1664,13 +1700,26 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     allowRawJson = false
   } = opts;
 
+  const opsServices = getOpsServices();
+  const promptTokens = opsSystem.tokenAnalyzer.estimateTokens(`${systemPrompt}\n${userPrompt}`);
+  const aiStart = nowMs();
   const cacheKey = getCacheKey(userId, question);
   const cached = aiCache.get(cacheKey);
 
   if (allowCache && cached && nowMs() - cached.ts < 2 * 60 * 1000) {
-    return allowRawJson
+    const answer = allowRawJson
       ? String(cached.answer || '').trim()
       : sanitizeOutgoingText(cached.answer);
+    opsSystem.telemetry.recordAIUsage({
+      provider: 'cache',
+      model: 'answer-cache',
+      promptTokens: 0,
+      completionTokens: opsSystem.tokenAnalyzer.estimateTokens(answer),
+      latencyMs: nowMs() - aiStart,
+      success: true,
+      cached: true
+    }, opsServices);
+    return answer;
   }
 
   const modelOrder = chooseProviderOrder({
@@ -1686,9 +1735,19 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
   for (const m of modelOrder) {
     if (!aiCircuitBreaker.canRun(m)) {
       lastErr = new Error(`${m} circuit open`);
+      opsSystem.telemetry.recordAIUsage({
+        provider: m,
+        model: m,
+        promptTokens,
+        completionTokens: 0,
+        latencyMs: 0,
+        success: false,
+        error: lastErr.message
+      }, opsServices);
       continue;
     }
 
+    const providerStart = nowMs();
     try {
       const raw = m === 'mistral'
         ? await askMistral(systemPrompt, userPrompt, temperature, maxTokens)
@@ -1700,6 +1759,14 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
 
       if (answer && answer.trim()) {
         aiCircuitBreaker.success(m);
+        opsSystem.telemetry.recordAIUsage({
+          provider: m,
+          model: m,
+          promptTokens,
+          completionTokens: opsSystem.tokenAnalyzer.estimateTokens(answer),
+          latencyMs: nowMs() - providerStart,
+          success: true
+        }, opsServices);
         aiCache.set(cacheKey, {
           ts: nowMs(),
           answer
@@ -1708,6 +1775,15 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
       }
     } catch (err) {
       aiCircuitBreaker.failure(m);
+      opsSystem.telemetry.recordAIUsage({
+        provider: m,
+        model: m,
+        promptTokens,
+        completionTokens: 0,
+        latencyMs: nowMs() - providerStart,
+        success: false,
+        error: err.message
+      }, opsServices);
       if (err?.message === 'RATE_LIMIT' && m === 'mistral') {
         lastErr = err;
         continue;
@@ -1734,6 +1810,14 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
           ? String(raw || '').trim()
           : sanitizeOutgoingText(raw);
 
+        opsSystem.telemetry.recordAIUsage({
+          provider: 'search-fallback',
+          model: 'groq',
+          promptTokens: opsSystem.tokenAnalyzer.estimateTokens(`${question}\n${searchRes}`),
+          completionTokens: opsSystem.tokenAnalyzer.estimateTokens(answer),
+          latencyMs: nowMs() - aiStart,
+          success: true
+        }, opsServices);
         aiCache.set(cacheKey, {
           ts: nowMs(),
           answer
@@ -2321,6 +2405,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const g = status.governance?.audit || {};
   const aios = status.aiOS || {};
   const aiosUser = aiOS.getStatus(userId, getAiosServices());
+  const ops = opsSystem.getStatus(getOpsServices());
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -2342,6 +2427,11 @@ AI OS Graph: ${aiosUser.graphNodes}/${aiosUser.graphEdges}
 AI OS Goals/Workflows: ${aiosUser.activeGoals}/${aiosUser.activeWorkflows}
 AI OS Stale Goals/Workflows: ${aiosUser.staleGoals}/${aiosUser.staleWorkflows}
 AI OS Workflow Completion: ${Math.round((aiosUser.workflowCompletionRatio || 0) * 100)}%
+Ops Health: ${ops.health.status}
+Ops Reliability: ${ops.reliability.score}/100 (${ops.reliability.status})
+Ops Errors 15m: ${ops.telemetry.recentErrorCount}
+Ops Latency p90: ${ops.telemetry.latency.p90}ms
+Ops Diagnosis: ${ops.diagnosis.diagnosis} (${ops.diagnosis.severity})
 Issues:
 - ${issues}`;
 
@@ -2399,10 +2489,243 @@ ${failuresText}`;
   );
 }
 
+function formatIncidentLine(incident, index) {
+  return `${index + 1}. ${incident.id} [${incident.classification}/${incident.status}] ${incident.title}`;
+}
+
+function formatBenchmarkRun(run) {
+  const failed = (run.results || []).filter(item => !item.passed);
+  const failedText = failed.length
+    ? failed.map(item => `- ${item.id}: ${item.notes}`).join('\n')
+    : '- tidak ada';
+  return [
+    `Benchmark: ${run.id}`,
+    `Type: ${run.type}`,
+    `Score: ${Math.round((run.score || 0) * 100)}%`,
+    `Passed: ${run.passed ? 'ya' : 'tidak'}`,
+    `Cases: ${run.caseCount}`,
+    '',
+    'Failed cases:',
+    failedText
+  ].join('\n');
+}
+
+async function handleOpsCommands(chatId, userId, cmd, args, msg) {
+  const opsCommands = new Set([
+    '/ops',
+    '/health',
+    '/perf',
+    '/benchmark',
+    '/diagnose',
+    '/incidents',
+    '/opslessons',
+    '/rollbackplan',
+    '/canary',
+    '/opsreset'
+  ]);
+
+  if (!opsCommands.has(cmd)) return false;
+
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    await safeSendMessage(chatId, '❌ Command AI Operations hanya untuk admin.', replyOpt);
+    return true;
+  }
+
+  const services = getOpsServices();
+
+  if (cmd === '/ops') {
+    const status = opsSystem.getStatus(services);
+    const recentIncidents = opsSystem.incidentHandler.listRecentIncidents(services, 3);
+    const tuning = opsSystem.tuningController.recommendTuning(services);
+    const text =
+`AI Production Ops
+Health: ${status.health.status}
+Reliability: ${status.reliability.score}/100 (${status.reliability.status})
+Diagnosis: ${status.diagnosis.diagnosis} (${status.diagnosis.severity})
+Requests: ${status.telemetry.counters.request || 0}
+Commands: ${status.telemetry.counters.command || 0}
+AI calls: ${status.telemetry.counters.aiCall || 0}
+Errors 15m: ${status.telemetry.recentErrorCount}
+Latency p90: ${status.telemetry.latency.p90}ms
+Avg tokens: ${status.telemetry.token.averageTokens}
+Ops modules: ${status.modules.length}
+
+Tuning:
+${tuning.recommendations.map(item => `- ${item.setting}: ${item.recommended} (${item.reason})`).join('\n')}
+
+Incident terbaru:
+${recentIncidents.length ? recentIncidents.map(formatIncidentLine).join('\n') : '- belum ada'}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/health') {
+    const health = opsSystem.healthMonitor.getHealth(services);
+    const incident = opsSystem.incidentHandler.detectIncident(services, { health });
+    const text =
+`${opsSystem.healthMonitor.formatHealth(health)}
+Providers:
+${Object.entries(health.providers || {}).map(([name, item]) => `- ${name}: ${item.available ? 'available' : 'degraded'} (configured=${item.configured})`).join('\n')}
+
+Incident detection: ${incident.detected ? `terdeteksi ${incident.incident.id}` : (incident.suppressed ? 'suppressed sementara' : 'tidak ada')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/perf') {
+    const perf = opsSystem.performanceProfiler.summarizePerformance(services);
+    const cost = opsSystem.costOptimizer.analyzeCost(services);
+    const text =
+`Performance
+Samples: ${perf.sampleCount}
+Bottleneck: ${perf.bottleneck}
+Latency p50/p90/p95: ${perf.latency.p50}/${perf.latency.p90}/${perf.latency.p95}ms
+
+Slow operations:
+${perf.slowOperations.length ? perf.slowOperations.map(item => `- ${item.scope}: avg ${item.averageMs}ms, max ${item.maxMs}ms`).join('\n') : '- tidak ada'}
+
+Cost Efficiency
+Estimated tokens: ${cost.estimatedTokenUsage.estimatedTotalTokens}
+Average tokens: ${cost.estimatedTokenUsage.averageTokens}
+AI/request: ${cost.aiPerRequest}
+Rekomendasi:
+${cost.recommendations.map(item => `- ${item.action}: ${item.reason}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/benchmark') {
+    const type = String(args || '').trim() || null;
+    const before = opsSystem.benchmarkEngine.getBenchmarkHistory(services, 1)[0];
+    const run = opsSystem.benchmarkEngine.runBenchmarkSuite(type, services);
+    const comparison = opsSystem.benchmarkEngine.compareBenchmarkRuns(before, run);
+    const regression = opsSystem.regressionDetector.detectRegression(services);
+    const text =
+`${formatBenchmarkRun(run)}
+
+Comparison: ${comparison.comparable ? `${Math.round(comparison.delta * 100)}%` : comparison.notes}
+Regression: ${regression.regressionDetected ? `${regression.metric} (${regression.severity})` : 'tidak terdeteksi'}
+Rekomendasi: ${regression.recommendation}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/diagnose') {
+    const diagnosis = opsSystem.diagnosticsEngine.diagnose(services);
+    await sendChunkedMessage(chatId, opsSystem.diagnosticsEngine.formatDiagnosis(diagnosis), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/incidents') {
+    const [action, incidentId] = splitPipeArgs(args);
+    if (action === 'resolve' && incidentId) {
+      const result = opsSystem.incidentHandler.resolveIncident(incidentId, services);
+      await safeSendMessage(chatId, result.ok ? `Incident ${incidentId} ditutup.` : `Gagal: ${result.reason}`, replyOpt);
+      return true;
+    }
+    const incidents = opsSystem.incidentHandler.listRecentIncidents(services, 10);
+    const text = incidents.length
+      ? incidents.map(formatIncidentLine).join('\n')
+      : 'Belum ada incident operasional.';
+    await sendChunkedMessage(chatId, `Incidents:\n${text}\n\nTutup: /incidents resolve | <incidentId>`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/opslessons') {
+    const [action, title, content, tags = ''] = splitPipeArgs(args);
+    if (action === 'add') {
+      if (!title || !content) {
+        await safeSendMessage(chatId, 'Format: /opslessons add | <judul> | <isi> | <tag1,tag2>', replyOpt);
+        return true;
+      }
+      const lesson = opsSystem.opsKnowledgeBase.addOpsLesson({
+        title,
+        content,
+        tags: tags.split(',').map(tag => tag.trim()).filter(Boolean)
+      }, services);
+      await safeSendMessage(chatId, `Ops lesson tersimpan: ${lesson.id}`, replyOpt);
+      return true;
+    }
+    const lessonsFound = opsSystem.opsKnowledgeBase.searchOpsKnowledge(args, services);
+    const checklist = opsSystem.opsKnowledgeBase.getDeploymentChecklist();
+    const text =
+`Ops Knowledge
+Lessons:
+${lessonsFound.length ? lessonsFound.map((item, index) => `${index + 1}. ${item.title}: ${item.content}`).join('\n') : '- belum ada'}
+
+Deployment checklist:
+${checklist.map(item => `- ${item}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/rollbackplan') {
+    const plan = opsSystem.rollbackManager.createRollbackPlan(args || 'manual rollback review', services);
+    const text =
+`Rollback Plan: ${plan.id}
+Automatic rollback: ${plan.automaticRollback ? 'ya' : 'tidak'}
+Reason: ${plan.reason}
+Regression: ${plan.regression.regressionDetected ? `${plan.regression.metric} (${plan.regression.severity})` : 'tidak ada sinyal kuat'}
+Affected metrics: ${plan.affectedMetrics.join(', ') || '-'}
+
+Checklist:
+${plan.checklist.map(item => `- ${item}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/canary') {
+    const [action, name, percent] = splitPipeArgs(args);
+    if (action === 'create') {
+      if (!name) {
+        await safeSendMessage(chatId, 'Format: /canary create | <nama> | <rolloutPercent 0-25>', replyOpt);
+        return true;
+      }
+      const canary = opsSystem.canaryController.createCanary(name, { rolloutPercent: Number(percent || 0) }, services);
+      await safeSendMessage(chatId, `Canary dibuat: ${canary.id} (${canary.rolloutPercent}%, default draft/off)`, replyOpt);
+      return true;
+    }
+    const canaries = opsSystem.canaryController.listCanaries(services, 10);
+    const text = canaries.length
+      ? canaries.map((item, index) => `${index + 1}. ${item.id} - ${item.name} [${item.status}, ${item.rolloutPercent}%]`).join('\n')
+      : 'Belum ada canary. Buat: /canary create | nama | 5';
+    await sendChunkedMessage(chatId, `Canary:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/opsreset') {
+    opsSystem.opsStore.resetOpsState(services);
+    await safeSendMessage(chatId, 'Data AI Operations sudah direset. Data user, AI OS, memory lama, dan command lama tidak dihapus.', replyOpt);
+    return true;
+  }
+
+  return false;
+}
+
 function getAiosServices() {
   return {
     ensureUser,
     persist
+  };
+}
+
+function getOpsServices() {
+  return {
+    ensureUser,
+    persist,
+    autonomousEngine,
+    aiOS,
+    botSettings,
+    aiCircuitBreaker,
+    redisClient,
+    webhookStatus: WEBHOOK_URL || TELEGRAM_WEBHOOK_URL ? 'configured' : 'local',
+    getRuntimeStatus: () => autonomousEngine.getRuntimeStatus(),
+    env: {
+      MISTRAL_API_KEY,
+      GROQ_API_KEY,
+      REDIS_URL
+    }
   };
 }
 
@@ -3582,11 +3905,21 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     'cognitive-workspace': 'cognitive-workspace',
     'workspace-os': 'cognitive-workspace',
     'meta-reasoning': 'meta-reasoning',
-    meta: 'meta-reasoning'
+    meta: 'meta-reasoning',
+    health: 'health-watch',
+    'health-watch': 'health-watch',
+    opshealth: 'health-watch',
+    benchmark: 'benchmark',
+    incident: 'incident-response',
+    'incident-response': 'incident-response',
+    cost: 'cost-optimization',
+    'cost-optimization': 'cost-optimization',
+    ops: 'continuous-improvement',
+    'continuous-improvement': 'continuous-improvement'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning', 'health-watch', 'benchmark', 'incident-response', 'cost-optimization', 'continuous-improvement'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     await persist();
 
@@ -3598,7 +3931,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3924,6 +4257,15 @@ async function handleHelp(chatId, msg) {
 /stats - statistik
 /system - status agent production [admin]
 /improve - laporan self-improvement [admin]
+/ops - status AI Production Ops [admin]
+/health - health monitor [admin]
+/perf - latency, token, dan cost summary [admin]
+/benchmark [type] - benchmark ringan manual [admin]
+/diagnose - diagnosis operasional [admin]
+/incidents - daftar incident [admin]
+/rollbackplan [alasan] - rencana rollback aman [admin]
+/opslessons - knowledge base ops [admin]
+/canary - rollout canary ringan [admin]
 /aios - status ringkas AI OS
 /goals - daftar goal AI OS
 /goaladd judul | deskripsi | prioritas | targetDate
@@ -3958,7 +4300,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement
 /alias nama_alias = /command
 /riwayat kata
 
@@ -4018,6 +4360,16 @@ function isUnknownCommand(cmd) {
     '/stats',
     '/system',
     '/improve',
+    '/ops',
+    '/health',
+    '/perf',
+    '/benchmark',
+    '/diagnose',
+    '/incidents',
+    '/opslessons',
+    '/rollbackplan',
+    '/canary',
+    '/opsreset',
     '/aios',
     '/goals',
     '/goaladd',
@@ -4865,8 +5217,21 @@ app.get('/oauth2callback', async (req, res) => {
 });
 
 app.post(WEBHOOK_PATH, async (req, res) => {
+  const webhookStart = nowMs();
+  res.on('finish', () => {
+    opsSystem.performanceProfiler.recordOperation('webhook', nowMs() - webhookStart, getOpsServices(), {
+      statusCode: res.statusCode
+    });
+  });
+
   try {
     const update = req.body;
+    opsSystem.telemetry.recordRequest({
+      name: 'telegram_update',
+      hasText: Boolean(update?.message?.text || update?.message?.caption),
+      hasAttachment: Boolean(update?.message?.photo || update?.message?.document || update?.message?.voice)
+    }, getOpsServices());
+
     if (isDuplicateIncomingUpdate(update)) {
   return res.sendStatus(200);
 }
@@ -4969,6 +5334,9 @@ await withUserActionLock(userId, async () => {
   }
 
   const resolvedCmd = resolveAlias(userId, cmd);
+  if (resolvedCmd) {
+    opsSystem.telemetry.recordCommand(resolvedCmd, userId, getOpsServices());
+  }
 
   if (resolvedCmd === '/start') {
     await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
@@ -4982,6 +5350,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
   if (resolvedCmd === '/system') { await handleSystemStatus(chatId, userId, msg); return; }
   if (resolvedCmd === '/improve') { await handleImproveStatus(chatId, userId, msg); return; }
+  if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
   if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }
@@ -5098,6 +5467,11 @@ await withUserActionLock(userId, async () => {
 
     return res.sendStatus(200);
   } catch (error) {
+    opsSystem.telemetry.recordError(error, getOpsServices(), {
+      scope: 'webhook',
+      component: 'telegram-webhook',
+      severity: 'warning'
+    });
     console.error('Webhook error:', error);
     return res.sendStatus(200);
   }
