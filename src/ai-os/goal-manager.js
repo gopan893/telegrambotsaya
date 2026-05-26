@@ -2,6 +2,8 @@
 
 const guards = require('./guards');
 const memoryBus = require('./memory-bus');
+const knowledgeGraph = require('./knowledge-graph');
+const strategicReasoning = require('./strategic-reasoning');
 
 const GOAL_STATUSES = new Set(['active', 'paused', 'completed', 'archived']);
 
@@ -33,6 +35,10 @@ function createGoal(userId, input = {}, botServices) {
     })).filter((item) => item.title),
     linkedWorkflowIds: guards.safeArray(input.linkedWorkflowIds).slice(0, 20),
     linkedMemoryIds: guards.safeArray(input.linkedMemoryIds).slice(0, 30),
+    linkedGraphNodeIds: guards.safeArray(input.linkedGraphNodeIds).slice(0, 30),
+    dependencies: guards.safeArray(input.dependencies).slice(0, 20).map((item) => guards.sanitizeText(item, 140)).filter(Boolean),
+    riskNotes: guards.safeArray(input.riskNotes).slice(0, 20).map((item) => guards.sanitizeText(item, 220)).filter(Boolean),
+    strategicReflection: null,
     createdAt: ts,
     updatedAt: ts,
     targetDate: guards.sanitizeText(input.targetDate || '', 60)
@@ -40,7 +46,7 @@ function createGoal(userId, input = {}, botServices) {
 
   state.goals.push(goal);
   state.goals = guards.pruneListByScore(state.goals, guards.DEFAULT_LIMITS.goals, scoreGoal);
-  memoryBus.publish(userId, {
+  const memoryResult = memoryBus.publish(userId, {
     type: 'goal',
     content: `Goal: ${goal.title}. ${goal.description}`,
     tags: ['goal', goal.priority],
@@ -48,6 +54,13 @@ function createGoal(userId, input = {}, botServices) {
     importance: goal.priority === 'high' ? 0.86 : 0.72,
     confidence: 0.85
   }, botServices);
+  if (memoryResult.ok && memoryResult.memory?.id) goal.linkedMemoryIds.push(memoryResult.memory.id);
+  const graph = knowledgeGraph.evolveGraphFromText(userId, `Goal ${goal.title}. ${goal.description}`, botServices, {
+    source: 'goal-manager',
+    confidence: 0.82,
+    maxConcepts: 5
+  });
+  if (graph.ok) goal.linkedGraphNodeIds = graph.nodes.map((node) => node.id).slice(0, 30);
   guards.touchState(state);
   guards.persistAsync(botServices);
   return { ok: true, goal };
@@ -111,6 +124,30 @@ function attachWorkflow(userId, goalId, workflowId, botServices) {
   return { ok: true, goal };
 }
 
+function attachMemory(userId, goalId, memoryId, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  const goal = state.goals.find((item) => item.id === goalId);
+  if (!goal) return { ok: false, reason: 'GOAL_NOT_FOUND' };
+  if (!goal.linkedMemoryIds.includes(memoryId)) goal.linkedMemoryIds.push(memoryId);
+  goal.linkedMemoryIds = goal.linkedMemoryIds.slice(-30);
+  goal.updatedAt = guards.nowIso();
+  guards.touchState(state);
+  guards.persistAsync(botServices);
+  return { ok: true, goal };
+}
+
+function attachGraphNode(userId, goalId, nodeId, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  const goal = state.goals.find((item) => item.id === goalId);
+  if (!goal) return { ok: false, reason: 'GOAL_NOT_FOUND' };
+  if (!goal.linkedGraphNodeIds.includes(nodeId)) goal.linkedGraphNodeIds.push(nodeId);
+  goal.linkedGraphNodeIds = goal.linkedGraphNodeIds.slice(-30);
+  goal.updatedAt = guards.nowIso();
+  guards.touchState(state);
+  guards.persistAsync(botServices);
+  return { ok: true, goal };
+}
+
 function trackProgress(userId, goalId, progress, note, botServices) {
   const update = updateGoal(userId, goalId, 'progress', progress, botServices);
   if (update.ok && note) {
@@ -139,6 +176,55 @@ function suggestNextAction(userId, goalOrId, botServices) {
   return 'Siapkan checklist final, validasi hasil, lalu tandai goal selesai jika sudah stabil.';
 }
 
+function analyzeGoalReasoning(userId, goalOrId, botServices, context = {}) {
+  const goal = typeof goalOrId === 'string'
+    ? listGoals(userId, {}, botServices).find((item) => item.id === goalOrId)
+    : goalOrId;
+  if (!goal) return { ok: false, reason: 'GOAL_NOT_FOUND' };
+
+  const analysis = strategicReasoning.analyzeGoal(goal, {
+    ...context,
+    activeGoals: [goal]
+  });
+  const feasibility = estimateFeasibility(goal, analysis);
+  const enriched = {
+    ok: true,
+    goal,
+    feasibility,
+    dependencies: goal.dependencies,
+    milestones: goal.milestones,
+    nextAction: suggestNextAction(userId, goal, botServices),
+    confidence: Math.min(analysis.confidence, feasibility.confidence),
+    analysis
+  };
+
+  goal.strategicReflection = {
+    feasibility: feasibility.level,
+    confidence: enriched.confidence,
+    risks: analysis.risks,
+    tradeOffs: analysis.tradeOffs,
+    nextAction: enriched.nextAction,
+    updatedAt: guards.nowIso()
+  };
+  guards.touchState(guards.ensureAIOSState(userId, botServices));
+  guards.persistAsync(botServices);
+  return enriched;
+}
+
+function archiveCompletedGoals(userId, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  let archived = 0;
+  for (const goal of state.goals) {
+    if (goal.status === 'completed' && guards.clamp01(goal.progress || 0, 0) >= 0.98) {
+      goal.status = 'archived';
+      goal.updatedAt = guards.nowIso();
+      archived += 1;
+    }
+  }
+  if (archived) guards.persistAsync(botServices);
+  return { archived };
+}
+
 function detectStaleGoals(userId, botServices, staleDays = 21) {
   const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000;
   return getActiveGoals(userId, botServices, 50).filter((goal) => {
@@ -164,14 +250,36 @@ function resetGoals(userId, botServices) {
   return { ok: true };
 }
 
+function estimateFeasibility(goal, analysis) {
+  let score = 0.62;
+  if (goal.targetDate) score += 0.06;
+  if (guards.safeArray(goal.milestones).length) score += 0.12;
+  if (guards.safeArray(goal.dependencies).length > 6) score -= 0.1;
+  if (guards.safeArray(analysis.risks).length > 3) score -= 0.08;
+  if (goal.priority === 'high') score += 0.04;
+  const confidence = guards.clamp01(score, 0.6);
+  return {
+    score: confidence,
+    confidence,
+    level: confidence >= 0.76 ? 'high' : confidence >= 0.56 ? 'medium' : 'low',
+    reason: confidence >= 0.76
+      ? 'Goal punya struktur cukup jelas.'
+      : 'Goal masih perlu milestone, dependency, atau batas waktu yang lebih jelas.'
+  };
+}
+
 module.exports = {
   createGoal,
   updateGoal,
   listGoals,
   getActiveGoals,
   attachWorkflow,
+  attachMemory,
+  attachGraphNode,
   trackProgress,
   suggestNextAction,
+  analyzeGoalReasoning,
   detectStaleGoals,
+  archiveCompletedGoals,
   resetGoals
 };

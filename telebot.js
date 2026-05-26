@@ -2320,6 +2320,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const c = status.collaboration || {};
   const g = status.governance?.audit || {};
   const aios = status.aiOS || {};
+  const aiosUser = aiOS.getStatus(userId, getAiosServices());
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -2336,6 +2337,11 @@ Governance Audit: ${g.recentAuditCount || 0}
 Blocked: ${g.blockedCount || 0}
 Approval Requests: ${g.approvalRequestCount || 0}
 AI OS Modules: ${aios.modules?.length || 0}
+AI OS Memory: ${aiosUser.totalMemory}
+AI OS Graph: ${aiosUser.graphNodes}/${aiosUser.graphEdges}
+AI OS Goals/Workflows: ${aiosUser.activeGoals}/${aiosUser.activeWorkflows}
+AI OS Stale Goals/Workflows: ${aiosUser.staleGoals}/${aiosUser.staleWorkflows}
+AI OS Workflow Completion: ${Math.round((aiosUser.workflowCompletionRatio || 0) * 100)}%
 Issues:
 - ${issues}`;
 
@@ -2408,12 +2414,15 @@ function splitPipeArgs(args) {
 
 function formatGoalLine(goal, index) {
   const pct = Math.round((goal.progress || 0) * 100);
-  return `${index + 1}. ${goal.id} - ${goal.title} [${goal.status}, ${goal.priority}, ${pct}%]`;
+  const next = goal.strategicReflection?.nextAction ? ` Next: ${goal.strategicReflection.nextAction}` : '';
+  return `${index + 1}. ${goal.id} - ${goal.title} [${goal.status}, ${goal.priority}, ${pct}%]${next}`;
 }
 
 function formatWorkflowLine(workflow, index) {
   const done = (workflow.steps || []).filter(step => step.done).length;
-  return `${index + 1}. ${workflow.id} - ${workflow.title} [${workflow.status}, ${done}/${(workflow.steps || []).length} step]`;
+  const next = workflow.nextAction ? ` Next: ${workflow.nextAction}` : '';
+  const blockers = (workflow.blockers || []).filter(item => item.status === 'open').length;
+  return `${index + 1}. ${workflow.id} - ${workflow.title} [${workflow.status}, ${done}/${(workflow.steps || []).length} step, blocker ${blockers}]${next}`;
 }
 
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
@@ -2432,7 +2441,11 @@ Memory count: ${status.totalMemory}
 Graph: ${status.graphNodes} node, ${status.graphEdges} edge
 Recent insights: ${status.recentInsights.length}
 Average confidence: ${status.averageConfidence.toFixed(2)}
-Stale items: ${status.staleItems}
+Stale goals/workflows: ${status.staleGoals}/${status.staleWorkflows}
+Workflow completion: ${Math.round((status.workflowCompletionRatio || 0) * 100)}%
+Workflow conflicts: ${status.workflowConflicts}
+Research memory: ${status.researchMemoryCount}
+Reflection count: ${status.reflectionCount}
 
 Insight:
 ${status.recentInsightsText}`;
@@ -2456,6 +2469,7 @@ ${status.recentInsightsText}`;
       return true;
     }
     const result = aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
+    if (result.ok) aiOS.goalManager.analyzeGoalReasoning(userId, result.goal, services);
     await safeSendMessage(
       chatId,
       result.ok
@@ -2543,12 +2557,58 @@ ${status.recentInsightsText}`;
     return true;
   }
 
+  if (cmd === '/workflowdecision') {
+    const [workflowId, decision] = splitPipeArgs(args);
+    if (!workflowId || !decision) {
+      await safeSendMessage(chatId, 'Format: /workflowdecision <workflowId> | <decision>', replyOpt);
+      return true;
+    }
+    const result = aiOS.workflowEngine.addDecision(userId, workflowId, decision, services);
+    await safeSendMessage(
+      chatId,
+      result.ok ? 'Decision log workflow tersimpan.' : `Gagal menyimpan decision: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/workflowblocker') {
+    const [workflowId, blocker] = splitPipeArgs(args);
+    if (!workflowId || !blocker) {
+      await safeSendMessage(chatId, 'Format: /workflowblocker <workflowId> | <blocker>', replyOpt);
+      return true;
+    }
+    const result = aiOS.workflowEngine.addBlocker(userId, workflowId, blocker, services);
+    await safeSendMessage(
+      chatId,
+      result.ok ? 'Blocker workflow tersimpan.' : `Gagal menyimpan blocker: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/workflownext') {
+    const [workflowId, nextAction] = splitPipeArgs(args);
+    if (!workflowId || !nextAction) {
+      await safeSendMessage(chatId, 'Format: /workflownext <workflowId> | <next action>', replyOpt);
+      return true;
+    }
+    const result = aiOS.workflowEngine.setNextAction(userId, workflowId, nextAction, services);
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Next action disimpan: ${result.workflow.nextAction}` : `Gagal menyimpan next action: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
   if (cmd === '/graph') {
     const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
     const text =
 `Knowledge Graph
 Node: ${graph.nodeCount}
 Edge: ${graph.edgeCount}
+Types: ${graph.typeSummary}
 
 Konsep:
 ${graph.nodesText}
@@ -2570,8 +2630,13 @@ ${graph.edgesText}`;
 
   if (cmd === '/workspace') {
     const workspaces = aiOS.cognitiveWorkspace.listWorkspaces(userId, services, 10);
+    const active = aiOS.cognitiveWorkspace.getActiveWorkspace(userId, services);
     const text = workspaces.length
-      ? workspaces.map((workspace, index) => `${index + 1}. ${workspace.id} - ${workspace.title} (${(workspace.notes || []).length} catatan)`).join('\n')
+      ? [
+        `Aktif: ${active ? `${active.id} - ${active.title}` : '-'}`,
+        '',
+        ...workspaces.map((workspace, index) => `${index + 1}. ${workspace.id} - ${workspace.title} (${(workspace.notes || []).length} catatan)`)
+      ].join('\n')
       : 'Belum ada cognitive workspace. Buat dengan /workspaceadd judul | deskripsi';
     await sendChunkedMessage(chatId, `Cognitive Workspace:\n${text}`, replyOpt);
     return true;
@@ -2633,6 +2698,12 @@ Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
     }
     const context = aiOS.contextSync.syncContext(userId, topic, services);
     const analysis = aiOS.strategicReasoning.analyzeGoal(topic, context);
+    aiOS.memoryBus.publishInsight(userId, `Strategic insight: ${analysis.recommendation}`, services, {
+      source: 'strategy-command',
+      confidence: analysis.confidence,
+      importance: 0.74,
+      tags: ['strategy', 'decision']
+    });
     await sendChunkedMessage(chatId, aiOS.strategicReasoning.formatStrategicAnalysis(analysis), replyOpt);
     return true;
   }
@@ -3861,6 +3932,9 @@ async function handleHelp(chatId, msg) {
 /workflowadd judul | deskripsi | goalId
 /workflowstep workflowId | step
 /workflowdone workflowId | stepNumber
+/workflowdecision workflowId | decision
+/workflowblocker workflowId | blocker
+/workflownext workflowId | next action
 /graph - knowledge graph
 /insights - insight penting
 /workspace - cognitive workspace
@@ -3952,6 +4026,9 @@ function isUnknownCommand(cmd) {
     '/workflowadd',
     '/workflowstep',
     '/workflowdone',
+    '/workflowdecision',
+    '/workflowblocker',
+    '/workflownext',
     '/graph',
     '/insights',
     '/workspace',
