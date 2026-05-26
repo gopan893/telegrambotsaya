@@ -42,6 +42,11 @@ function buildLearningGuide() {
     '- Tahap 4 menambahkan production guard: queue overload, task timeout, health diagnostics, error pattern, dan stale session cleanup.',
     '- `/system` membantu admin melihat kondisi agen, RAM, dan queue tanpa membuka log Render.',
     '- `/healthz` memberi status JSON untuk monitoring eksternal.',
+    '- Tahap 5 menambahkan self-improvement loop: jawaban dinilai ringan, feedback user dicatat, lalu prompt berikutnya disesuaikan.',
+    '- `/improve` membantu admin melihat quality score, reasoning score, confidence, risk, learning notes, dan failure pattern.',
+    '- Mode baru `/mode refleksi`, `/mode deep`, `/mode mentor`, dan `/mode optimasi` membantu bot memilih kedalaman berpikir yang sesuai.',
+    '- Bot sekarang mengikuti bahasa pengguna jika pesan memakai bahasa selain Indonesia.',
+    '- Self-improvement tidak memanggil AI tambahan; ini sengaja supaya RAM, token, dan latency tetap hemat di Render free tier.',
     '',
     'Langkah berpikir ringkas:',
     '1. Cari bagian yang paling sering menyebabkan crash.',
@@ -49,8 +54,9 @@ function buildLearningGuide() {
     '3. Tambahkan batas RAM dan retry kecil.',
     '4. Tambahkan reasoning pipeline yang konservatif, bukan router agresif.',
     '5. Tambahkan guard produksi sebelum menambah fitur yang lebih kompleks.',
-    '6. Validasi sintaks dan test lokal sebelum deploy.',
-    '7. Commit perubahan per bagian agar mudah dilacak.'
+    '6. Tambahkan learning loop yang bounded agar sistem bisa adaptif tanpa belajar liar.',
+    '7. Validasi sintaks dan test lokal sebelum deploy.',
+    '8. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 

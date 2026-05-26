@@ -183,3 +183,65 @@ Telegram Webhook
 3. Command `/system`: cek queue tidak menumpuk dan issue tidak berulang.
 4. Respons natural language: pastikan tool hanya jalan saat intent jelas.
 5. Feedback tombol: pantau apakah koreksi dan feedback mulai mengubah gaya respons user.
+
+## Tahap 5: Self-Improving AI & Adaptive Intelligence
+
+Tahap 5 menambahkan loop peningkatan diri yang ringan. Tujuannya bukan membuat bot “belajar liar”, tetapi memberi sistem cara terukur untuk melihat kualitas jawaban sebelumnya dan menyesuaikan prompt berikutnya secara aman.
+
+### Alur Reflective Reasoning
+
+```text
+INPUT
+-> Intent Analysis
+-> Context Analysis
+-> Planning / Tool Decision
+-> Reasoning / Chat Execution
+-> Draft Answer
+-> Evaluation
+-> Verification
+-> Confidence + Risk Check
+-> Final Answer
+-> Self-Improvement Update
+-> Memory Evolution
+```
+
+### Modul Baru
+
+- `src/agents/self-improvement.js`: menghitung Answer Quality, Reasoning, Confidence, Tool Accuracy, Memory Relevance, User Satisfaction, Consistency, Risk, Clarity, Learning Impact, dan Latency Efficiency.
+- `src/core/autonomous-engine.js`: menyisipkan self-improvement hints ke prompt dan mencatat hasil jawaban setelah response dikirim.
+- `src/agents/executor.js`: menerima sinyal adaptif, mode pipeline, dan konteks file dalam prompt final.
+- `telebot.js`: menambahkan `/improve`, mode `refleksi`, `deep`, `mentor`, `optimasi`, serta feedback user ke self-improvement loop.
+
+### Memory Evolution
+
+Self-improvement memory disimpan per user sebagai:
+
+- `reasoningHistory`: histori metrik terbatas.
+- `learningMemory`: catatan pelajaran penting dari kualitas rendah, tool gagal, atau konteks kurang relevan.
+- `failureHistory`: pola kegagalan terbaru.
+- `promptHints`: sinyal adaptif untuk jawaban berikutnya.
+- `rollbackSnapshot`: baseline prompt hints untuk rollback jika learning menjadi tidak stabil.
+
+Semua list dibatasi ukurannya agar aman untuk Render free tier.
+
+### Safety & Rollback
+
+- Low-quality dan high-risk answer dicatat sebagai failure pattern.
+- Jika kegagalan berulang, prompt hints dikembalikan ke snapshot awal.
+- Feedback negatif tidak langsung mengubah seluruh perilaku; ia hanya memberi sinyal clarity, confidence, dan risk.
+- Sistem tidak menjalankan AI call tambahan untuk evaluasi, sehingga biaya token dan latency tetap rendah.
+
+### Trade-off Tahap 5
+
+- Evaluasi berbasis heuristic lebih hemat dan stabil, tetapi tidak sedalam evaluator berbasis LLM.
+- Self-improvement hints membuat jawaban lebih adaptif, tetapi terlalu banyak sinyal bisa membuat prompt panjang; karena itu sinyal dibuat pendek.
+- Rollback sederhana mengurangi risiko unstable learning, tetapi belum menyimpan versi historis lengkap.
+- Feedback user sangat berguna, tetapi bisa noisy; karena itu hanya dipakai sebagai sinyal, bukan kebenaran mutlak.
+
+### Apa Yang Diamati Setelah Deploy
+
+1. Jalankan `/improve` sebagai admin setelah beberapa percakapan untuk melihat score dan learning notes.
+2. Perhatikan apakah feedback negatif membuat jawaban berikutnya lebih jelas dan lebih berhati-hati.
+3. Pantau Render logs untuk `SelfImprovementAgent` dan `LEARNING_UPDATE_FAILED`.
+4. Cek RAM di `/system`; self-improvement history harus tetap kecil.
+5. Uji bahasa campuran, misalnya Jepang/Inggris/Indonesia, dan pastikan bot mengikuti bahasa dominan user.
