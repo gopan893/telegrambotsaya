@@ -245,3 +245,99 @@ Semua list dibatasi ukurannya agar aman untuk Render free tier.
 3. Pantau Render logs untuk `SelfImprovementAgent` dan `LEARNING_UPDATE_FAILED`.
 4. Cek RAM di `/system`; self-improvement history harus tetap kecil.
 5. Uji bahasa campuran, misalnya Jepang/Inggris/Indonesia, dan pastikan bot mengikuti bahasa dominan user.
+
+## Tahap 6: Multi-Agent Intelligence System
+
+Tahap 6 memperkuat bot dari adaptive single-agent menjadi ekosistem agent kolaboratif. Fokusnya adalah pembagian peran, komunikasi internal, consensus, observability, dan collaborative memory yang tetap ringan untuk Render free tier.
+
+### Struktur Multi-Agent
+
+```text
+Telegram Input
+-> Intent Analysis
+-> Agent Coordinator
+-> Delegation Plan
+-> Safety Agent
+-> Memory Agent
+-> Executor / Planner
+-> Research Agent
+-> Reasoning Agent
+-> Reflection Agent
+-> Evaluator + Verifier
+-> Final Response
+-> Learning + Collaborative Memory
+```
+
+### Agent Communication Layer
+
+- `src/core/agent-coordinator.js`: registry agent, role management, dynamic routing, delegation plan, workflow scoring, dan collaborative memory persistence.
+- `src/core/message-bus.js`: shared context per request, agent message, timeline, memory access analytics, opinion metadata, dan conflict record.
+- `src/agents/reflection.js`: consensus builder yang membaca confidence tiap agent, memilih opini utama secara aman, dan memberi consensus metrics.
+- `src/agents/observability.js`: menyimpan analytics workflow kolaboratif seperti agent activity, average consensus, dan latency.
+
+### Role Tiap Agent
+
+- Planner Agent: memecah goal kompleks dan membuat workflow.
+- Research Agent: mengumpulkan evidence dari memori lokal dan memberi evidence strength.
+- Reasoning Agent: mengevaluasi asumsi, bias, trade-off, dan kualitas logika.
+- Verifier Agent: cek confidence, circular reasoning, dan output yang terlalu lemah.
+- Memory Agent: memilih konteks relevan, compression, dan memory access record.
+- Tool Router Agent: validasi tool dan audit eksekusi.
+- Safety Agent: validasi input, action gating, prompt injection guard, dan output sanitization.
+- Reflection Agent: consensus building, conflict handling, dan final synthesis.
+- Learning Agent: belajar dari koreksi dan feedback.
+- Observability Agent: tracing, diagnostics, collaboration analytics, dan anomaly signal.
+
+### Consensus Mechanism
+
+Consensus tidak lagi hanya mengambil opini terakhir. Sistem menghitung:
+
+- Agent Performance Score
+- Consensus Confidence Score
+- Reasoning Quality Score
+- Tool Accuracy Score
+- Memory Relevance Score
+- Collaboration Efficiency Score
+- Verification Reliability Score
+- Safety Confidence Score
+- Evidence Strength Score
+- Critical Thinking Score
+
+Jika conflict tinggi atau confidence rendah, Reflection Agent memberi sintesis yang lebih hati-hati. Jika agent sejalan, opini Reasoning/Executor diprioritaskan sebagai final synthesis.
+
+### Shared Memory System
+
+Collaborative memory disimpan per user dalam bentuk terbatas:
+
+- `collaborativeMemory.history`: riwayat workflow kompleks.
+- `collaborativeMemory.agentPerformance`: rata-rata performa agent.
+- `collaborativeMemory.sharedKnowledge`: catatan ringkas consensus/evidence/reasoning.
+
+Data ini dibatasi agar tidak membengkak di Render free tier.
+
+### Mode Multi-Agent
+
+- `/mode kolaborasi`: multi-perspective reasoning dan evaluasi silang.
+- `/mode research-intelligence`: evidence dan confidence analysis.
+- `/mode mentor-intelligence`: penjelasan cara berpikir dan critical thinking.
+- `/mode strategis`: goal decomposition dan workflow optimization.
+- `/mode system-analysis`: architecture, bottleneck, reliability, dan stability review.
+
+### Trade-off Tahap 6
+
+- Multi-agent hanya aktif pada mode/permintaan kompleks. Trade-off: request sederhana tetap cepat, tetapi analisis biasa tidak selalu memakai semua agent.
+- Shared memory dibuat ephemeral per request lalu dipersist ringkas. Trade-off: hemat RAM, tetapi audit detail lama tidak disimpan penuh.
+- Consensus score memakai heuristic ringan. Trade-off: murah dan stabil, tetapi belum sedalam judge LLM khusus.
+- Agent registry statis lebih aman untuk production. Trade-off: dynamic plugin-agent penuh bisa ditambahkan nanti, tetapi belum dibuka agar tidak rawan misuse.
+
+### Risiko Yang Dikurangi
+
+- Agent loop berulang melalui `maxIterations`.
+- Tool salah jalan melalui safety gating dan confidence threshold.
+- Conflict antar agent melalui Reflection Agent.
+- Memory leak melalui cleanup context dan bounded timeline.
+- Workflow tidak terlihat melalui distributed tracing dan `/system` analytics.
+
+### Hal Penting Untuk Dipelajari
+
+Multi-agent system yang baik bukan berarti semua agent selalu aktif. Prinsip utamanya adalah routing selektif: aktifkan agent tambahan hanya saat nilai analisisnya lebih besar dari biaya latency, token, dan kompleksitas.

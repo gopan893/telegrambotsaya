@@ -47,6 +47,11 @@ function buildLearningGuide() {
     '- Mode baru `/mode refleksi`, `/mode deep`, `/mode mentor`, dan `/mode optimasi` membantu bot memilih kedalaman berpikir yang sesuai.',
     '- Bot sekarang mengikuti bahasa pengguna jika pesan memakai bahasa selain Indonesia.',
     '- Self-improvement tidak memanggil AI tambahan; ini sengaja supaya RAM, token, dan latency tetap hemat di Render free tier.',
+    '- Tahap 6 menambahkan Agent Coordinator: tugas dibagi ke agent internal berdasarkan mode dan kompleksitas permintaan.',
+    '- Message Bus sekarang menyimpan timeline, agent message, memory access, opinion score, conflict record, dan workflow report.',
+    '- Consensus mechanism memakai confidence antar agent agar jawaban final bukan hanya output agent terakhir.',
+    '- Collaborative memory menyimpan riwayat workflow kompleks secara terbatas agar bot belajar pola kerja multi-agent tanpa membengkakkan RAM.',
+    '- Mode baru `/mode kolaborasi`, `/mode research-intelligence`, `/mode mentor-intelligence`, `/mode strategis`, dan `/mode system-analysis` mengaktifkan routing agent yang lebih kaya.',
     '',
     'Langkah berpikir ringkas:',
     '1. Cari bagian yang paling sering menyebabkan crash.',
@@ -55,8 +60,9 @@ function buildLearningGuide() {
     '4. Tambahkan reasoning pipeline yang konservatif, bukan router agresif.',
     '5. Tambahkan guard produksi sebelum menambah fitur yang lebih kompleks.',
     '6. Tambahkan learning loop yang bounded agar sistem bisa adaptif tanpa belajar liar.',
-    '7. Validasi sintaks dan test lokal sebelum deploy.',
-    '8. Commit perubahan per bagian agar mudah dilacak.'
+    '7. Tambahkan kolaborasi antar agent hanya saat tugas memang butuh banyak perspektif.',
+    '8. Validasi sintaks dan test lokal sebelum deploy.',
+    '9. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 
