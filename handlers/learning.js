@@ -39,14 +39,18 @@ function buildLearningGuide() {
     '- Tool hanya dijalankan jika confidence cukup. Jika ragu, bot memilih percakapan biasa.',
     '- Reflection tidak berarti bot “merenung” tanpa batas; ini filter ringan untuk mengecek klaim, duplikasi, dan risiko.',
     '- Memory dipilih secara selektif supaya prompt tidak penuh dan RAM tetap aman.',
+    '- Tahap 4 menambahkan production guard: queue overload, task timeout, health diagnostics, error pattern, dan stale session cleanup.',
+    '- `/system` membantu admin melihat kondisi agen, RAM, dan queue tanpa membuka log Render.',
+    '- `/healthz` memberi status JSON untuk monitoring eksternal.',
     '',
     'Langkah berpikir ringkas:',
     '1. Cari bagian yang paling sering menyebabkan crash.',
     '2. Pisahkan fungsi pendukung yang aman tanpa mengubah command lama.',
     '3. Tambahkan batas RAM dan retry kecil.',
     '4. Tambahkan reasoning pipeline yang konservatif, bukan router agresif.',
-    '5. Validasi sintaks dan test lokal sebelum deploy.',
-    '6. Commit perubahan per bagian agar mudah dilacak.'
+    '5. Tambahkan guard produksi sebelum menambah fitur yang lebih kompleks.',
+    '6. Validasi sintaks dan test lokal sebelum deploy.',
+    '7. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 

@@ -135,3 +135,51 @@ INPUT
 - Reasoning pipeline yang baik memisahkan “memahami maksud”, “memilih tool”, “mengeksekusi”, dan “memvalidasi jawaban”.
 - Untuk Render free tier, arsitektur ringan lebih penting daripada banyak package berat.
 - Multi-step planning harus menyimpan state kecil, bukan seluruh percakapan mentah.
+
+## Tahap 4: Production Agent Platform
+
+Tahap 4 memperkuat sistem agar lebih siap dipakai lama di Render free tier, bukan hanya terlihat pintar saat demo.
+
+### Struktur Produksi
+
+```text
+Telegram Webhook
+-> Legacy Command Handler
+-> Autonomous Engine
+-> Task Queue
+-> Safety Agent
+-> Memory/Context Layer
+-> Planner/Tool Router
+-> Executor
+-> Evaluator
+-> Verifier
+-> Output Safety
+-> Learning + Persistence
+```
+
+### Guard Produksi Baru
+
+- Queue overload guard: `TaskQueue` menolak task baru saat antrean penuh.
+- Task timeout: task autonomous yang terlalu lama dihentikan dari sisi request agar bot tetap responsif.
+- Runtime status: `autonomousEngine.getRuntimeStatus()` menggabungkan queue, agent registry, telemetry, issues, dan error patterns.
+- Health JSON: endpoint `/healthz` memberi snapshot produksi tanpa membocorkan token.
+- Admin status: command `/system` menampilkan RAM, queue, agent count, dan issue aktif.
+- Error pattern database: `ObservabilityAgent` menyimpan pola error berulang agar recovery bisa dianalisis.
+- Stale session guard: session multi-step yang terlalu lama otomatis dibersihkan.
+- Feedback loop nyata: tombol `positive`/`negative` sekarang masuk ke `LearningAgent`.
+
+### Trade-off Tahap 4
+
+- Queue overload menjaga RAM, tetapi saat traffic tinggi beberapa pesan bisa diminta ulang.
+- Task timeout mencegah request menggantung, tetapi task eksternal yang sangat lambat bisa gagal lebih cepat.
+- `/healthz` sengaja ringkas agar aman untuk monitoring publik; detail rahasia tetap tidak diekspos.
+- Stale session TTL mencegah konteks lama mengganggu user, tetapi rencana yang tidak dilanjutkan berjam-jam akan reset.
+- Error pattern disimpan in-memory agar ringan; setelah Render restart, histori diagnostik lama hilang.
+
+### Apa Yang Diamati Setelah Deploy
+
+1. Render logs: cari event `QUEUE_PRESSURE`, `TASK_TIMEOUT`, atau `PIPELINE_FAILURE_TRIGGERED`.
+2. Endpoint `/healthz`: pastikan `status` tetap `HEALTHY` dan RAM RSS wajar.
+3. Command `/system`: cek queue tidak menumpuk dan issue tidak berulang.
+4. Respons natural language: pastikan tool hanya jalan saat intent jelas.
+5. Feedback tombol: pantau apakah koreksi dan feedback mulai mengubah gaya respons user.
