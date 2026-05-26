@@ -33,6 +33,9 @@ class ExecutorAgent {
       case 'analysis':
       case 'kritis':
       case 'critical':
+      case 'deep':
+      case 'deep-analysis':
+      case 'deep analysis':
         return `
 [OPERATIONAL MODE: ANALYSIS]
 - Lakukan bedah masalah secara mendalam dengan mengevaluasi logika dan pola akar masalah (*root cause*).
@@ -51,11 +54,40 @@ class ExecutorAgent {
 
       case 'research':
       case 'riset':
+      case 'research intelligence':
         return `
 [OPERATIONAL MODE: RESEARCH]
 - Utamakan akurasi fakta berbasis bukti ilmiah yang kuat.
 - Bandingkan beberapa sudut pandang secara kritis dan bedakan antara fakta, inferensi (kesimpulan logis), serta opini.
 - Lakukan cross-check informasi secara ketat dan hindari spekulasi liar.
+        `.trim();
+
+      case 'refleksi':
+      case 'reflection':
+      case 'self-reflection':
+      case 'self reflection':
+        return `
+[OPERATIONAL MODE: SELF-REFLECTION]
+- Evaluasi jawaban sendiri sebelum final: cek logika, kontradiksi, confidence, dan risiko.
+- Jika belum yakin, katakan batas ketidakpastian dengan jujur dan minta klarifikasi singkat bila perlu.
+- Jelaskan kelemahan reasoning hanya jika relevan untuk membantu pengguna belajar.
+        `.trim();
+
+      case 'mentor':
+        return `
+[OPERATIONAL MODE: MENTOR]
+- Fokus membantu pengguna belajar pola pikir, bukan hanya memberi jawaban akhir.
+- Jelaskan konsep, contoh kecil, trade-off, dan pertanyaan reflektif yang berguna.
+- Gunakan bahasa yang membimbing, jelas, dan tidak menggurui.
+        `.trim();
+
+      case 'optimasi':
+      case 'optimization':
+      case 'autonomous optimization':
+        return `
+[OPERATIONAL MODE: AUTONOMOUS OPTIMIZATION]
+- Fokus pada bottleneck, efisiensi, reliability, dan langkah perbaikan yang paling berdampak.
+- Jelaskan risiko perubahan, metrik yang perlu diamati, dan rollback aman jika hasil memburuk.
         `.trim();
 
       case 'safety':
@@ -110,14 +142,17 @@ class ExecutorAgent {
    */
   async executeChat(traceId, userId, userMessage, context, botServices, intent = null) {
     const { getSmartAnswer, getSystemPrompt } = botServices;
+    const activeMode = context.currentMode && context.currentMode !== 'Standard'
+      ? context.currentMode
+      : context.mode;
     
     observability.logEvent(traceId, 'ExecutorAgent', 'CHAT_EXECUTION_START', {
-      mode: context.mode,
+      mode: activeMode,
       intent
     });
 
     const systemPrompt = getSystemPrompt(userId);
-    const modePrompt = this.getOperationalModePrompt(context.mode);
+    const modePrompt = this.getOperationalModePrompt(activeMode);
 
     // Injeksi memori selektif dan instruksi mode operasional ke LLM
     const enrichedPrompt = `
@@ -131,6 +166,19 @@ Status Sesi: ${context.sessionState}
 
 [MODE OPERASIONAL AKTIF]
 ${modePrompt}
+
+[SINYAL ADAPTIF DAN SELF-IMPROVEMENT]
+${context.adaptiveRules || 'Tidak ada sinyal adaptif khusus.'}
+
+[MODE PIPELINE TERDETEKSI]
+${activeMode || 'Standard'}
+
+[KONTEKS FILE JIKA ADA]
+Nama File: ${context.fileName || '-'}
+Tipe File: ${context.fileContentType || '-'}
+Isi Utama: ${context.fileContent || '-'}
+Poin Penting: ${context.fileKeyPoints || '-'}
+Batasan: ${context.fileLimitations || '-'}
 
 [PESAN USER]
 ${userMessage}

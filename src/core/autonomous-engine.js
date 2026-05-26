@@ -19,6 +19,7 @@ const recovery = require('../agents/recovery');
 const research = require('../agents/research');
 const reasoning = require('../agents/reasoning');
 const reflection = require('../agents/reflection');
+const selfImprovement = require('../agents/self-improvement');
 
 const messageBus = require('./message-bus');
 const { getSelectiveContext, updateSessionState } = require('../memory/advanced-memory');
@@ -70,6 +71,7 @@ function getRuntimeStatus() {
       'RecoveryAgent',
       'ToolRouterAgent',
       'LearningAgent',
+      'SelfImprovementAgent',
       'ObservabilityAgent'
     ],
     queue,
@@ -327,7 +329,10 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
     messageBus.updateContext(traceId, 'sharedMemory', context.summary);
 
     // 4. Adaptive Intelligence Modifiers
-    const adaptiveModifiers = learning.generateAdaptivePromptModifiers(userId, botServices);
+    const adaptiveModifiers = [
+      learning.generateAdaptivePromptModifiers(userId, botServices),
+      selfImprovement.generatePromptHints(userId, botServices)
+    ].filter(Boolean).join('\n');
 
     // 5. Intent Analysis. Untuk goal kompleks, langsung masuk planner agar tidak membuang 1 call AI parser.
     const complexGoalRequest = planner.isComplexGoalRequest(userMessage);
@@ -453,10 +458,25 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     pushChatHistory({ userId, chatId, role: 'assistant', text: sanitizedAnswer, timestamp: Date.now() });
     if (typeof saveConversationPair === 'function') await saveConversationPair(userId, userMessage, sanitizedAnswer);
 
-    // 13. Learning Update & Memory Evolution
+    // 13. Learning Update, Self-Improvement & Memory Evolution
     setImmediate(() => {
-      const newFacts = [userMessage, sanitizedAnswer].filter(t => t && t.length > 20);
-      memory.evolveMemory(traceId, userId, botServices, newFacts);
+      (async () => {
+        const newFacts = [userMessage, sanitizedAnswer].filter(t => t && t.length > 20);
+        memory.evolveMemory(traceId, userId, botServices, newFacts);
+        await selfImprovement.recordInteraction(traceId, userId, {
+          query: userMessage,
+          answer: sanitizedAnswer,
+          intent,
+          evaluation,
+          verification,
+          executionResult,
+          context,
+          latencyMs: Date.now() - startTime
+        }, botServices);
+      })().catch((err) => {
+        observability.recordErrorPattern('self_improvement', err);
+        observability.logEvent(traceId, 'SelfImprovementAgent', 'LEARNING_UPDATE_FAILED', { error: err.message });
+      });
     });
 
     observability.logEvent(traceId, 'Orchestrator', 'PIPELINE_COMPLETED', {

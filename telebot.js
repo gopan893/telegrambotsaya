@@ -15,6 +15,7 @@ const { chooseProviderOrder, shouldUseSearchFallback } = require('./services/ai-
 const { buildLearningGuide } = require('./handlers/learning');
 const autonomousEngine = require('./src/core/autonomous-engine');
 const agentLearning = require('./src/agents/learning');
+const selfImprovementAgent = require('./src/agents/self-improvement');
 
 
 let scheduleLib = null;
@@ -724,6 +725,22 @@ function getModePrompt(mode) {
     return 'Fokus riset: bedakan fakta, inferensi, dan opini; beri confidence level jika relevan.';
   }
 
+  if (activeMode === 'refleksi' || activeMode === 'self-reflection') {
+    return 'Fokus refleksi diri: evaluasi logika jawaban, confidence, kontradiksi, risiko, dan batas ketidakpastian.';
+  }
+
+  if (activeMode === 'deep' || activeMode === 'deep-analysis') {
+    return 'Fokus analisis mendalam: bongkar asumsi, akar masalah, opsi, pro-kontra, trade-off, dan risiko.';
+  }
+
+  if (activeMode === 'mentor') {
+    return 'Fokus mentor: bantu user belajar pola pikir, jelaskan kenapa, contoh, dan pertanyaan reflektif singkat.';
+  }
+
+  if (activeMode === 'optimasi' || activeMode === 'optimization') {
+    return 'Fokus optimasi autonomous: cari bottleneck, efisiensi, reliability, metrik, dan rollback aman.';
+  }
+
   if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
@@ -768,7 +785,7 @@ function getSystemPrompt(userId) {
   return `
 Kamu adalah asisten pribadi bernama "${u.botName}".
 
-Gunakan bahasa Indonesia.
+Gunakan bahasa yang sama dengan pesan pengguna. Jika pengguna memakai campuran bahasa, ikuti bahasa dominan; jika tidak jelas, gunakan bahasa Indonesia.
 
 ${getModePrompt(u.mode)}
 
@@ -2115,6 +2132,15 @@ async function handleCalibration(chatId, userId, cmd, args, msg) {
           { answer }
         );
 
+        await agentLearning.learnFromCorrection(
+          'telegram_correction',
+          userId,
+          trigger,
+          'CUSTOM_RULE',
+          { answer },
+          { ensureUser, persist }
+        );
+
         await safeSendMessage(
           chatId,
           '✅ Terima kasih, saya belajar.',
@@ -2206,6 +2232,53 @@ Issues:
 - ${issues}`;
 
   await safeSendMessage(
+    chatId,
+    text,
+    { reply_to_message_id: msg.message_id }
+  );
+}
+
+async function handleImproveStatus(chatId, userId, msg) {
+  if (!isAdmin(userId)) {
+    await safeSendMessage(
+      chatId,
+      '❌ Hanya admin yang boleh melihat laporan self-improvement.',
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const report = selfImprovementAgent.getReport(userId, { ensureUser });
+  const r = report.rolling || {};
+  const hints = report.promptHints || {};
+  const lessonsText = report.learningMemory?.length
+    ? report.learningMemory.map(item => `- ${item.note}`).join('\n')
+    : '- belum ada learning note';
+  const failuresText = report.failureHistory?.length
+    ? report.failureHistory.map(item => `- ${item.reason}: ${item.question || item.details || '-'}`).join('\n')
+    : '- belum ada failure pattern';
+
+  const text =
+`Self-Improvement Report
+Samples: ${report.samples || 0}
+Quality: ${(r.answerQuality || 0).toFixed(2)}
+Reasoning: ${(r.reasoning || 0).toFixed(2)}
+Confidence: ${(r.confidence || 0).toFixed(2)}
+Tool Accuracy: ${(r.toolAccuracy || 0).toFixed(2)}
+Memory Relevance: ${(r.memoryRelevance || 0).toFixed(2)}
+User Satisfaction: ${(r.userSatisfaction || 0).toFixed(2)}
+Risk: ${(r.risk || 0).toFixed(2)}
+Clarity: ${(r.clarity || 0).toFixed(2)}
+Learning Impact: ${(r.learningImpact || 0).toFixed(2)}
+Hints: depth=${hints.reasoningDepth || '-'}, style=${hints.answerStyle || '-'}, clarify=${hints.clarifyWhenUncertain ? 'yes' : 'no'}
+
+Learning Notes:
+${lessonsText}
+
+Failure Patterns:
+${failuresText}`;
+
+  await sendChunkedMessage(
     chatId,
     text,
     { reply_to_message_id: msg.message_id }
@@ -3030,11 +3103,16 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   const modeAliases = {
     learning: 'belajar',
     critical: 'kritis',
-    research: 'riset'
+    research: 'riset',
+    reflection: 'refleksi',
+    'self-reflection': 'refleksi',
+    analysis: 'deep',
+    'deep-analysis': 'deep',
+    optimization: 'optimasi'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     await persist();
 
@@ -3046,7 +3124,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3378,6 +3456,7 @@ async function handleHelp(chatId, msg) {
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
 /system - status agent production [admin]
+/improve - laporan self-improvement [admin]
 /rollback - hapus aturan terakhir
 /feedback - log A/B
 /plugins - daftar plugin
@@ -3394,7 +3473,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi
 /alias nama_alias = /command
 /riwayat kata
 
@@ -3453,6 +3532,7 @@ function isUnknownCommand(cmd) {
     '/belajar',
     '/stats',
     '/system',
+    '/improve',
     '/rollback',
     '/feedback',
     '/image',
@@ -4300,11 +4380,19 @@ app.post(WEBHOOK_PATH, async (req, res) => {
             ensureUser,
             persist
           });
+          await selfImprovementAgent.recordUserFeedback('telegram_callback', feedbackUserId, 'positive', {
+            ensureUser,
+            persist
+          });
         }
         await safeSendMessage(chatId, '👍 Terima kasih!');
       } else if (cb.data === 'negative') {
         if (feedbackUserId) {
           await agentLearning.registerFeedback('telegram_callback', feedbackUserId, 'negative', {
+            ensureUser,
+            persist
+          });
+          await selfImprovementAgent.recordUserFeedback('telegram_callback', feedbackUserId, 'negative', {
             ensureUser,
             persist
           });
@@ -4393,6 +4481,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/belajar') { await sendChunkedMessage(chatId, buildLearningGuide(), { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
   if (resolvedCmd === '/system') { await handleSystemStatus(chatId, userId, msg); return; }
+  if (resolvedCmd === '/improve') { await handleImproveStatus(chatId, userId, msg); return; }
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
   if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }
   if (resolvedCmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return; }

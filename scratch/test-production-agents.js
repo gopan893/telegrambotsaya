@@ -19,6 +19,7 @@ const executor = require('../src/agents/executor');
 const evaluator = require('../src/agents/evaluator');
 const verifier = require('../src/agents/verifier');
 const learning = require('../src/agents/learning');
+const selfImprovement = require('../src/agents/self-improvement');
 const recovery = require('../src/agents/recovery');
 const orchestrator = require('../src/core/autonomous-engine');
 const { getSelectiveContext } = require('../src/memory/advanced-memory');
@@ -300,9 +301,52 @@ async function runTests() {
     console.log('✅ TEST 10 PASSED: Pembelajaran koreksi tersimpan rapi.');
 
     // -----------------------------------------------------------------
-    // TEST 11: Recovery Agent (Fault-tolerance & Degradation)
+    // TEST 11: Self-Improvement Agent (Evaluation & Adaptation)
     // -----------------------------------------------------------------
-    console.log('\n🔄 [TEST 11] Memvalidasi Recovery Agent (Fault Tolerance)...');
+    console.log('\n🪞 [TEST 11] Memvalidasi Self-Improvement Agent (Scoring & Prompt Hints)...');
+
+    const improveResult = await selfImprovement.recordInteraction(traceId, 'user_123', {
+      query: 'jelaskan trade-off cache untuk bot telegram',
+      answer: 'Cache mempercepat jawaban karena data dipakai ulang. Trade-off-nya adalah data bisa basi, jadi perlu TTL dan risiko stale context harus dijaga.',
+      intent: 'NONE',
+      evaluation: {
+        qualityScore: 0.82,
+        reasoningScore: 0.76,
+        metrics: {
+          quality: 0.82,
+          reasoning: 0.76,
+          consistency: 0.72,
+          clarity: 0.84
+        }
+      },
+      verification: { confidence: 0.8 },
+      executionResult: null,
+      context: {
+        summary: '- User sedang belajar arsitektur cache',
+        history: 'User bertanya tentang cache',
+        tags: 'coding, backend',
+        todos: '',
+        reminders: ''
+      },
+      latencyMs: 1200
+    }, mockServices);
+
+    assert.ok(improveResult.metrics.answerQuality > 0.7, 'Self-improvement gagal menghitung kualitas jawaban.');
+    const promptHints = selfImprovement.generatePromptHints('user_123', mockServices);
+    assert.strictEqual(typeof promptHints, 'string', 'Prompt hints harus berupa string ringkas.');
+    const improveReport = selfImprovement.getReport('user_123', mockServices);
+    assert.ok(improveReport.samples >= 1, 'Self-improvement report tidak menyimpan sampel.');
+
+    await selfImprovement.recordUserFeedback(traceId, 'user_123', 'negative', mockServices);
+    const reportAfterFeedback = selfImprovement.getReport('user_123', mockServices);
+    assert.ok(reportAfterFeedback.failureHistory.length >= 1, 'Feedback negatif tidak masuk failure history.');
+
+    console.log('✅ TEST 11 PASSED: Loop peningkatan diri tersimpan dan bisa memberi sinyal adaptif.');
+
+    // -----------------------------------------------------------------
+    // TEST 12: Recovery Agent (Fault-tolerance & Degradation)
+    // -----------------------------------------------------------------
+    console.log('\n🔄 [TEST 12] Memvalidasi Recovery Agent (Fault Tolerance)...');
     
     const degradedAns = recovery.getDegradedFallback(traceId, 'CUACA');
     assert.ok(degradedAns.includes('server cuaca sedang tidak dapat dihubungi'));
@@ -310,12 +354,12 @@ async function runTests() {
     const pipelineRecoverText = await recovery.handlePipelineFailure(traceId, 'user_123', new Error('Koneksi terputus'), mockServices);
     assert.ok(pipelineRecoverText.includes('Sistem Mengalami Kendala Teknis'));
 
-    console.log('✅ TEST 11 PASSED: Penanganan kegagalan anggun bekerja tangguh.');
+    console.log('✅ TEST 12 PASSED: Penanganan kegagalan anggun bekerja tangguh.');
 
     // -----------------------------------------------------------------
-    // TEST 12: E2E Pipeline Orchestrator
+    // TEST 13: E2E Pipeline Orchestrator
     // -----------------------------------------------------------------
-    console.log('\n🏁 [TEST 12] Memvalidasi End-to-End Orchestrator Pipeline...');
+    console.log('\n🏁 [TEST 13] Memvalidasi End-to-End Orchestrator Pipeline...');
     
     const pipelineResult = await orchestrator.processMessage(
       'user_1234',
@@ -329,9 +373,10 @@ async function runTests() {
 
     const runtimeStatus = orchestrator.getRuntimeStatus();
     assert.ok(runtimeStatus.agents.includes('PlannerAgent'), 'Runtime status tidak memuat registry agen internal.');
+    assert.ok(runtimeStatus.agents.includes('SelfImprovementAgent'), 'Runtime status tidak memuat SelfImprovementAgent.');
     assert.ok(runtimeStatus.queue.maxQueueSize >= runtimeStatus.queue.queuedCount, 'Runtime status queue tidak valid.');
 
-    console.log('✅ TEST 12 PASSED: Pipa 12-tahap otonom terpadu berjalan sukses.');
+    console.log('✅ TEST 13 PASSED: Pipa otonom terpadu berjalan sukses.');
 
     console.log('\n🎉 =========================================================================');
     console.log('🎉 SELURUH PENGUJIAN UNIT PRODUKSI PASSED 100% TANPA KENDALA!');
