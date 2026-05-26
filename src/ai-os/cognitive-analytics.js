@@ -14,8 +14,12 @@ function collect(userId, botServices) {
   const activeWorkflows = workflowEngine.listActiveWorkflows(userId, botServices, 100);
   const graphStats = knowledgeGraph.getGraphStats(userId, botServices);
   const staleGoals = goalManager.detectStaleGoals(userId, botServices);
+  const staleWorkflows = workflowEngine.detectStaleWorkflows(userId, botServices);
+  const workflowConflicts = workflowEngine.detectWorkflowConflicts(userId, botServices);
   const insights = memoryBus.getRecentInsights(userId, botServices, 5);
   const avgConfidence = averageConfidence(state);
+  const workflowCompletionRatio = computeWorkflowCompletionRatio(state.workflows);
+  const researchMemoryCount = state.memories.filter((memory) => memory.type === 'research').length;
 
   state.analytics.events = Number(state.analytics.events || 0) + 1;
   state.analytics.averageConfidence = avgConfidence;
@@ -28,13 +32,18 @@ function collect(userId, botServices) {
     activeWorkflows: activeWorkflows.length,
     graphNodes: graphStats.nodes,
     graphEdges: graphStats.edges,
-    staleItems: staleGoals.length,
+    staleItems: staleGoals.length + staleWorkflows.length,
+    staleGoals: staleGoals.length,
+    staleWorkflows: staleWorkflows.length,
+    workflowConflicts: workflowConflicts.length,
     reflectionCount: state.reflections.length,
     averageConfidence: avgConfidence,
     recentInsights: insights,
     researchSessions: state.researchSessions.length,
+    researchMemoryCount,
     workspaces: state.workspaces.length,
     learningPatterns: state.learningPatterns.length,
+    workflowCompletionRatio,
     updatedAt: guards.nowIso()
   };
 }
@@ -57,12 +66,28 @@ function summarizeAnalytics(analytics) {
     `Graph: ${analytics.graphNodes} node, ${analytics.graphEdges} edge`,
     `Insight terbaru: ${analytics.recentInsights.length}`,
     `Average confidence: ${analytics.averageConfidence.toFixed(2)}`,
-    `Stale item: ${analytics.staleItems}`
+    `Stale goals/workflows: ${analytics.staleGoals}/${analytics.staleWorkflows}`,
+    `Workflow completion: ${Math.round((analytics.workflowCompletionRatio || 0) * 100)}%`,
+    `Workflow conflicts: ${analytics.workflowConflicts}`
   ].join('\n');
+}
+
+function computeWorkflowCompletionRatio(workflows = []) {
+  const active = guards.safeArray(workflows).filter((workflow) => workflow.status !== 'archived');
+  let done = 0;
+  let total = 0;
+  for (const workflow of active) {
+    const steps = guards.safeArray(workflow.steps);
+    done += steps.filter((step) => step.done).length;
+    total += steps.length;
+  }
+  if (!total) return 0;
+  return Number((done / total).toFixed(3));
 }
 
 module.exports = {
   collect,
   averageConfidence,
+  computeWorkflowCompletionRatio,
   summarizeAnalytics
 };

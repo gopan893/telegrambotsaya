@@ -569,3 +569,110 @@ INPUT
 ### Hal Penting Untuk Dipelajari
 
 AI OS yang sehat bukan berarti semua layer aktif setiap saat. Kuncinya adalah selective activation: pertanyaan sederhana tetap sederhana, sementara goal, research, workflow, dan keputusan strategis mendapat memory, graph, reflection, dan analytics tambahan.
+
+## Phase 9 Part 2 - Cognitive Graph, Workflow, And Strategic Intelligence
+
+Part 2 memperkuat AI OS agar lebih berguna sebagai persistent cognitive infrastructure, bukan hanya status layer.
+
+### Knowledge Graph System
+
+Graph tetap ringan dan persistent di `userMemory[id].aios.graph`. Node dibatasi per user dan punya:
+
+- `type`: project, concept, person, topic, goal, workflow, insight, evidence, decision, risk, assumption.
+- `seenCount`: menghitung berapa kali konsep muncul.
+- `evolution`: catatan pendek perubahan/kemunculan konsep.
+- `importance`, `confidence`, `lastSeenAt`: dipakai untuk ranking dan stale cleanup.
+
+Edge mendukung relasi:
+
+- `related_to`, `supports`, `contradicts`, `depends_on`, `part_of`, `improves`, `blocks`, `belongs_to_project`, `linked_to_goal`, `derived_from`, `evidence_for`.
+
+Graph dipakai oleh `/graph`, `context-sync`, goal/workflow linking, dan research evidence linking. Stale cleanup menghapus node lama dengan importance rendah supaya RAM tetap aman.
+
+### Persistent Workflow System
+
+Workflow sekarang menyimpan:
+
+- step dan status selesai
+- `contextSummary`
+- `decisionLog`
+- `blockers`
+- `nextAction`
+- link ke goal dan memory
+- stale/conflict detection
+- completion ratio
+
+Workflow tidak menjalankan aksi sensitif otomatis. Ia hanya menyimpan state dan memberi next action; eksekusi tetap melewati governance/tool layer.
+
+### Long-Term Goal System
+
+Goal menyimpan dependency, risk note, linked memory, linked graph node, dan strategic reflection. Goal reasoning mengevaluasi feasibility, risk, dependency, milestone, next action, dan confidence.
+
+### Strategic Reasoning Engine
+
+Output `/strategy` sekarang terstruktur:
+
+- Ringkasan masalah
+- Tujuan
+- Fakta diketahui
+- Asumsi
+- Inferensi
+- Spekulasi
+- Risiko
+- Trade-off
+- Opsi
+- Rekomendasi
+- Next action
+- Evidence quality
+- Mental model
+- Confidence
+
+Ini dibuat deterministic agar murah dan cepat. Jika butuh fakta terbaru, research/search layer tetap harus dipakai.
+
+### Cognitive Analytics
+
+`/aios` dan `/system` sekarang membaca statistik tambahan:
+
+- memory count dan memory by type
+- active goals/workflows
+- graph nodes/edges
+- stale goals/workflows
+- workflow conflicts
+- workflow completion ratio
+- research memory count
+- reflection count
+- average confidence
+
+### Trade-off Part 2
+
+- Graph heuristic lebih murah daripada embedding/vector DB, tetapi relasi tidak selalu sesempurna semantic model.
+- Workflow menyimpan decision/blocker tanpa worker otomatis agar tidak terjadi runaway autonomous behavior.
+- Goal strategic reflection dibuat ringan agar bisa berjalan tanpa AI call tambahan.
+- Evidence linking ke graph membantu audit, tetapi hanya sekuat evidence yang diberikan user/search.
+
+### Manual Test
+
+```bash
+node --check telebot.js
+node scratch/test-aios.js
+npm run check
+```
+
+Command Telegram yang perlu dicoba:
+
+```text
+/aios
+/goaladd Belajar backend | Roadmap 30 hari | high
+/goals
+/workflowadd Minggu 1 backend | Express, API, database | <goalId>
+/workflowstep <workflowId> | Pelajari middleware Express
+/workflowdone <workflowId> | 1
+/workflowdecision <workflowId> | Mulai dari Express sebelum database
+/workflowblocker <workflowId> | Belum memilih database latihan
+/workflownext <workflowId> | Pilih database latihan
+/graph
+/workspaceadd Ide backend | Catatan belajar dan project thinking
+/workspace
+/reflect Belajar backend terlalu luas, apa risiko utamanya?
+/strategy Saya ingin belajar backend selama 30 hari sambil membuat project
+```

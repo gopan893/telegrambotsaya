@@ -69,6 +69,11 @@ function buildLearningGuide() {
     '- Data AI OS disimpan per user di `userMemory[id].aios`, jadi ikut Redis/JSON lama dan tidak perlu database berat.',
     '- AI OS memakai selective context activation: hanya memory, goal, workflow, graph, dan insight relevan yang masuk prompt.',
     '- Knowledge graph dibuat ringan memakai heuristic konsep/relasi agar tidak memanggil AI tambahan untuk setiap pesan.',
+    '- Tahap 9 part 2 memperkuat knowledge graph: node punya seen count, concept evolution, type summary, stale cleanup, dan link goal-workflow-evidence.',
+    '- Workflow sekarang punya decision log, blocker, next action, stale detection, conflict detection, dan completion ratio.',
+    '- Goal sekarang bisa menyimpan dependency, risk note, link memory/graph, dan strategic reflection.',
+    '- Strategic reasoning sekarang menghasilkan ringkasan masalah, tujuan, fakta, asumsi, risiko, trade-off, opsi, rekomendasi, next action, mental model, dan confidence.',
+    '- Research session bisa menyimpan evidence, confidence, link ke goal/workflow, dan edge evidence_for di knowledge graph.',
     '- Command baru seperti `/aios`, `/goals`, `/workflowadd`, `/graph`, `/reflect`, dan `/strategy` membantu user mengelola kerja jangka panjang langsung dari Telegram.',
     '- Mode baru `/mode strategic-thinking`, `/mode personal-intelligence`, `/mode deep-research-os`, `/mode cognitive-workspace`, dan `/mode meta-reasoning` mengaktifkan layer kognitif yang sesuai.',
     '- Guard AI OS mencegah overload, memory corruption, prompt injection di memory, workflow runaway, dan aksi strategis confidence rendah.',
@@ -84,8 +89,9 @@ function buildLearningGuide() {
     '8. Untuk multimodal, mulai dari evidence yang bisa dibaca, beri citation, lalu jelaskan batasan jika confidence rendah.',
     '9. Untuk governance, pisahkan “boleh memahami permintaan” dari “boleh menjalankan aksi”.',
     '10. Untuk AI OS, pisahkan “mengingat semua hal” dari “mengaktifkan konteks yang relevan”.',
-    '11. Validasi sintaks dan test lokal sebelum deploy.',
-    '12. Commit perubahan per bagian agar mudah dilacak.'
+    '11. Untuk graph, simpan relasi penting saja; graph yang terlalu penuh justru membuat reasoning kabur.',
+    '12. Validasi sintaks dan test lokal sebelum deploy.',
+    '13. Commit perubahan per bagian agar mudah dilacak.'
   ].join('\n');
 }
 

@@ -52,7 +52,7 @@ class CognitiveCore {
     const cognitiveContext = contextSync.syncContext(userId, userMessage, botServices, {
       maxChars: strategy.maxContextChars,
       skipMemory: !strategy.needMemory,
-      skipGraph: !strategy.needGraphEvolution
+      skipGraph: !strategy.needGraphEvolution || strategy.moduleBudget?.shouldDeferLowPriority
     });
     const strategic = strategy.needStrategicReasoning
       ? strategicReasoning.analyzeGoal(userMessage, cognitiveContext)
@@ -60,7 +60,7 @@ class CognitiveCore {
     const personal = strategy.mode === 'personal-intelligence'
       ? personalIntelligence.getProfile(userId, botServices)
       : null;
-    const research = strategy.needResearch
+    const research = strategy.needResearch && !strategy.moduleBudget?.shouldDeferLowPriority
       ? researchIntelligence.buildResearchContext(userId, userMessage, botServices)
       : null;
 
@@ -118,6 +118,7 @@ class CognitiveCore {
         source: 'cognitive-core',
         confidence: reflection.evaluation.confidence
       });
+      knowledgeGraph.cleanupStaleGraph(userId, botServices);
     }
 
     if (strategy.needWorkflowUpdate) {
