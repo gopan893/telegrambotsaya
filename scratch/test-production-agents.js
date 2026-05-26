@@ -18,10 +18,13 @@ const toolRouter = require('../src/agents/tool-router');
 const executor = require('../src/agents/executor');
 const evaluator = require('../src/agents/evaluator');
 const verifier = require('../src/agents/verifier');
+const reflection = require('../src/agents/reflection');
 const learning = require('../src/agents/learning');
 const selfImprovement = require('../src/agents/self-improvement');
 const recovery = require('../src/agents/recovery');
 const orchestrator = require('../src/core/autonomous-engine');
+const messageBus = require('../src/core/message-bus');
+const agentCoordinator = require('../src/core/agent-coordinator');
 const { getSelectiveContext } = require('../src/memory/advanced-memory');
 
 // Mock data & services
@@ -250,20 +253,69 @@ async function runTests() {
     console.log('✅ TEST 6 PASSED: Pencatatan jejak audit api berfungsi.');
 
     // -----------------------------------------------------------------
-    // TEST 7: Executor Agent (Operational Modes)
+    // TEST 7: Multi-Agent Coordination (Message Bus & Consensus)
     // -----------------------------------------------------------------
-    console.log('\n⚙️ [TEST 7] Memvalidasi Executor Agent (Operational Modes)...');
+    console.log('\n🤝 [TEST 7] Memvalidasi Agent Coordinator, Message Bus, dan Consensus...');
+
+    const collabTrace = `${traceId}_collab`;
+    const detectedMode = agentCoordinator.detectCollaborationMode({
+      userMessage: 'Tolong diskusikan pro kontra arsitektur bot ini dari beberapa sudut pandang',
+      currentMode: 'Standard',
+      userMode: ''
+    });
+    assert.strictEqual(detectedMode, 'Collaborative Thinking');
+
+    const delegationPlan = agentCoordinator.buildDelegationPlan(collabTrace, {
+      userMessage: 'diskusikan arsitektur bot',
+      currentMode: detectedMode,
+      intent: 'NONE',
+      nlpConfidence: 0.91
+    });
+    assert.ok(delegationPlan.agents.includes('ResearchAgent'), 'Delegation plan tidak mengaktifkan ResearchAgent.');
+    assert.ok(delegationPlan.agents.includes('ReasoningAgent'), 'Delegation plan tidak mengaktifkan ReasoningAgent.');
+
+    messageBus.initContext(collabTrace, { query: 'diskusikan arsitektur bot' });
+    messageBus.updateContext(collabTrace, 'workflow', delegationPlan);
+    messageBus.recordAgentMessage(collabTrace, 'AgentCoordinator', 'ResearchAgent', 'DELEGATE_RESEARCH', { priority: 'high' });
+    messageBus.recordMemoryAccess(collabTrace, 'MemoryAgent', 'shared_semantic', 'read', 0.72);
+    messageBus.registerOpinion(collabTrace, 'ExecutorAgent', 'Solusi awal: modularisasi bertahap agar fitur lama tetap aman.', { confidence: 0.68, role: 'executor' });
+    messageBus.registerOpinion(collabTrace, 'ResearchAgent', 'Bukti: dokumentasi internal menunjukkan bottleneck utama adalah file besar dan queue.', { confidence: 0.74, role: 'research' });
+    messageBus.registerOpinion(collabTrace, 'ReasoningAgent', 'Analisis: trade-off terbaik adalah memperkuat modularitas tanpa rewrite total.', { confidence: 0.79, role: 'reasoning' });
+
+    const consensus = reflection.buildConsensus(collabTrace, messageBus.getContext(collabTrace));
+    assert.strictEqual(consensus.reached, true, 'Consensus harus tercapai pada opini yang saling mendukung.');
+    assert.ok(consensus.metrics.consensusConfidence > 0.5, 'Consensus confidence terlalu rendah.');
+
+    const workflowReport = agentCoordinator.finalizeWorkflow(
+      collabTrace,
+      delegationPlan,
+      messageBus.getContext(collabTrace),
+      consensus,
+      { confidence: 0.81 },
+      1200
+    );
+    assert.ok(workflowReport.metrics.criticalThinkingScore > 0.5, 'Critical thinking score tidak dihitung.');
+    agentCoordinator.persistCollaborativeMemory(collabTrace, 'user_123', workflowReport, mockServices);
+    assert.ok(mockUserDb.user_123.collaborativeMemory.history.length > 0, 'Collaborative memory tidak tersimpan.');
+    messageBus.cleanupContext(collabTrace);
+
+    console.log('✅ TEST 7 PASSED: Koordinasi multi-agent, consensus, dan collaborative memory berjalan.');
+
+    // -----------------------------------------------------------------
+    // TEST 8: Executor Agent (Operational Modes)
+    // -----------------------------------------------------------------
+    console.log('\n⚙️ [TEST 8] Memvalidasi Executor Agent (Operational Modes)...');
     
     const context = { mode: 'learning', mood: 'senang', summary: '', tags: '', todos: '', reminders: '', sessionState: '' };
     const chatResponse = await executor.executeChat(traceId, 'user_1', 'Halo asisten', context, mockServices);
     assert.ok(chatResponse.includes('JavaScript adalah bahasa pemrograman'), 'Executor mengabaikan petunjuk operasional mode.');
 
-    console.log('✅ TEST 7 PASSED: Perilaku mode operasional disuntikkan secara tepat.');
+    console.log('✅ TEST 8 PASSED: Perilaku mode operasional disuntikkan secara tepat.');
 
     // -----------------------------------------------------------------
-    // TEST 8: Evaluator Agent (Self-Review Debate)
+    // TEST 9: Evaluator Agent (Self-Review Debate)
     // -----------------------------------------------------------------
-    console.log('\n🛡️ [TEST 8] Memvalidasi Evaluator Agent (Self-Review & Grading)...');
+    console.log('\n🛡️ [TEST 9] Memvalidasi Evaluator Agent (Self-Review & Grading)...');
     
     const draftResponse = 'Tentu! Cuaca di Jakarta saat ini sangat cerah!';
     const execResult = { toolExecuted: 'CUACA', ok: false, error: 'API Timeout' };
@@ -272,24 +324,24 @@ async function runTests() {
     assert.ok(review.finalAnswer.includes('kesulitan menghubungi'), 'Evaluator gagal mendeteksi halusinasi status tool.');
     assert.ok(review.qualityScore > 0, 'Gagal menghitung skor kualitas jawaban.');
 
-    console.log('✅ TEST 8 PASSED: Debat internal memfilter respons halusinasi.');
+    console.log('✅ TEST 9 PASSED: Debat internal memfilter respons halusinasi.');
 
     // -----------------------------------------------------------------
-    // TEST 9: Verifier Agent (Uncertainty Tracking & Circular Reasoning)
+    // TEST 10: Verifier Agent (Uncertainty Tracking & Circular Reasoning)
     // -----------------------------------------------------------------
-    console.log('\n🛡️ [TEST 9] Memvalidasi Verifier Agent (Logic & Fact Check)...');
+    console.log('\n🛡️ [TEST 10] Memvalidasi Verifier Agent (Logic & Fact Check)...');
     
     assert.strictEqual(verifier.detectCircularReasoning('Hal itu benar karena hal tersebut benar untuk dilakukan.'), true);
     
     const lowConfidenceVerify = verifier.verify(traceId, 'CUACA', 'Saya tidak yakin cuaca besok cerah karena saya tidak punya data.', 0.3);
     assert.ok(lowConfidenceVerify.finalAnswer.includes('Tingkat keyakinan argumen'), 'Verifier gagal menandai ketidakpastian respons berkeyakinan rendah.');
 
-    console.log('✅ TEST 9 PASSED: Validasi logika berhasil memberi anotasi keraguan.');
+    console.log('✅ TEST 10 PASSED: Validasi logika berhasil memberi anotasi keraguan.');
 
     // -----------------------------------------------------------------
-    // TEST 10: Learning Agent (Feedback Loop)
+    // TEST 11: Learning Agent (Feedback Loop)
     // -----------------------------------------------------------------
-    console.log('\n🎓 [TEST 10] Memvalidasi Learning Agent (Correction & Feedback)...');
+    console.log('\n🎓 [TEST 11] Memvalidasi Learning Agent (Correction & Feedback)...');
     
     await learning.learnFromCorrection(traceId, 'user_123', 'tanya cuaca', 'CUACA', { city: 'Depok' }, mockServices);
     const uStats = mockUserDb['user_123'];
@@ -298,12 +350,12 @@ async function runTests() {
     await learning.registerFeedback(traceId, 'user_123', 'positive', mockServices);
     assert.strictEqual(uStats.feedbackStats.positive, 1);
 
-    console.log('✅ TEST 10 PASSED: Pembelajaran koreksi tersimpan rapi.');
+    console.log('✅ TEST 11 PASSED: Pembelajaran koreksi tersimpan rapi.');
 
     // -----------------------------------------------------------------
-    // TEST 11: Self-Improvement Agent (Evaluation & Adaptation)
+    // TEST 12: Self-Improvement Agent (Evaluation & Adaptation)
     // -----------------------------------------------------------------
-    console.log('\n🪞 [TEST 11] Memvalidasi Self-Improvement Agent (Scoring & Prompt Hints)...');
+    console.log('\n🪞 [TEST 12] Memvalidasi Self-Improvement Agent (Scoring & Prompt Hints)...');
 
     const improveResult = await selfImprovement.recordInteraction(traceId, 'user_123', {
       query: 'jelaskan trade-off cache untuk bot telegram',
@@ -341,12 +393,12 @@ async function runTests() {
     const reportAfterFeedback = selfImprovement.getReport('user_123', mockServices);
     assert.ok(reportAfterFeedback.failureHistory.length >= 1, 'Feedback negatif tidak masuk failure history.');
 
-    console.log('✅ TEST 11 PASSED: Loop peningkatan diri tersimpan dan bisa memberi sinyal adaptif.');
+    console.log('✅ TEST 12 PASSED: Loop peningkatan diri tersimpan dan bisa memberi sinyal adaptif.');
 
     // -----------------------------------------------------------------
-    // TEST 12: Recovery Agent (Fault-tolerance & Degradation)
+    // TEST 13: Recovery Agent (Fault-tolerance & Degradation)
     // -----------------------------------------------------------------
-    console.log('\n🔄 [TEST 12] Memvalidasi Recovery Agent (Fault Tolerance)...');
+    console.log('\n🔄 [TEST 13] Memvalidasi Recovery Agent (Fault Tolerance)...');
     
     const degradedAns = recovery.getDegradedFallback(traceId, 'CUACA');
     assert.ok(degradedAns.includes('server cuaca sedang tidak dapat dihubungi'));
@@ -354,12 +406,12 @@ async function runTests() {
     const pipelineRecoverText = await recovery.handlePipelineFailure(traceId, 'user_123', new Error('Koneksi terputus'), mockServices);
     assert.ok(pipelineRecoverText.includes('Sistem Mengalami Kendala Teknis'));
 
-    console.log('✅ TEST 12 PASSED: Penanganan kegagalan anggun bekerja tangguh.');
+    console.log('✅ TEST 13 PASSED: Penanganan kegagalan anggun bekerja tangguh.');
 
     // -----------------------------------------------------------------
-    // TEST 13: E2E Pipeline Orchestrator
+    // TEST 14: E2E Pipeline Orchestrator
     // -----------------------------------------------------------------
-    console.log('\n🏁 [TEST 13] Memvalidasi End-to-End Orchestrator Pipeline...');
+    console.log('\n🏁 [TEST 14] Memvalidasi End-to-End Orchestrator Pipeline...');
     
     const pipelineResult = await orchestrator.processMessage(
       'user_1234',
@@ -374,9 +426,11 @@ async function runTests() {
     const runtimeStatus = orchestrator.getRuntimeStatus();
     assert.ok(runtimeStatus.agents.includes('PlannerAgent'), 'Runtime status tidak memuat registry agen internal.');
     assert.ok(runtimeStatus.agents.includes('SelfImprovementAgent'), 'Runtime status tidak memuat SelfImprovementAgent.');
+    assert.ok(runtimeStatus.agentRegistry.length >= 10, 'Runtime status tidak memuat agent registry lengkap.');
+    assert.ok(runtimeStatus.collaboration.recentWorkflowCount >= 1, 'Runtime status tidak memuat analytics collaborative workflow.');
     assert.ok(runtimeStatus.queue.maxQueueSize >= runtimeStatus.queue.queuedCount, 'Runtime status queue tidak valid.');
 
-    console.log('✅ TEST 13 PASSED: Pipa otonom terpadu berjalan sukses.');
+    console.log('✅ TEST 14 PASSED: Pipa otonom terpadu berjalan sukses.');
 
     console.log('\n🎉 =========================================================================');
     console.log('🎉 SELURUH PENGUJIAN UNIT PRODUKSI PASSED 100% TANPA KENDALA!');

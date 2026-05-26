@@ -22,6 +22,7 @@ const reflection = require('../agents/reflection');
 const selfImprovement = require('../agents/self-improvement');
 
 const messageBus = require('./message-bus');
+const agentCoordinator = require('./agent-coordinator');
 const { getSelectiveContext, updateSessionState } = require('../memory/advanced-memory');
 const { parseSemanticIntent } = require('../intent/semantic-parser');
 const { globalTaskQueue } = require('./task-queue');
@@ -57,6 +58,7 @@ function detectAIMode(userMessage, intent, hasAttachment, attachmentType) {
 function getRuntimeStatus() {
   const queue = globalTaskQueue.getTelemetry();
   const health = observability.diagnoseHealth({ queue });
+  const collaboration = agentCoordinator.getRuntimeSnapshot();
 
   return {
     status: health.status,
@@ -74,8 +76,13 @@ function getRuntimeStatus() {
       'SelfImprovementAgent',
       'ObservabilityAgent'
     ],
+    agentRegistry: agentCoordinator.getAgentRegistrySummary(),
+    collaboration,
     queue,
     telemetry: health.telemetry,
+    observability: {
+      collaboration: health.collaboration
+    },
     issues: health.issues,
     recentErrorPatterns: health.recentErrorPatterns
   };
@@ -327,6 +334,7 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       fileContext // Cross-modal: gabungkan konteks file dengan konteks teks
     };
     messageBus.updateContext(traceId, 'sharedMemory', context.summary);
+    messageBus.recordMemoryAccess(traceId, 'MemoryAgent', 'semantic+short_term', 'selective_load', context.summary ? 0.7 : 0.4);
 
     // 4. Adaptive Intelligence Modifiers
     const adaptiveModifiers = [
@@ -347,7 +355,28 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
     const intent = nlpResult.intent || 'NONE';
 
     const attachmentType = hasAttachment ? fileHandler.classifyContentType(attachment.fileName, attachment.mimeType) : null;
-    const currentMode = detectAIMode(userMessage, intent, hasAttachment, attachmentType);
+    const detectedMode = detectAIMode(userMessage, intent, hasAttachment, attachmentType);
+    const currentMode = agentCoordinator.detectCollaborationMode({
+      userMessage,
+      intent,
+      currentMode: detectedMode,
+      userMode: context.mode,
+      hasAttachment,
+      attachmentType
+    });
+    const delegationPlan = agentCoordinator.buildDelegationPlan(traceId, {
+      userMessage,
+      intent,
+      currentMode,
+      hasAttachment,
+      attachmentType,
+      nlpConfidence: nlpResult.confidence
+    });
+    messageBus.updateContext(traceId, 'workflow', delegationPlan);
+    messageBus.recordAgentMessage(traceId, 'AgentCoordinator', 'ALL', 'DELEGATION_PLAN', {
+      mode: currentMode,
+      agents: delegationPlan.agents
+    });
     observability.logEvent(traceId, 'Orchestrator', 'AI_MODE_DETECTED', { mode: currentMode, hasAttachment });
 
     // 6. Hierarchical Planning Check
@@ -408,8 +437,13 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
         executionResult = await executor.executeTool(traceId, intent, nlpResult.params, chatId, userId, msgObj, botServices);
         draftAnswer = executionResult.ok ? executionResult.resultText : recovery.getDegradedFallback(traceId, intent);
         memory.recordToolPerformance(userId, intent, executionResult.ok, botServices);
+        messageBus.recordAgentMessage(traceId, 'ToolRouterAgent', 'ExecutorAgent', 'TOOL_EXECUTED', {
+          intent,
+          ok: executionResult.ok
+        });
       } else {
         draftAnswer = recovery.getDegradedFallback(traceId, intent);
+        messageBus.recordAgentMessage(traceId, 'RecoveryAgent', 'ExecutorAgent', 'TOOL_DEGRADED', { intent });
       }
     } else {
       // Sisipkan konteks file ke dalam prompt jika ada attachment
@@ -427,15 +461,41 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
       }
       draftAnswer = await executor.executeChat(traceId, userId, userMessage, contextWithMods, botServices, intent);
     }
-    messageBus.registerOpinion(traceId, 'ExecutorAgent', draftAnswer);
+    messageBus.registerOpinion(traceId, 'ExecutorAgent', draftAnswer, {
+      role: 'executor',
+      confidence: 0.65,
+      score: agentCoordinator.scoreAgentOutput('ExecutorAgent', { text: draftAnswer, confidence: 0.65 }),
+      tags: ['draft']
+    });
 
     // 9. Collaborative Reasoning Phase (untuk mode kompleks)
-    if (['Collaborative Thinking', 'Research Intelligence', 'Strategic Planning', 'Cross-Modal Reasoning'].includes(currentMode)) {
+    if (agentCoordinator.shouldUseCollaborativeReasoning(delegationPlan, { isToolRequest, hasAttachment })) {
+      const memoryPerspective = agentCoordinator.buildMemoryPerspective(context);
+      messageBus.registerOpinion(traceId, 'MemoryAgent', memoryPerspective.text, {
+        role: 'memory',
+        confidence: memoryPerspective.confidence,
+        score: agentCoordinator.scoreAgentOutput('MemoryAgent', {
+          text: memoryPerspective.text,
+          confidence: memoryPerspective.confidence
+        }),
+        tags: ['shared_memory']
+      });
+
       const researchData = research.gatherEvidence(traceId, userMessage, messageBus.getContext(traceId));
-      messageBus.registerOpinion(traceId, 'ResearchAgent', `Bukti (Confidence ${researchData.confidence}):\n${researchData.evidenceText}`);
+      messageBus.registerOpinion(traceId, 'ResearchAgent', `Bukti (Confidence ${researchData.confidence}):\n${researchData.evidenceText}`, {
+        role: 'research',
+        confidence: researchData.confidence,
+        score: agentCoordinator.scoreAgentOutput('ResearchAgent', researchData),
+        tags: ['evidence']
+      });
 
       const reasoningData = reasoning.analyze(traceId, draftAnswer, researchData);
-      messageBus.registerOpinion(traceId, 'ReasoningAgent', reasoningData.opinionText);
+      messageBus.registerOpinion(traceId, 'ReasoningAgent', reasoningData.opinionText, {
+        role: 'reasoning',
+        confidence: reasoningData.confidence,
+        score: agentCoordinator.scoreAgentOutput('ReasoningAgent', reasoningData),
+        tags: ['critical_thinking']
+      });
     }
 
     // 10. Consensus & Reflection
@@ -448,6 +508,15 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
 
     // 12. Output Sanitization
     const sanitizedAnswer = safety.sanitizeOutput(traceId, verification.finalAnswer);
+    const workflowReport = agentCoordinator.finalizeWorkflow(
+      traceId,
+      delegationPlan,
+      messageBus.getContext(traceId),
+      consensus,
+      verification,
+      Date.now() - startTime
+    );
+    messageBus.updateContext(traceId, 'workflowReport', workflowReport);
 
     // Kirim jawaban
     if (!isToolRequest || (executionResult && !executionResult.ok) || verification.annotation || hasAttachment) {
@@ -473,6 +542,7 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
           context,
           latencyMs: Date.now() - startTime
         }, botServices);
+        agentCoordinator.persistCollaborativeMemory(traceId, userId, workflowReport, botServices);
       })().catch((err) => {
         observability.recordErrorPattern('self_improvement', err);
         observability.logEvent(traceId, 'SelfImprovementAgent', 'LEARNING_UPDATE_FAILED', { error: err.message });
@@ -484,7 +554,9 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
       memoryRSS: observability.getSystemTelemetry().memoryUsageMB.rss,
       mode: currentMode,
       hadAttachment: hasAttachment,
-      consensusReached: consensus.reached
+      consensusReached: consensus.reached,
+      consensusConfidence: workflowReport.consensusConfidence,
+      agentCount: workflowReport.agents.length
     });
 
     messageBus.cleanupContext(traceId);

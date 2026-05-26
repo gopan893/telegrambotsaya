@@ -12,6 +12,7 @@ class ObservabilityAgent {
     this.diagnosticsHistory = [];
     this.healthState = new Map();
     this.errorPatterns = new Map();
+    this.collaborationWorkflows = [];
     this.startTime = Date.now();
   }
 
@@ -110,6 +111,52 @@ class ObservabilityAgent {
     }
   }
 
+  recordCollaborationWorkflow(traceId, workflowReport = {}) {
+    const compact = {
+      traceId,
+      mode: workflowReport.mode || 'Standard',
+      agents: workflowReport.agents || [],
+      durationMs: workflowReport.durationMs || 0,
+      consensusConfidence: workflowReport.consensusConfidence || 0,
+      verificationConfidence: workflowReport.verificationConfidence || 0,
+      completedAt: new Date().toISOString()
+    };
+
+    this.collaborationWorkflows.push(compact);
+    if (this.collaborationWorkflows.length > 60) this.collaborationWorkflows.shift();
+
+    this.logEvent(traceId, 'ObservabilityAgent', 'COLLABORATION_WORKFLOW_RECORDED', {
+      mode: compact.mode,
+      agentCount: compact.agents.length,
+      consensusConfidence: compact.consensusConfidence
+    });
+  }
+
+  getCollaborationAnalytics() {
+    const recent = this.collaborationWorkflows.slice(-20);
+    const avgConsensus = recent.length
+      ? recent.reduce((sum, item) => sum + Number(item.consensusConfidence || 0), 0) / recent.length
+      : 0;
+    const avgLatency = recent.length
+      ? recent.reduce((sum, item) => sum + Number(item.durationMs || 0), 0) / recent.length
+      : 0;
+    const agentActivity = {};
+
+    for (const workflow of recent) {
+      for (const agentName of workflow.agents || []) {
+        agentActivity[agentName] = (agentActivity[agentName] || 0) + 1;
+      }
+    }
+
+    return {
+      recentWorkflowCount: recent.length,
+      averageConsensusConfidence: Number(avgConsensus.toFixed(3)),
+      averageWorkflowLatencyMs: Math.round(avgLatency),
+      agentActivity,
+      recentModes: recent.map((item) => item.mode).slice(-8)
+    };
+  }
+
   /**
    * Memeriksa apakah suatu layanan eksternal sedang diblokir oleh Circuit Breaker
    */
@@ -179,6 +226,7 @@ class ObservabilityAgent {
       telemetry,
       queue,
       healthState: Array.from(this.healthState.values()),
+      collaboration: this.getCollaborationAnalytics(),
       recentErrorPatterns: Array.from(this.errorPatterns.values())
         .sort((a, b) => b.count - a.count)
         .slice(0, 8)

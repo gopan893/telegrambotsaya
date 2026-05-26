@@ -62,6 +62,40 @@ class ExecutorAgent {
 - Lakukan cross-check informasi secara ketat dan hindari spekulasi liar.
         `.trim();
 
+      case 'kolaborasi':
+      case 'collaborative':
+      case 'collaborative thinking':
+        return `
+[OPERATIONAL MODE: COLLABORATIVE THINKING]
+- Gunakan beberapa perspektif internal: planner, research, reasoning, verifier, dan reflection.
+- Bandingkan opsi, asumsi, risiko, evidence, serta trade-off sebelum menyimpulkan.
+- Jelaskan hasil sintesis secara ringkas dan mudah diikuti.
+        `.trim();
+
+      case 'mentor intelligence':
+        return `
+[OPERATIONAL MODE: MENTOR INTELLIGENCE]
+- Bantu pengguna memahami cara berpikir, bukan hanya jawaban final.
+- Tunjukkan pola analisis, asumsi, dan pertanyaan reflektif yang berguna untuk belajar.
+- Prioritaskan kejelasan dan contoh pendek.
+        `.trim();
+
+      case 'strategic planning':
+      case 'strategis':
+        return `
+[OPERATIONAL MODE: STRATEGIC PLANNING]
+- Pecah tujuan menjadi workflow bertahap, dependency, risiko, dan metrik keberhasilan.
+- Buat prioritas yang realistis dan aman dieksekusi secara bertahap.
+        `.trim();
+
+      case 'system analysis':
+      case 'analisis sistem':
+        return `
+[OPERATIONAL MODE: SYSTEM ANALYSIS]
+- Evaluasi architecture, bottleneck, stability, observability, security, dan scalability.
+- Jelaskan risiko teknis, akar masalah, alternatif, serta urutan perbaikan.
+        `.trim();
+
       case 'refleksi':
       case 'reflection':
       case 'self-reflection':

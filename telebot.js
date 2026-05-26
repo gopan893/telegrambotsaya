@@ -741,6 +741,26 @@ function getModePrompt(mode) {
     return 'Fokus optimasi autonomous: cari bottleneck, efisiensi, reliability, metrik, dan rollback aman.';
   }
 
+  if (activeMode === 'kolaborasi' || activeMode === 'collaborative') {
+    return 'Fokus collaborative thinking: gunakan multi-perspective reasoning, evaluasi silang, consensus, dan sintesis akhir.';
+  }
+
+  if (activeMode === 'research-intelligence') {
+    return 'Fokus research intelligence: validasi evidence, confidence, sumber, dan batas ketidakpastian.';
+  }
+
+  if (activeMode === 'mentor-intelligence') {
+    return 'Fokus mentor intelligence: bantu belajar, jelaskan cara berpikir, dan latih critical thinking.';
+  }
+
+  if (activeMode === 'strategis' || activeMode === 'strategic-planning') {
+    return 'Fokus strategic planning: pecah tujuan, susun workflow, prioritas, risiko, dan metrik sukses.';
+  }
+
+  if (activeMode === 'system-analysis' || activeMode === 'analisis-sistem') {
+    return 'Fokus system analysis: evaluasi arsitektur, bottleneck, stability, observability, security, dan scalability.';
+  }
+
   if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
@@ -2219,6 +2239,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const status = autonomousEngine.getRuntimeStatus();
   const q = status.queue || {};
   const t = status.telemetry || {};
+  const c = status.collaboration || {};
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -2228,6 +2249,9 @@ RAM RSS: ${t.memoryUsageMB?.rss || 0} MB
 Heap: ${t.memoryUsageMB?.heapUsed || 0}/${t.memoryUsageMB?.heapTotal || 0} MB
 Queue: ${q.activeCount || 0} aktif, ${q.queuedCount || 0}/${q.maxQueueSize || 0} antre
 Agents: ${status.agents.length}
+Agent Registry: ${status.agentRegistry?.length || 0}
+Collab Workflows: ${c.recentWorkflowCount || 0}
+Avg Consensus: ${(c.averageConsensusConfidence || 0).toFixed(2)}
 Issues:
 - ${issues}`;
 
@@ -3108,11 +3132,19 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     'self-reflection': 'refleksi',
     analysis: 'deep',
     'deep-analysis': 'deep',
-    optimization: 'optimasi'
+    optimization: 'optimasi',
+    collaborative: 'kolaborasi',
+    'collaborative-thinking': 'kolaborasi',
+    'research-intelligence': 'research-intelligence',
+    'mentor-intelligence': 'mentor-intelligence',
+    strategic: 'strategis',
+    'strategic-planning': 'strategis',
+    'system-analysis': 'system-analysis',
+    'analisis-sistem': 'system-analysis'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     await persist();
 
@@ -3124,7 +3156,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -3473,7 +3505,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis
 /alias nama_alias = /command
 /riwayat kata
 
