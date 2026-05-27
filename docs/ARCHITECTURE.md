@@ -956,6 +956,41 @@ Prinsipnya:
 
 Trade-off: sistem tidak memaksa hard wrap per baris karena itu bisa merusak URL, code block, dan format Telegram. Responsiveness terutama dikendalikan lewat prompt dan normalisasi spacing.
 
+### Conversation Continuity Layer
+
+Pesan non-command sekarang melewati `src/conversation/` sebelum adaptive mode dan autonomous engine.
+
+```text
+Telegram input
+-> command lama tetap prioritas
+-> pending action check
+-> follow-up detector
+-> topic shift detector
+-> clarification handler jika konteks kurang
+-> adaptive mode
+-> autonomous / normal chat answer
+-> record context window + infer pending action baru
+```
+
+Modul:
+
+- `conversation-manager.js`: orchestrator ringan untuk pending action, context window, follow-up, dan fallback.
+- `pending-actions.js`: menyimpan action sementara per user/chat dengan TTL.
+- `followup-detector.js`: mendeteksi `iya`, `tidak`, `lanjut`, `jelaskan`, dan referensi pendek tanpa LLM.
+- `topic-shift-detector.js`: membatalkan pending action jika user jelas mengganti topik.
+- `context-window.js`: menyimpan beberapa pesan terakhir, topik aktif, intent terakhir, dan summary ringkas.
+- `clarification-handler.js`: meminta klarifikasi saat follow-up terlalu ambigu.
+- `continuation-handler.js`: membuat instruksi continuity agar AI tidak mengulang tawaran lama.
+- `conversation-guards.js`: helper deterministic untuk token, overlap, topic, dan guard.
+
+Edge case penting:
+
+- `iya` tanpa pending action tidak dipaksa menjadi follow-up; pesan diproses sebagai chat normal.
+- `lanjut` tanpa konteks cukup dibalas klarifikasi.
+- Pending topic `Xiaomi 14`, lalu user bertanya `Buatkan kode login Next.js`, dianggap topic shift dan diproses sebagai topik baru.
+- Pending action kedaluwarsa otomatis agar bot tidak stuck pada topik lama.
+- Jika conversation layer error, webhook tetap punya fallback ke pipeline AI lama.
+
 ### Dashboard API Foundation
 
 Endpoint ringan:
@@ -978,6 +1013,7 @@ Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, 
 
 ```bash
 node --check telebot.js
+node scratch/test-conversation-layer.js
 node scratch/test-multi-device-ux.js
 node scratch/test-final-cognitive-os.js
 node scratch/test-ops.js
@@ -1006,4 +1042,19 @@ Command Telegram yang perlu dicoba:
 /graph
 /ops
 /health
+```
+
+Conversation test manual:
+
+```text
+User: Tolong bantu
+Bot: Mau aku bantu cari info topik tertentu?
+User: Iya
+Expected: bot melanjutkan tawaran, bukan mengulang pertanyaan.
+
+User: Lanjut
+Expected: jika konteks cukup, bot lanjut; jika tidak, bot minta klarifikasi.
+
+User: Buatkan kode login Next.js
+Expected: jika sebelumnya ada pending action beda topik, pending dibersihkan dan pesan diproses sebagai topik baru.
 ```

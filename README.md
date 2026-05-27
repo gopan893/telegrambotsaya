@@ -17,6 +17,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Human-AI Collaboration untuk thinking, learning, reflection, dan decision support
 - AI Operations untuk health, benchmark, reliability, regression, dan recovery
 - Multi-device UX mode agar jawaban nyaman dibaca di Telegram mobile, Telegram desktop, web client, laptop, dan desktop
+- Conversation continuity layer agar follow-up seperti `iya`, `lanjut`, `jelaskan`, dan pergantian topik dipahami natural
 
 ## Mulai Cepat
 
@@ -116,3 +117,14 @@ Bot sekarang menyuntikkan aturan format jawaban yang mobile-friendly ke system p
 - Jawaban panjang dipecah menjadi section kecil.
 - Code block tetap rapi untuk kebutuhan coding.
 - Normalisasi output membatasi blank line berlebihan sebelum dikirim ke Telegram.
+
+## Conversation Continuity
+
+Layer `src/conversation/` menangani pesan non-command sebelum masuk AI pipeline:
+
+- command lama tetap prioritas;
+- pending action aktif bisa dilanjutkan dengan jawaban pendek seperti `iya`;
+- `tidak` atau `batal` membatalkan pending action;
+- topik baru seperti coding/debugging tidak dipaksa ke konteks lama;
+- `lanjut` tanpa konteks cukup akan memicu klarifikasi singkat;
+- context window dibatasi beberapa pesan terakhir agar ringan untuk Render free tier.

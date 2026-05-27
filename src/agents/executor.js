@@ -261,6 +261,12 @@ Daftar Todo: ${context.todos}
 Pengingat: ${context.reminders}
 Status Sesi: ${context.sessionState}
 
+[KONTEKS PERCAKAPAN NATURAL]
+${context.conversationContext || '-'}
+
+[INSTRUKSI CONTINUITY]
+${context.conversationInstruction || 'Jawab pesan user secara natural. Gunakan konteks sebelumnya hanya jika relevan; jika user mengganti topik, ikuti topik baru.'}
+
 [MODE OPERASIONAL AKTIF]
 ${modePrompt}
 

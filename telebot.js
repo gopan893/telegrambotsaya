@@ -22,6 +22,7 @@ const { createStorageManager } = require('./src/storage');
 const adaptiveSystem = require('./src/adaptive');
 const collaborationSystem = require('./src/collaboration');
 const multiDeviceUX = require('./src/ux/multi-device-response');
+const conversationManager = require('./src/conversation');
 
 
 let scheduleLib = null;
@@ -3436,6 +3437,35 @@ function detectAdaptiveModeForMessage(userId, userText, command, msg) {
   });
 }
 
+function prepareConversationStateSafe(userId, chatId, userText, command, msg) {
+  try {
+    return conversationManager.prepare({
+      userId,
+      chatId,
+      text: userText,
+      command,
+      msg
+    });
+  } catch (err) {
+    log.warn('Conversation layer fallback:', err.message);
+    return {
+      action: 'normal',
+      reason: 'conversation_layer_failed',
+      promptContext: '',
+      instruction: 'Jawab pesan user secara natural. Conversation layer sedang fallback, jadi jangan mengandalkan pending action internal.'
+    };
+  }
+}
+
+function recordConversationReplySafe(input = {}) {
+  try {
+    return conversationManager.recordBotReply(input);
+  } catch (err) {
+    log.warn('Conversation reply record skipped:', err.message);
+    return null;
+  }
+}
+
 async function handleAdaptiveCommands(chatId, userId, cmd, args, msg) {
   if (cmd !== '/adaptive') return false;
   const replyOpt = { reply_to_message_id: msg.message_id };
@@ -5986,11 +6016,46 @@ await withUserActionLock(userId, async () => {
   });
 
   if (pluginHookResult) {
+    let pluginText = '';
     if (typeof pluginHookResult === 'string') {
-      await sendChunkedMessage(chatId, pluginHookResult, { reply_to_message_id: msg.message_id });
+      pluginText = pluginHookResult;
+      await sendChunkedMessage(chatId, pluginText, { reply_to_message_id: msg.message_id });
     } else if (pluginHookResult && typeof pluginHookResult === 'object' && pluginHookResult.text) {
-      await sendChunkedMessage(chatId, pluginHookResult.text, { reply_to_message_id: msg.message_id });
+      pluginText = pluginHookResult.text;
+      await sendChunkedMessage(chatId, pluginText, { reply_to_message_id: msg.message_id });
     }
+    if (pluginText) {
+      recordConversationReplySafe({
+        userId,
+        chatId,
+        userText,
+        botText: pluginText,
+        intent: 'plugin_hook'
+      });
+    }
+    return;
+  }
+
+  const conversationState = prepareConversationStateSafe(userId, chatId, userText, resolvedCmd, msg);
+
+  if (conversationState.action === 'direct') {
+    const directText = conversationState.responseText || 'Bisa jelaskan sedikit lagi maksudnya?';
+    await sendChunkedMessage(chatId, directText, { reply_to_message_id: msg.message_id });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: directText,
+      intent: conversationState.reason || 'conversation_direct'
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: directText,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, directText);
     return;
   }
 
@@ -6027,6 +6092,7 @@ await withUserActionLock(userId, async () => {
     opsServices: getOpsServices(),
     adaptiveDecision,
     adaptiveSystem,
+    conversationState,
     env: {
       OWNER_CHAT_ID,
       ADMIN_SET
@@ -6035,9 +6101,28 @@ await withUserActionLock(userId, async () => {
   });
 
   if (autonomousResult && autonomousResult.processed) {
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: autonomousResult.answerText,
+      intent: adaptiveDecision?.mode || 'autonomous'
+    });
     if (u.digest?.enabled) scheduleDigestJob(userId);
     return;
   }
+
+  const fallbackAnswer = await processAIMessage(chatId, userId, userText, msg);
+  if (fallbackAnswer) {
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: fallbackAnswer,
+      intent: 'legacy_ai_fallback'
+    });
+  }
+  if (u.digest?.enabled) scheduleDigestJob(userId);
 });
 
     return res.sendStatus(200);
@@ -6442,6 +6527,8 @@ async function processAIMessage(chatId, userId, text, msg) {
   await rememberImportantFact(userId, text);
 
   await autoLearn(text, answer);
+
+  return answer;
 }
 
 // ==================== SMART FILE QUESTION ====================

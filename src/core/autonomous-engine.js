@@ -517,6 +517,14 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
         confidence: botServices.adaptiveDecision.confidence
       });
     }
+    if (botServices.conversationState) {
+      context.conversationState = botServices.conversationState;
+      messageBus.updateContext(traceId, 'conversationState', {
+        action: botServices.conversationState.action,
+        reason: botServices.conversationState.reason,
+        hasPending: Boolean(botServices.conversationState.pending)
+      });
+    }
 
     let aiOSPacket = null;
     try {
@@ -725,7 +733,9 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
       const contextWithMods = {
         ...context,
         adaptiveRules: [adaptiveModifiers, governanceDecision.promptConstraint, context.aiOSRules].filter(Boolean).join('\n'),
-        currentMode
+        currentMode,
+        conversationContext: botServices.conversationState?.promptContext || '',
+        conversationInstruction: botServices.conversationState?.instruction || ''
       };
       if (fileContext) {
         contextWithMods.fileContent = fileContext.primaryContent;
