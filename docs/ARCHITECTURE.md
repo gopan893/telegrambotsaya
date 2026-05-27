@@ -838,3 +838,151 @@ Prinsipnya: sistem boleh belajar dari telemetry, tetapi tidak boleh mengubah kon
 - Recovery otomatis dibatasi pada aksi non-destruktif.
 - Canary dan tuning default rekomendasi, bukan auto-change.
 - Jika modul ops gagal, bot lama tetap fallback ke pipeline utama.
+
+## Final: Human-AI Cognitive Operating System
+
+Final architecture menggabungkan bot Telegram lama, AI OS, Ops, adaptive routing, collaboration framework, dan storage production yang tetap punya fallback aman.
+
+### Storage Production
+
+Folder `src/storage` menambahkan:
+
+- `database.js`: koneksi PostgreSQL optional lewat package `pg`.
+- `migrations.js`: schema production untuk users, adaptive_profiles, memories, goals, workflows, workflow_steps, insights, graph_nodes, graph_edges, reflections, research_sessions, workspace_notes, telemetry_events, incidents, benchmark_runs, ops_lessons, dan `bot_kv`.
+- `postgres-store.js`: persistent store PostgreSQL dengan migrasi otomatis dan key-value compatibility layer.
+- `redis-store.js`: Redis cache jika `REDIS_URL` tersedia, fallback memory cache jika tidak.
+- `storage-manager.js`: memilih PostgreSQL jika `DATABASE_URL` aktif, fallback JSON jika gagal/tidak tersedia, dan tetap menjaga cache Redis/memory.
+
+Bot lama tetap memakai fungsi `loadData` dan `saveData`, tetapi jalurnya sekarang melewati `storage-manager`. Ini membuat data lama tetap kompatibel sambil membuka jalan ke PostgreSQL.
+
+### Adaptive Mode Router
+
+Folder `src/adaptive` menambahkan:
+
+- `adaptive-mode-router`: memilih mode dari intent natural user.
+- `intent-complexity-detector`: menilai kompleksitas tanpa AI call.
+- `user-context-profiler`: membaca mode, goal, workflow, dan preferensi tersimpan.
+- `adaptive-memory-selector`: memilih memory hint secukupnya.
+- `response-style-adapter`: membuat prompt hint pendek.
+- `adaptive-guards`: high-stakes guard, manual override, dan fallback low confidence.
+
+Priority mode:
+
+1. Safety/governance
+2. Explicit command
+3. Manual `/mode` override
+4. Adaptive auto mode
+5. Default simple assistant
+
+Command baru:
+
+```text
+/adaptive
+/adaptive status
+/adaptive on
+/adaptive off
+/adaptive reset
+```
+
+### Human-AI Collaboration
+
+Folder `src/collaboration` menambahkan framework berpikir ringan:
+
+- thinking partner
+- strategic thinking
+- decision support
+- mental model
+- learning plan
+- critical thinking
+- reflection
+- insight and journal
+- collaboration analytics
+- human judgment guard
+
+Command baru:
+
+```text
+/think <masalah>
+/learnplan <topik>
+/mentalmodel <konsep>
+/decision <keputusan>
+/blindspot <rencana>
+/assumptions <argumen>
+/perspectives <masalah>
+/insight <catatan>
+/journal [catatan]
+/collab
+/collab-reset
+```
+
+Command `/strategy` dan `/reflect` tetap tersedia dari AI OS agar compatibility lama tidak rusak.
+
+### Cognitive Workflow
+
+Alur pesan natural sekarang:
+
+```text
+Telegram input
+-> command compatibility check
+-> adaptive mode detection jika bukan command
+-> selective memory/context
+-> AI OS jika relevan
+-> governance and safety
+-> autonomous/multi-agent pipeline
+-> reflection/self-improvement
+-> ops telemetry
+-> safe response
+```
+
+Pertanyaan sederhana tidak memicu semua layer. Adaptive router hanya memberi sinyal mode dan prompt hint pendek.
+
+### Dashboard API Foundation
+
+Endpoint ringan:
+
+```text
+GET /api/dashboard
+```
+
+Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, dan target dashboard. Ia tidak mengekspos memory user atau prompt internal. Frontend penuh bisa dibangun nanti dengan Next.js, Tailwind CSS, shadcn/ui, PostgreSQL, Redis, dan Auth.js/Clerk/Supabase Auth.
+
+### Trade-off Final
+
+- PostgreSQL memberi persistence kuat, tetapi optional agar local/Render kecil tetap bisa jalan dengan JSON.
+- Redis mempercepat cache/session/rate-limit, tetapi fallback memory menjaga bot tetap hidup tanpa Redis.
+- Adaptive mode mengurangi beban user mengetik `/mode`, tetapi manual override tetap disediakan.
+- Collaboration framework deterministic lebih murah daripada LLM planner tambahan, tetapi kedalamannya terbatas pada struktur berpikir.
+- Dashboard baru berupa API foundation, bukan frontend penuh, agar tidak menambah package berat.
+
+### Manual Test
+
+```bash
+node --check telebot.js
+node scratch/test-final-cognitive-os.js
+node scratch/test-ops.js
+npm run check
+TELEGRAM_TOKEN=dummy MISTRAL_API_KEY=dummy PORT=0 npm start
+```
+
+Command Telegram yang perlu dicoba:
+
+```text
+/adaptive status
+/adaptive on
+/think Saya bingung memilih Redis atau PostgreSQL untuk memory bot
+/learnplan backend dari nol
+/mentalmodel scalable bot
+/decision Redis vs PostgreSQL untuk memory
+/blindspot rencana saya deploy banyak user di Render free tier
+/assumptions bot ini akan dipakai banyak user
+/perspectives bagaimana membangun AI OS personal
+/insight Mulai dari baseline sebelum optimasi
+/journal Hari ini belajar storage architecture
+/collab
+/aios
+/goals
+/workflows
+/graph
+/ops
+/health
+```

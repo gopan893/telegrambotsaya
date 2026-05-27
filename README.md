@@ -12,6 +12,10 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Input gambar Telegram opsional
 - Rate limit anti-spam
 - Statistik admin
+- Adaptive mode otomatis
+- AI OS untuk goals, workflows, graph, insight, dan workspace
+- Human-AI Collaboration untuk thinking, learning, reflection, dan decision support
+- AI Operations untuk health, benchmark, reliability, regression, dan recovery
 
 ## Mulai Cepat
 
@@ -29,7 +33,14 @@ MISTRAL_API_KEY=isi_api_key_mistral
 OWNER_CHAT_ID=telegram_user_id_owner
 ```
 
-File env juga mendukung `WEBHOOK_URL`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `REDIS_URL`, dan variabel lain yang ada di `telegrambotsaya.env`.
+File env juga mendukung `DATABASE_URL`, `REDIS_URL`, `WEBHOOK_URL`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `OPENWEATHER_API_KEY`, `ADMIN_IDS`, dan variabel lain yang ada di `.env.example`.
+
+Storage production:
+
+- Jika `DATABASE_URL` tersedia, bot memakai PostgreSQL dan menjalankan migrasi tabel inti otomatis.
+- Jika PostgreSQL tidak tersedia, bot tetap berjalan dengan JSON fallback.
+- Jika `REDIS_URL` tersedia, bot memakai Redis sebagai cache/session sementara.
+- Jika Redis tidak tersedia, bot tetap berjalan dengan memory/local fallback.
 
 Catatan arsitektur dan rencana modularisasi ada di `docs/ARCHITECTURE.md`.
 
@@ -70,12 +81,23 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 ```text
 /help
 /mode
-/mode coder
-/mode business
-/memory
-/memory_add saya suka jawaban yang singkat
-/memory_clear
-/forget
+/adaptive status
+/think masalah
+/learnplan topik
+/mentalmodel konsep
+/decision pilihan
+/blindspot rencana
+/assumptions argumen
+/perspectives masalah
+/insight catatan
+/journal catatan
+/collab
+/aios
+/goals
+/workflows
+/graph
+/ops
+/health
 /stats
 ```
 
