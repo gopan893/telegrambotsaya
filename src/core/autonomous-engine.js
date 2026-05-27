@@ -142,11 +142,30 @@ function getRuntimeStatus() {
  * Memproses pesan masuk melalui antrean (Task Queue)
  */
 async function processMessage(userId, chatId, userMessage, msgObj, botServices) {
+  const opsStart = Date.now();
   try {
     return await globalTaskQueue.enqueue(userId, userMessage, async () => {
-      return await executeMultimodalPipeline(userId, chatId, userMessage, msgObj, botServices);
+      const result = await executeMultimodalPipeline(userId, chatId, userMessage, msgObj, botServices);
+      try {
+        botServices.opsSystem?.telemetry?.recordReasoningPath?.({
+          name: 'autonomous_pipeline',
+          scope: 'autonomous-engine',
+          status: 'ok',
+          latencyMs: Date.now() - opsStart,
+          mode: result?.mode || 'auto',
+          steps: ['intent', 'context', 'governance', 'execution', 'verification']
+        }, botServices.opsServices || {});
+      } catch (_) {}
+      return result;
     });
   } catch (err) {
+    try {
+      botServices.opsSystem?.telemetry?.recordError?.(err, botServices.opsServices || {}, {
+        scope: 'autonomous-engine',
+        component: 'autonomous-pipeline',
+        severity: 'warning'
+      });
+    } catch (_) {}
     const traceId = observability.createTraceId();
     observability.logEvent(traceId, 'Orchestrator', 'TASK_QUEUE_REJECTED', { userId, error: err.message });
 

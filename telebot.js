@@ -2490,7 +2490,31 @@ ${failuresText}`;
 }
 
 function formatIncidentLine(incident, index) {
-  return `${index + 1}. ${incident.id} [${incident.classification}/${incident.status}] ${incident.title}`;
+  return `${index + 1}. ${incident.id} [${incident.severity || incident.classification}/${incident.status}] ${incident.title}`;
+}
+
+function formatIncidentDetail(incident) {
+  if (!incident) return 'Incident tidak ditemukan.';
+  return [
+    `Incident: ${incident.id}`,
+    `Title: ${incident.title}`,
+    `Category: ${incident.category || incident.classification}`,
+    `Severity: ${incident.severity}`,
+    `Status: ${incident.status}`,
+    `Cause: ${incident.suspectedCause}`,
+    `Confidence: ${Number(incident.confidence || 0).toFixed(2)}`,
+    `Created: ${incident.createdAt}`,
+    `Updated: ${incident.updatedAt}`,
+    '',
+    'Evidence:',
+    ...((incident.evidence || ['-']).map(item => `- ${item}`)),
+    '',
+    'Recommended actions:',
+    ...((incident.recommendedActions || incident.recommendedFixes || ['-']).map(item => `- ${item}`)),
+    '',
+    'Lessons:',
+    ...((incident.lessons || ['-']).map(item => `- ${item}`))
+  ].join('\n');
 }
 
 function formatBenchmarkRun(run) {
@@ -2501,12 +2525,38 @@ function formatBenchmarkRun(run) {
   return [
     `Benchmark: ${run.id}`,
     `Type: ${run.type}`,
+    `Status: ${run.status || (run.passed ? 'passed' : 'failed')}`,
     `Score: ${Math.round((run.score || 0) * 100)}%`,
     `Passed: ${run.passed ? 'ya' : 'tidak'}`,
     `Cases: ${run.caseCount}`,
+    `Baseline: ${run.baselineId || '-'}`,
+    `Regression: ${run.regressionAgainstBaseline ? 'ya' : 'tidak'}`,
     '',
     'Failed cases:',
     failedText
+  ].join('\n');
+}
+
+function formatBenchmarkHistory(runs) {
+  return runs.length
+    ? runs.map((run, index) => `${index + 1}. ${run.id} [${run.status || (run.passed ? 'passed' : 'failed')}] score ${Math.round((run.score || 0) * 100)}%, cases ${run.caseCount}, ${run.createdAt}`).join('\n')
+    : 'Belum ada benchmark.';
+}
+
+function formatRecoveryPlan(recovery) {
+  const plan = recovery.plan || recovery;
+  const diagnosis = recovery.diagnosis;
+  return [
+    `Diagnosis: ${diagnosis?.diagnosis || '-'}`,
+    `Severity: ${plan.severity || '-'}`,
+    `Recommended action: ${plan.recommendedAction?.action || '-'}`,
+    `Risk: ${plan.recommendedAction?.riskLevel || '-'}`,
+    `Impact: ${plan.recommendedAction?.expectedImpact || '-'}`,
+    `Rollback option: ${plan.recommendedAction?.rollbackOption || '-'}`,
+    `Confidence: ${Number(plan.recommendedAction?.confidence || 0).toFixed(2)}`,
+    '',
+    'Action options:',
+    ...(plan.actions || []).map(item => `- ${item.action} [risk=${item.riskLevel}, safe=${item.safeToExecute ? 'yes' : 'no'}]`)
   ].join('\n');
 }
 
@@ -2515,13 +2565,25 @@ async function handleOpsCommands(chatId, userId, cmd, args, msg) {
     '/ops',
     '/health',
     '/perf',
+    '/cost',
+    '/tokens',
     '/benchmark',
+    '/benchmarkfull',
+    '/benchmarks',
+    '/diag',
     '/diagnose',
     '/incidents',
+    '/incident',
+    '/recover',
+    '/reliability',
+    '/regression',
+    '/tuning',
     '/opslessons',
+    '/opskb',
     '/rollbackplan',
     '/canary',
-    '/opsreset'
+    '/opsreset',
+    '/ops-reset'
   ]);
 
   if (!opsCommands.has(cmd)) return false;
@@ -2535,12 +2597,16 @@ async function handleOpsCommands(chatId, userId, cmd, args, msg) {
   const services = getOpsServices();
 
   if (cmd === '/ops') {
+    const workflow = opsSystem.opsWorkflow.runOperationalWorkflow(services, { trigger: '/ops' });
     const status = opsSystem.getStatus(services);
     const recentIncidents = opsSystem.incidentHandler.listRecentIncidents(services, 3);
     const tuning = opsSystem.tuningController.recommendTuning(services);
+    const benchmarkSummary = opsSystem.benchmarkEngine.getBenchmarkSummary(services);
     const text =
 `AI Production Ops
 Health: ${status.health.status}
+Uptime: ${Math.floor((status.health.uptimeSeconds || 0) / 60)} menit
+Memory: RSS ${status.health.memory.rssMb} MB, heap ${status.health.memory.heapUsedMb}/${status.health.memory.heapTotalMb} MB
 Reliability: ${status.reliability.score}/100 (${status.reliability.status})
 Diagnosis: ${status.diagnosis.diagnosis} (${status.diagnosis.severity})
 Requests: ${status.telemetry.counters.request || 0}
@@ -2549,7 +2615,13 @@ AI calls: ${status.telemetry.counters.aiCall || 0}
 Errors 15m: ${status.telemetry.recentErrorCount}
 Latency p90: ${status.telemetry.latency.p90}ms
 Avg tokens: ${status.telemetry.token.averageTokens}
+Anomaly score: ${status.telemetry.anomalyScore}
 Ops modules: ${status.modules.length}
+Ops workflow: ${workflow.steps.join(' -> ')}
+
+Benchmark:
+Latest: ${benchmarkSummary.latestId || '-'} (${benchmarkSummary.latestStatus}, score ${Math.round((benchmarkSummary.latestScore || 0) * 100)}%)
+Baseline: ${benchmarkSummary.baselineId || '-'}
 
 Tuning:
 ${tuning.recommendations.map(item => `- ${item.setting}: ${item.recommended} (${item.reason})`).join('\n')}
@@ -2575,7 +2647,7 @@ Incident detection: ${incident.detected ? `terdeteksi ${incident.incident.id}` :
 
   if (cmd === '/perf') {
     const perf = opsSystem.performanceProfiler.summarizePerformance(services);
-    const cost = opsSystem.costOptimizer.analyzeCost(services);
+    const cost = opsSystem.costOptimizer.analyzeCost(services, userId);
     const text =
 `Performance
 Samples: ${perf.sampleCount}
@@ -2595,10 +2667,60 @@ ${cost.recommendations.map(item => `- ${item.action}: ${item.reason}`).join('\n'
     return true;
   }
 
+  if (cmd === '/cost') {
+    const cost = opsSystem.costOptimizer.analyzeCost(services, userId);
+    const resources = cost.resources || {};
+    const text =
+`Cost / Token Efficiency
+Estimated tokens: ${cost.estimatedTokenUsage.estimatedTotalTokens}
+Average tokens: ${cost.estimatedTokenUsage.averageTokens}
+AI/request: ${cost.aiPerRequest}
+Spike: ${cost.estimatedTokenUsage.spike.spike ? `${cost.estimatedTokenUsage.spike.ratio}x` : 'tidak'}
+Cache hint: ${cost.cacheHint}
+Context hint: ${cost.contextCompressionHint}
+Max token hint: ${cost.maxTokenHint}
+Benchmark hint: ${cost.benchmarkSamplingHint}
+
+Resource Efficiency
+Memory count: ${resources.memory?.memoryCount ?? 0}
+Graph size: ${resources.memory?.graphSize ?? 0}
+Telemetry size: ${resources.memory?.telemetrySizeBytes ?? 0} bytes
+Stale items: ${resources.memory?.staleItemCount ?? 0}
+Ops data: ${resources.storage?.opsDataSizeBytes ?? 0} bytes
+Benchmark history: ${resources.storage?.benchmarkHistorySize ?? 0}
+Incident history: ${resources.storage?.incidentHistorySize ?? 0}
+Active workflows: ${resources.workflow?.activeWorkflowCount ?? 0}
+Completed step ratio: ${resources.workflow?.completedStepRatio ?? 0}
+Stuck workflows: ${resources.workflow?.stuckWorkflowCount ?? 0}
+
+Rekomendasi:
+${cost.recommendations.map(item => `- ${item.action}: ${item.reason}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/tokens') {
+    const token = opsSystem.tokenAnalyzer.summarizeTokenUsage(services);
+    const top = token.topExpensiveOperation;
+    const text =
+`Token Usage Estimate
+Samples: ${token.sampleCount}
+Total: ${token.estimatedTotalTokens}
+Prompt: ${token.estimatedPromptTokens}
+Completion: ${token.estimatedCompletionTokens}
+Average: ${token.averageTokens}
+Spike: ${token.spike.spike ? `${token.spike.ratio}x, last ${token.spike.last}, avg ${token.spike.average}` : 'tidak'}
+Top expensive: ${top ? `${top.provider}/${top.model} ${top.totalTokens} tokens` : '-'}
+By provider:
+${Object.entries(token.byProvider || {}).map(([name, value]) => `- ${name}: ${value}`).join('\n') || '-'}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
   if (cmd === '/benchmark') {
     const type = String(args || '').trim() || null;
     const before = opsSystem.benchmarkEngine.getBenchmarkHistory(services, 1)[0];
-    const run = opsSystem.benchmarkEngine.runBenchmarkSuite(type, services);
+    const run = opsSystem.benchmarkEngine.runBenchmarkSuite(type, services, { full: false });
     const comparison = opsSystem.benchmarkEngine.compareBenchmarkRuns(before, run);
     const regression = opsSystem.regressionDetector.detectRegression(services);
     const text =
@@ -2611,7 +2733,27 @@ Rekomendasi: ${regression.recommendation}`;
     return true;
   }
 
-  if (cmd === '/diagnose') {
+  if (cmd === '/benchmarkfull') {
+    const before = opsSystem.benchmarkEngine.getBenchmarkHistory(services, 1)[0];
+    const run = opsSystem.benchmarkEngine.runBenchmarkSuite(null, services, { full: true });
+    const comparison = opsSystem.benchmarkEngine.compareBenchmarkRuns(before, run);
+    const text =
+`⚠️ Benchmark full lebih berat daripada /benchmark default, tetapi tetap tidak memanggil AI eksternal.
+
+${formatBenchmarkRun(run)}
+
+Comparison: ${comparison.comparable ? `${Math.round(comparison.delta * 100)}%` : comparison.notes}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/benchmarks') {
+    const runs = opsSystem.benchmarkEngine.getBenchmarkHistory(services, 10).reverse();
+    await sendChunkedMessage(chatId, `Benchmark History:\n${formatBenchmarkHistory(runs)}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/diag' || cmd === '/diagnose') {
     const diagnosis = opsSystem.diagnosticsEngine.diagnose(services);
     await sendChunkedMessage(chatId, opsSystem.diagnosticsEngine.formatDiagnosis(diagnosis), replyOpt);
     return true;
@@ -2629,6 +2771,101 @@ Rekomendasi: ${regression.recommendation}`;
       ? incidents.map(formatIncidentLine).join('\n')
       : 'Belum ada incident operasional.';
     await sendChunkedMessage(chatId, `Incidents:\n${text}\n\nTutup: /incidents resolve | <incidentId>`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/incident') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await safeSendMessage(chatId, 'Format: /incident <incidentId>', replyOpt);
+      return true;
+    }
+    const incident = opsSystem.incidentHandler.getIncident(incidentId, services);
+    await sendChunkedMessage(chatId, formatIncidentDetail(incident), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/recover') {
+    const raw = String(args || '').trim();
+    if (raw.startsWith('confirm ')) {
+      const action = raw.slice('confirm '.length).trim();
+      if (!action) {
+        await safeSendMessage(chatId, 'Format: /recover confirm <action>', replyOpt);
+        return true;
+      }
+      const result = opsSystem.recoveryController.executeRecoveryAction(action, services, {
+        confirmedByAdmin: true,
+        confidence: 0.82,
+        provider: 'manual'
+      });
+      await safeSendMessage(
+        chatId,
+        result.ok
+          ? `Recovery dijalankan: ${result.action}\nEffect: ${result.effect}`
+          : `Recovery ditolak: ${result.reason}`,
+        replyOpt
+      );
+      return true;
+    }
+    const recovery = opsSystem.recoveryController.getRecoveryRecommendation(services);
+    await sendChunkedMessage(chatId, `Recovery Recommendation\n${formatRecoveryPlan(recovery)}\n\nJalankan aksi aman: /recover confirm <action>`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/reliability') {
+    const score = opsSystem.reliabilityScorer.calculateReliabilityScore(services, { userId });
+    const text =
+`Reliability Score: ${score.score}/100
+Status: ${score.status}
+Risk: ${score.risk}/100
+Trend: ${score.trend}
+Strongest: ${score.strongestArea ? `${score.strongestArea.name} (${score.strongestArea.score}/100)` : '-'}
+Weakest: ${score.weakestArea ? `${score.weakestArea.name} (${score.weakestArea.score}/100)` : '-'}
+Factors:
+${Object.entries(score.factors || {}).map(([name, value]) => `- ${name}: ${value}/100`).join('\n')}
+
+Top Risks:
+${score.topRisks.length ? score.topRisks.map(item => `- ${item}`).join('\n') : '- tidak ada risiko besar'}
+
+Recommended Fixes:
+${score.recommendedFixes.map(item => `- ${item}`).join('\n')}
+
+Penjelasan:
+${score.explanation.map(item => `- ${item}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/regression') {
+    const regression = opsSystem.regressionDetector.detectRegression(services);
+    const text =
+`Regression Check
+Detected: ${regression.regressionDetected ? 'ya' : 'tidak'}
+Severity: ${regression.severity}
+Metric: ${regression.metric}
+Baseline: ${regression.baselineValue ?? '-'}
+Current: ${regression.currentValue ?? '-'}
+Delta: ${regression.delta ?? 0}
+Possible cause: ${regression.possibleCause}
+Recommendation: ${regression.recommendation}
+
+Findings:
+${regression.findings.length ? regression.findings.map(item => `- ${item.metric}: ${item.baselineValue} -> ${item.currentValue}, delta ${item.delta} (${item.severity})`).join('\n') : '- tidak ada'}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/tuning') {
+    const tuning = opsSystem.tuningController.recommendTuning(services);
+    const text =
+`Tuning Recommendation
+Auto apply: ${tuning.autoApply ? 'ya' : 'tidak'}
+Reason: ${tuning.reason}
+Reliability: ${tuning.reliability.score}/100
+
+Recommendations:
+${tuning.recommendations.map(item => `- ${item.setting}: ${item.recommended} (confidence ${Number(item.confidence || 0).toFixed(2)})\n  ${item.reason}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
     return true;
   }
 
@@ -2660,6 +2897,25 @@ ${checklist.map(item => `- ${item}`).join('\n')}`;
     return true;
   }
 
+  if (cmd === '/opskb') {
+    const query = String(args || '').trim();
+    if (!query) {
+      await safeSendMessage(chatId, 'Format: /opskb <query>', replyOpt);
+      return true;
+    }
+    const lessonsFound = opsSystem.opsKnowledgeBase.searchOpsKnowledge(query, services);
+    const recipe = opsSystem.opsKnowledgeBase.getFixRecipe(query);
+    const text =
+`Ops KB: ${query}
+Lessons:
+${lessonsFound.length ? lessonsFound.map((item, index) => `${index + 1}. ${item.title}: ${item.content}`).join('\n') : '- tidak ada lesson cocok'}
+
+Fix recipe:
+${recipe.map(item => `- ${item}`).join('\n')}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
   if (cmd === '/rollbackplan') {
     const plan = opsSystem.rollbackManager.createRollbackPlan(args || 'manual rollback review', services);
     const text =
@@ -2676,25 +2932,79 @@ ${plan.checklist.map(item => `- ${item}`).join('\n')}`;
   }
 
   if (cmd === '/canary') {
-    const [action, name, percent] = splitPipeArgs(args);
-    if (action === 'create') {
+    const raw = String(args || '').trim();
+    if (raw.startsWith('create ')) {
+      const [name, description = ''] = splitPipeArgs(raw.slice('create '.length));
       if (!name) {
-        await safeSendMessage(chatId, 'Format: /canary create | <nama> | <rolloutPercent 0-25>', replyOpt);
+        await safeSendMessage(chatId, 'Format: /canary create <name> | <description>', replyOpt);
         return true;
       }
-      const canary = opsSystem.canaryController.createCanary(name, { rolloutPercent: Number(percent || 0) }, services);
-      await safeSendMessage(chatId, `Canary dibuat: ${canary.id} (${canary.rolloutPercent}%, default draft/off)`, replyOpt);
+      const canary = opsSystem.canaryController.createCanary(name, { rolloutPercent: 0, description }, services);
+      await safeSendMessage(chatId, `Canary dibuat: ${canary.id} (${canary.rolloutPercent}%, draft/off)\nDescription: ${description || '-'}`, replyOpt);
+      return true;
+    }
+    if (raw.startsWith('rollback ')) {
+      const canaryId = raw.slice('rollback '.length).trim();
+      if (!canaryId) {
+        await safeSendMessage(chatId, 'Format: /canary rollback <id>', replyOpt);
+        return true;
+      }
+      const result = opsSystem.canaryController.rollbackCanary(canaryId, services);
+      await safeSendMessage(chatId, result.ok ? `Canary rollback: ${canaryId}` : `Gagal rollback canary: ${result.reason}`, replyOpt);
+      return true;
+    }
+    if (raw.startsWith('metric ')) {
+      const [canaryId, name, value, note = ''] = splitPipeArgs(raw.slice('metric '.length));
+      if (!canaryId || !name || value === undefined) {
+        await safeSendMessage(chatId, 'Format: /canary metric <id> | <metricName> | <value> | <note optional>', replyOpt);
+        return true;
+      }
+      const result = opsSystem.canaryController.recordCanaryMetric(canaryId, { name, value: Number(value), note }, services);
+      await safeSendMessage(chatId, result.ok ? `Metric canary tersimpan: ${canaryId}` : `Gagal simpan metric: ${result.reason}`, replyOpt);
+      return true;
+    }
+    if (raw.startsWith('compare ')) {
+      const canaryId = raw.slice('compare '.length).trim();
+      if (!canaryId) {
+        await safeSendMessage(chatId, 'Format: /canary compare <id>', replyOpt);
+        return true;
+      }
+      const comparison = opsSystem.canaryController.compareCanary(canaryId, services);
+      if (!comparison.ok) {
+        await safeSendMessage(chatId, `Gagal compare canary: ${comparison.reason}`, replyOpt);
+        return true;
+      }
+      const text =
+`Canary Comparison: ${comparison.canary.id}
+Name: ${comparison.canary.name}
+Status: ${comparison.canary.status}
+Metrics: ${comparison.metricCount}
+Average: ${comparison.average}
+Baseline average: ${comparison.baselineAverage}
+Delta: ${comparison.deltaVsBaseline}
+Recommendation: ${comparison.recommendation}`;
+      await sendChunkedMessage(chatId, text, replyOpt);
+      return true;
+    }
+    if (raw.startsWith('promote ')) {
+      const canaryId = raw.slice('promote '.length).trim();
+      if (!canaryId) {
+        await safeSendMessage(chatId, 'Format: /canary promote <id>', replyOpt);
+        return true;
+      }
+      const result = opsSystem.canaryController.promoteCanary(canaryId, services);
+      await safeSendMessage(chatId, result.ok ? `Canary dipromosikan manual: ${canaryId}` : `Promote ditolak: ${result.reason}`, replyOpt);
       return true;
     }
     const canaries = opsSystem.canaryController.listCanaries(services, 10);
     const text = canaries.length
-      ? canaries.map((item, index) => `${index + 1}. ${item.id} - ${item.name} [${item.status}, ${item.rolloutPercent}%]`).join('\n')
-      : 'Belum ada canary. Buat: /canary create | nama | 5';
+      ? canaries.map((item, index) => `${index + 1}. ${item.id} - ${item.name} [${item.status}, ${item.rolloutPercent}%, metrics=${(item.metrics || []).length}]`).join('\n')
+      : 'Belum ada canary. Buat: /canary create nama | deskripsi';
     await sendChunkedMessage(chatId, `Canary:\n${text}`, replyOpt);
     return true;
   }
 
-  if (cmd === '/opsreset') {
+  if (cmd === '/opsreset' || cmd === '/ops-reset') {
     opsSystem.opsStore.resetOpsState(services);
     await safeSendMessage(chatId, 'Data AI Operations sudah direset. Data user, AI OS, memory lama, dan command lama tidak dihapus.', replyOpt);
     return true;
@@ -4260,12 +4570,29 @@ async function handleHelp(chatId, msg) {
 /ops - status AI Production Ops [admin]
 /health - health monitor [admin]
 /perf - latency, token, dan cost summary [admin]
+/cost - cost/token efficiency [admin]
+/tokens - estimasi token usage [admin]
 /benchmark [type] - benchmark ringan manual [admin]
-/diagnose - diagnosis operasional [admin]
+/benchmarkfull - benchmark lengkap lebih berat [admin]
+/benchmarks - riwayat benchmark [admin]
+/diag atau /diagnose - diagnosis operasional [admin]
 /incidents - daftar incident [admin]
+/incident incidentId - detail incident [admin]
+/recover - rekomendasi recovery aman [admin]
+/recover confirm action - jalankan recovery aman [admin]
+/reliability - reliability score [admin]
+/regression - cek regresi [admin]
+/tuning - rekomendasi tuning [admin]
 /rollbackplan [alasan] - rencana rollback aman [admin]
 /opslessons - knowledge base ops [admin]
+/opskb query - cari ops knowledge base [admin]
 /canary - rollout canary ringan [admin]
+/canary create nama | deskripsi [admin]
+/canary metric id | nama | nilai | catatan [admin]
+/canary compare id [admin]
+/canary promote id [admin]
+/canary rollback id [admin]
+/ops-reset - reset data ops runtime [admin]
 /aios - status ringkas AI OS
 /goals - daftar goal AI OS
 /goaladd judul | deskripsi | prioritas | targetDate
@@ -4363,13 +4690,25 @@ function isUnknownCommand(cmd) {
     '/ops',
     '/health',
     '/perf',
+    '/cost',
+    '/tokens',
     '/benchmark',
+    '/benchmarkfull',
+    '/benchmarks',
+    '/diag',
     '/diagnose',
     '/incidents',
+    '/incident',
+    '/recover',
+    '/reliability',
+    '/regression',
+    '/tuning',
     '/opslessons',
+    '/opskb',
     '/rollbackplan',
     '/canary',
     '/opsreset',
+    '/ops-reset',
     '/aios',
     '/goals',
     '/goaladd',
@@ -5452,6 +5791,8 @@ await withUserActionLock(userId, async () => {
     getCurrentTime,
     getCurrentDate,
     downloadFile: downloadTelegramFile,
+    opsSystem,
+    opsServices: getOpsServices(),
     env: {
       OWNER_CHAT_ID,
       ADMIN_SET
