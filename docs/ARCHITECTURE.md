@@ -698,6 +698,7 @@ Tahap 10 menambahkan `src/ops` sebagai AI Operations Layer ringan. Tujuannya buk
 - `canary-controller`: canary draft/off by default.
 - `evaluation-scheduler`: evaluasi manual/light agar aman untuk Render free tier.
 - `ops-knowledge-base`: lesson, fix recipe, deployment checklist, rollback checklist.
+- `ops-workflow`: workflow adaptif dari health check sampai operational learning.
 
 ### Command Admin
 
@@ -705,13 +706,26 @@ Tahap 10 menambahkan `src/ops` sebagai AI Operations Layer ringan. Tujuannya buk
 /ops
 /health
 /perf
+/cost
+/tokens
 /benchmark [type]
-/diagnose
+/benchmarkfull
+/benchmarks
+/diag atau /diagnose
 /incidents
+/incident <id>
+/recover
+/recover confirm <action>
+/reliability
+/regression
 /rollbackplan [alasan]
+/tuning
 /opslessons
+/opskb <query>
 /canary
-/opsreset
+/canary create <nama> | <deskripsi>
+/canary rollback <id>
+/ops-reset atau /opsreset
 ```
 
 ### Trade-off
@@ -720,6 +734,7 @@ Tahap 10 menambahkan `src/ops` sebagai AI Operations Layer ringan. Tujuannya buk
 - Benchmark dibuat deterministic dan ringan. Dampaknya, benchmark tidak menggantikan evaluasi kualitas AI berbasis manusia.
 - Recovery tidak destruktif otomatis. Dampaknya, beberapa masalah tetap perlu keputusan admin, tetapi risiko salah recovery jauh lebih rendah.
 - Canary default `draft/off`. Dampaknya, rollout tidak otomatis, tetapi aman untuk bot personal di Render free tier.
+- Workflow ops adaptif: pesan biasa hanya mencatat telemetry ringan, sementara benchmark, diagnostics, dan recovery berjalan lewat command atau jadwal ringan.
 
 ### Manual Test
 
@@ -728,3 +743,98 @@ node --check telebot.js
 node scratch/test-ops.js
 npm run check
 ```
+
+## Phase 10 Part 2 - Reliability, Cost, Regression, And Adaptive Ops
+
+Part 2 melengkapi AI Operations Layer agar bukan hanya menampilkan status, tetapi juga membantu membaca kualitas produksi dari waktu ke waktu.
+
+### Reliability Scoring
+
+`src/ops/reliability-scorer.js` sekarang menghitung 12 faktor:
+
+- uptime
+- recovery success
+- reasoning consistency
+- response quality
+- safety
+- latency
+- cost efficiency
+- memory efficiency
+- tool success
+- user satisfaction proxy
+- regression risk
+- stability trend
+
+Output `/reliability` menampilkan overall score, strongest area, weakest area, top risks, recommended fixes, dan trend. Heuristic dibuat sederhana supaya mudah diaudit dan tidak membutuhkan AI call tambahan.
+
+### Cost And Resource Optimization
+
+`cost-optimizer`, `token-analyzer`, dan `resource-analyzer` sekarang membaca:
+
+- estimasi token prompt/output dan top expensive operation
+- memory count, graph size, stale item, telemetry size
+- ukuran ops data, benchmark history, incident history
+- workflow aktif, completion ratio, dan stuck workflow
+
+Rekomendasi yang diberikan sengaja berupa saran, bukan perubahan otomatis. Ini menjaga stabilitas Render free tier karena tuning besar tetap dikontrol admin.
+
+### Regression Detection
+
+`regression-detector` membandingkan benchmark terbaru dengan baseline dan telemetry ringan. Sinyal yang dicek:
+
+- skor benchmark turun
+- latency p90 naik
+- error spike
+- tool success rate turun
+- memory retrieval tidak tercatat
+- token/cost spike
+
+Output `/regression` memberi metric, baseline, current value, delta, possible cause, dan recommendation.
+
+### A/B Testing And Canary
+
+`src/ops/ab-testing.js` menyediakan experiment ringan untuk assignment dan metric comparison. `canary-controller` tetap default draft/off, lalu admin bisa:
+
+- membuat canary
+- mencatat metric
+- membandingkan canary dengan baseline sederhana
+- promote hanya jika sample cukup
+- rollback manual
+
+Canary tidak memengaruhi user otomatis kecuali nanti diaktifkan secara eksplisit di behavior routing.
+
+### Adaptive Ops And Guards
+
+`adaptive-ops` dan `ops-guards` menambahkan:
+
+- dynamic threshold recommendation
+- incident pattern learning
+- prioritized fixes
+- smart rollback recommendation
+- incident escalation guard
+- unstable tuning guard
+- unsafe optimization blocker
+- runaway cost prevention
+- regression rollback guard
+- diagnostics/recovery loop prevention
+- corrupted telemetry fallback
+- false positive suppression
+
+Prinsipnya: sistem boleh belajar dari telemetry, tetapi tidak boleh mengubah konfigurasi penting secara agresif.
+
+### Cara Membaca Data Ops
+
+- `/health`: cek status dasar dan provider.
+- `/ops`: baca ringkasan health, reliability, benchmark, incident, dan tuning.
+- `/reliability`: lihat faktor terlemah sebelum menambah fitur baru.
+- `/cost` dan `/tokens`: lihat token spike, storage ops, dan workflow yang mulai membebani.
+- `/regression`: cek apakah perubahan terbaru menurunkan skor atau menaikkan latency/error.
+- `/recover`: lihat tindakan recovery aman; aksi destruktif tetap harus manual.
+
+### Catatan Render Free Tier
+
+- Telemetry dipruning dan disampling agar tidak membesar.
+- Benchmark berjalan manual, bukan setiap pesan.
+- Recovery otomatis dibatasi pada aksi non-destruktif.
+- Canary dan tuning default rekomendasi, bukan auto-change.
+- Jika modul ops gagal, bot lama tetap fallback ke pipeline utama.
