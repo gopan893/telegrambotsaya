@@ -1026,7 +1026,19 @@ Endpoint ringan:
 GET /api/dashboard
 ```
 
-Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, dan target dashboard. Ia tidak mengekspos memory user atau prompt internal. Frontend penuh bisa dibangun nanti dengan Next.js, Tailwind CSS, shadcn/ui, PostgreSQL, Redis, dan Auth.js/Clerk/Supabase Auth.
+Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, modul aktif, command group, dan target dashboard. Ia tidak mengekspos memory user, prompt internal, token, atau data sensitif. Frontend penuh bisa dibangun nanti dengan Next.js, Tailwind CSS, shadcn/ui, PostgreSQL, Redis, dan Auth.js/Clerk/Supabase Auth.
+
+### Human Judgment Safety Layer
+
+Modul `src/ux/human-ai-safety.js` menambahkan guard deterministic untuk topik high-stakes:
+
+- kesehatan;
+- hukum;
+- keuangan;
+- keselamatan;
+- keputusan besar.
+
+Guard ini menyuntikkan aturan ke `getSystemPrompt()`, menambahkan context note saat user bertanya topik berisiko, dan memberi footer singkat bila jawaban perlu menekankan verifikasi manusia. Tujuannya menjaga AI tetap menjadi partner berpikir, bukan pengambil keputusan final.
 
 ### Trade-off Final
 
@@ -1035,6 +1047,7 @@ Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, 
 - Adaptive mode mengurangi beban user mengetik `/mode`, tetapi manual override tetap disediakan.
 - Collaboration framework deterministic lebih murah daripada LLM planner tambahan, tetapi kedalamannya terbatas pada struktur berpikir.
 - Dashboard baru berupa API foundation, bukan frontend penuh, agar tidak menambah package berat.
+- Safety footer high-stakes menambah sedikit panjang jawaban, tetapi mengurangi risiko overconfidence pada keputusan penting.
 
 ### Manual Test
 
@@ -1042,6 +1055,7 @@ Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, 
 node --check telebot.js
 node scratch/test-conversation-layer.js
 node scratch/test-multi-device-ux.js
+node scratch/test-human-ai-safety.js
 node scratch/test-final-cognitive-os.js
 node scratch/test-ops.js
 npm run check

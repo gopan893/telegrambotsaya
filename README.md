@@ -19,6 +19,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Multi-device UX mode agar jawaban nyaman dibaca di Telegram mobile, Telegram desktop, web client, laptop, dan desktop
 - Conversation continuity layer agar follow-up seperti `iya`, `lanjut`, `jelaskan`, dan pergantian topik dipahami natural
 - Interaction layer dengan inline keyboard, menu cepat, callback handler, dan confirmation flow untuk aksi penting
+- Human judgment safety layer untuk topik kesehatan, hukum, keuangan, keselamatan, dan keputusan besar
 
 ## Mulai Cepat
 
@@ -142,3 +143,21 @@ Layer `src/interactions/` menambahkan tombol Telegram tanpa memaksa semua jawaba
 - Jawaban decision support bisa menawarkan `Bandingkan opsi`, `Lihat risiko`, `Rekomendasi`, dan `Next step`.
 - Aksi penting seperti `/reset` meminta konfirmasi inline terlebih dahulu.
 - State tombol memakai Redis jika tersedia, lalu fallback ke memory Map jika Redis tidak ada.
+
+## Human Judgment Safety
+
+Bot dirancang sebagai partner berpikir, bukan pengganti keputusan manusia.
+
+- Untuk topik high-stakes seperti kesehatan, hukum, keuangan, keselamatan, dan keputusan besar, bot menambahkan batasan dan anjuran verifikasi.
+- Jika evidence kurang atau confidence rendah, bot diarahkan untuk mengatakan keterbatasannya.
+- Keputusan akhir tetap di user.
+
+## Dashboard API
+
+Endpoint ringan:
+
+```text
+GET /api/dashboard
+```
+
+Endpoint ini hanya menampilkan metadata publik seperti health ringkas, tipe storage, modul aktif, dan daftar command. Memory user, prompt internal, token, dan data sensitif tidak diekspos.

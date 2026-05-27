@@ -22,6 +22,7 @@ const { createStorageManager } = require('./src/storage');
 const adaptiveSystem = require('./src/adaptive');
 const collaborationSystem = require('./src/collaboration');
 const multiDeviceUX = require('./src/ux/multi-device-response');
+const humanAISafety = require('./src/ux/human-ai-safety');
 const conversationManager = require('./src/conversation');
 const interactions = require('./src/interactions');
 
@@ -941,6 +942,8 @@ Gunakan bahasa yang sama dengan pesan pengguna. Jika pengguna memakai campuran b
 ${getModePrompt(getEffectiveMode(u))}
 
 ${multiDeviceUX.getPromptRules()}
+
+${humanAISafety.getPromptRules()}
 
 Kalau tidak tahu, bilang tidak tahu.
 
@@ -5866,25 +5869,45 @@ app.get('/healthz', (req, res) => {
 
 app.get('/api/dashboard', (req, res) => {
   const ops = opsSystem.getStatus(getOpsServices());
+  const runtime = autonomousEngine.getRuntimeStatus();
+  const storage = storageManager.status();
   res.json({
     name: 'Human-AI Cognitive Operating System',
+    version: 'final-cognitive-os',
     public: true,
-    note: 'Endpoint ini tidak mengekspos memory user atau data internal sensitif.',
-    storage: storageManager.status(),
+    note: 'Endpoint ini hanya metadata publik. Memory user, prompt internal, token, dan data sensitif tidak diekspos.',
+    storage: {
+      persistentType: storage.persistentType,
+      postgresConfigured: Boolean(DATABASE_URL),
+      postgresConnected: Boolean(storage.postgres?.connected),
+      cacheType: storage.cache?.type || 'memory-cache',
+      redisConfigured: Boolean(REDIS_URL)
+    },
     health: {
       status: ops.health.status,
       uptimeSeconds: ops.health.uptimeSeconds,
-      memory: ops.health.memory
+      memory: ops.health.memory,
+      queue: runtime.queue || {}
     },
     modules: [
+      'conversation-continuity',
+      'interaction-layer',
       'adaptive-mode-router',
       'human-ai-collaboration',
       'ai-os',
       'ops',
       'storage-manager',
       'knowledge-graph',
-      'goal-workflow'
+      'goal-workflow',
+      'human-judgment-safety'
     ],
+    commands: {
+      adaptive: ['/adaptive status', '/adaptive on', '/adaptive off', '/adaptive reset'],
+      collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],
+      aiOS: ['/aios', '/goals', '/goaladd', '/workflows', '/workflowadd', '/graph', '/insights', '/workspace'],
+      ops: ['/ops', '/health', '/diag', '/benchmark', '/reliability', '/perf', '/cost', '/tokens', '/regression'],
+      interaction: ['/menu', '/actions', '/help']
+    },
     dashboardTargets: [
       'Memory',
       'Goals',
@@ -6360,6 +6383,8 @@ ${recentMemory || '-'}
 
 ${extraContext}
 
+${humanAISafety.buildContextNote(text)}
+
 Pesan user:
 ${text}
 `;
@@ -6717,7 +6742,7 @@ async function processAIMessage(chatId, userId, text, msg) {
 
   answer = personalityResponse(
     ensureUser(userId).mode,
-    answer
+    humanAISafety.applyHumanJudgmentFooter(answer, text)
   );
 
   let interactionExtra = {};

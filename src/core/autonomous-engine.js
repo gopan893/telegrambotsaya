@@ -22,6 +22,7 @@ const reflection = require('../agents/reflection');
 const selfImprovement = require('../agents/self-improvement');
 const governance = require('../governance');
 const aiOS = require('../ai-os');
+const humanAISafety = require('../ux/human-ai-safety');
 
 const messageBus = require('./message-bus');
 const agentCoordinator = require('./agent-coordinator');
@@ -803,9 +804,10 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     const groundedAnswer = crossModal.applyGroundingGuard(traceId, verification.finalAnswer, context.crossModalContext);
     if (groundedAnswer.annotation && !verification.annotation) verification.annotation = groundedAnswer.annotation;
     const sanitizedAnswer = safety.sanitizeOutput(traceId, groundedAnswer.answer);
+    const finalAnswer = humanAISafety.applyHumanJudgmentFooter(sanitizedAnswer, userMessage);
     if (
       typeof botServices.shouldRejectGenericGreeting === 'function' &&
-      botServices.shouldRejectGenericGreeting(sanitizedAnswer, userMessage) &&
+      botServices.shouldRejectGenericGreeting(finalAnswer, userMessage) &&
       !isToolRequest &&
       !hasAttachment
     ) {
@@ -815,7 +817,7 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
       messageBus.cleanupContext(traceId);
       return {
         processed: false,
-        answerText: sanitizedAnswer,
+        answerText: finalAnswer,
         reason: 'generic_greeting_rejected'
       };
     }
@@ -836,7 +838,7 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
           userId,
           chatId,
           userText: userMessage,
-          answerText: sanitizedAnswer,
+          answerText: finalAnswer,
           mode: currentMode,
           intent,
           hasAttachment,
@@ -854,24 +856,24 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
 
     // Kirim jawaban
     if (!isToolRequest || (executionResult && !executionResult.ok) || verification.annotation || hasAttachment) {
-      await sendStreamingAnswer(chatId, sanitizedAnswer, {
+      await sendStreamingAnswer(chatId, finalAnswer, {
         reply_to_message_id: msgObj.message_id,
         ...interactionExtra
       });
     }
 
     pushChatHistory({ userId, chatId, role: 'user', text: userMessage, timestamp: Date.now() });
-    pushChatHistory({ userId, chatId, role: 'assistant', text: sanitizedAnswer, timestamp: Date.now() });
-    if (typeof saveConversationPair === 'function') await saveConversationPair(userId, userMessage, sanitizedAnswer);
+    pushChatHistory({ userId, chatId, role: 'assistant', text: finalAnswer, timestamp: Date.now() });
+    if (typeof saveConversationPair === 'function') await saveConversationPair(userId, userMessage, finalAnswer);
 
     // 13. Learning Update, Self-Improvement & Memory Evolution
     setImmediate(() => {
       (async () => {
-        const newFacts = [userMessage, sanitizedAnswer].filter(t => t && t.length > 20);
+        const newFacts = [userMessage, finalAnswer].filter(t => t && t.length > 20);
         memory.evolveMemory(traceId, userId, botServices, newFacts);
         await selfImprovement.recordInteraction(traceId, userId, {
           query: userMessage,
-          answer: sanitizedAnswer,
+          answer: finalAnswer,
           intent,
           evaluation,
           verification,
@@ -886,7 +888,7 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
           userMode: context.mode,
           mode: currentMode,
           strategy: aiOSPacket?.strategy
-        }, sanitizedAnswer, botServices);
+        }, finalAnswer, botServices);
       })().catch((err) => {
         observability.recordErrorPattern('self_improvement', err);
         observability.logEvent(traceId, 'SelfImprovementAgent', 'LEARNING_UPDATE_FAILED', { error: err.message });
@@ -904,7 +906,7 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     });
 
     messageBus.cleanupContext(traceId);
-    return { processed: true, answerText: sanitizedAnswer };
+    return { processed: true, answerText: finalAnswer };
 
   } catch (err) {
     messageBus.cleanupContext(traceId);
