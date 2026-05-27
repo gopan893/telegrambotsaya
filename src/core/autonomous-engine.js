@@ -508,6 +508,15 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       history: memory.compressContext(traceId, botServices.shortMemory || []),
       fileContext // Cross-modal: gabungkan konteks file dengan konteks teks
     };
+    if (botServices.adaptiveDecision?.applied) {
+      context.mode = botServices.adaptiveDecision.mode || context.mode;
+      context.adaptiveDecision = botServices.adaptiveDecision;
+      messageBus.updateContext(traceId, 'adaptiveMode', {
+        mode: botServices.adaptiveDecision.mode,
+        reason: botServices.adaptiveDecision.reason,
+        confidence: botServices.adaptiveDecision.confidence
+      });
+    }
 
     let aiOSPacket = null;
     try {
@@ -551,6 +560,7 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
 
     // 4. Adaptive Intelligence Modifiers
     const adaptiveModifiers = [
+      botServices.adaptiveDecision?.promptHint,
       learning.generateAdaptivePromptModifiers(userId, botServices),
       selfImprovement.generatePromptHints(userId, botServices)
     ].filter(Boolean).join('\n');

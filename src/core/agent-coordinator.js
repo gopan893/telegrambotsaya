@@ -178,6 +178,10 @@ class AgentCoordinator {
     if (['explainability', 'explain'].includes(mode)) return 'Explainability';
     if (['recovery', 'recovery-mode'].includes(mode)) return 'Recovery';
     if (['strategic-thinking', 'strategic-os'].includes(mode)) return 'Strategic Thinking';
+    if (['decision-support', 'decision'].includes(mode)) return 'Strategic Thinking';
+    if (['learning-mentor', 'mentor-mode'].includes(mode)) return 'Mentor Intelligence';
+    if (['coding-debugging', 'debugging', 'technical-reasoning', 'builder'].includes(mode)) return 'System Analysis';
+    if (['ops-diagnostics', 'health-watch', 'benchmark', 'incident-response', 'cost-optimization', 'continuous-improvement'].includes(mode)) return 'System Analysis';
     if (['personal-intelligence', 'personal-os'].includes(mode)) return 'Personal Intelligence';
     if (['deep-research-os', 'research-os'].includes(mode)) return 'Deep Research OS';
     if (['cognitive-workspace', 'workspace-os'].includes(mode)) return 'Cognitive Workspace';
