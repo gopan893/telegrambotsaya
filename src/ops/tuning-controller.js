@@ -49,10 +49,20 @@ function recommendTuning(services = {}) {
       confidence: 0.7
     });
   }
+  const state = store.getOpsState(services);
+  const guarded = recs.filter((item) => {
+    const tuningGuard = guards.unstableTuningGuard(state, item.setting);
+    const safetyGuard = guards.unsafeOptimizationBlocker(item);
+    const sampleGuard = guards.brittleImprovementPrevention(
+      telemetry.latency.samples || 0,
+      item.confidence || 0.5
+    );
+    return tuningGuard.allowed && safetyGuard.allowed && sampleGuard.allowed;
+  });
 
   return {
     reliability,
-    recommendations: guards.preventOverOptimization(recs),
+    recommendations: guards.preventOverOptimization(guarded.length ? guarded : recs.slice(0, 1)),
     autoApply: false,
     reason: 'Tahap 10 hanya memberi rekomendasi tuning. Perubahan setting otomatis dihindari agar stabil.'
   };

@@ -57,9 +57,21 @@ function summarizeTokenUsage(services = {}) {
   const prompt = recent.reduce((sum, item) => sum + Number(item.promptTokens || 0), 0);
   const completion = recent.reduce((sum, item) => sum + Number(item.completionTokens || 0), 0);
   const byProvider = {};
+  let topExpensiveOperation = null;
   for (const item of recent) {
     const key = item.provider || 'unknown';
     byProvider[key] = (byProvider[key] || 0) + Number(item.totalTokens || 0);
+    if (!topExpensiveOperation || Number(item.totalTokens || 0) > Number(topExpensiveOperation.totalTokens || 0)) {
+      topExpensiveOperation = {
+        provider: item.provider || 'unknown',
+        model: item.model || 'unknown',
+        kind: item.kind || 'ai',
+        totalTokens: Number(item.totalTokens || 0),
+        promptTokens: Number(item.promptTokens || 0),
+        completionTokens: Number(item.completionTokens || 0),
+        timestamp: item.timestamp
+      };
+    }
   }
   return {
     sampleCount: recent.length,
@@ -68,6 +80,7 @@ function summarizeTokenUsage(services = {}) {
     estimatedCompletionTokens: completion,
     averageTokens: recent.length ? Math.round(total / recent.length) : 0,
     byProvider,
+    topExpensiveOperation,
     spike: guards.detectTokenSpike(samples)
   };
 }

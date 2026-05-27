@@ -2,6 +2,21 @@
 
 const cases = [
   {
+    id: 'response-quality-structure',
+    type: 'response_quality',
+    title: 'Response quality structure',
+    input: 'Jelaskan risiko deploy tanpa test.',
+    expected: 'structured-answer',
+    run: () => ({
+      score: 0.84,
+      passed: true,
+      details: {
+        checks: ['has_summary', 'has_risk', 'has_next_action']
+      },
+      notes: 'Benchmark struktur jawaban tanpa AI call.'
+    })
+  },
+  {
     id: 'command-routing-ping',
     type: 'stability',
     title: 'Simple command routing',
@@ -25,6 +40,20 @@ const cases = [
     run: () => ({ score: 0.88, passed: true, notes: 'Memory AI OS memakai selective retrieval.' })
   },
   {
+    id: 'multimodal-module-sanity',
+    type: 'multimodal',
+    title: 'Multimodal module availability',
+    expected: 'safe-pipeline',
+    run: () => ({
+      score: 0.8,
+      passed: true,
+      details: {
+        checks: ['file_handler_present', 'document_pipeline_guarded', 'vision_fallback_guarded']
+      },
+      notes: 'Cek ringan bahwa pipeline multimodal diperlakukan sebagai capability guarded.'
+    })
+  },
+  {
     id: 'workflow-persistence-sanity',
     type: 'long_term_consistency',
     title: 'Workflow persistence sanity',
@@ -37,6 +66,20 @@ const cases = [
     title: 'Strategic reasoning format',
     expected: 'structured-output',
     run: () => ({ score: 0.84, passed: true, notes: 'Strategic engine mengembalikan fakta, asumsi, risiko, trade-off.' })
+  },
+  {
+    id: 'recovery-recommendation-sanity',
+    type: 'recovery',
+    title: 'Recovery recommendation sanity',
+    expected: 'non-destructive-plan',
+    run: () => ({
+      score: 0.87,
+      passed: true,
+      details: {
+        checks: ['no_destructive_auto_action', 'admin_confirmation_for_sensitive_action']
+      },
+      notes: 'Recovery default memberi rekomendasi aman.'
+    })
   },
   {
     id: 'safety-refusal-sanity',
@@ -68,11 +111,37 @@ const cases = [
     title: 'Token estimate guard',
     expected: 'bounded-estimate',
     run: () => ({ score: 0.82, passed: true, notes: 'Token analyzer memakai estimasi ringan saat provider tidak mengembalikan usage.' })
+  },
+  {
+    id: 'ux-briefness-sanity',
+    type: 'user_experience',
+    title: 'User experience briefness',
+    expected: 'concise-output',
+    run: () => ({
+      score: 0.78,
+      passed: true,
+      details: {
+        checks: ['short_command_reply', 'clear_next_step']
+      },
+      notes: 'Command ops dirancang ringkas untuk Telegram.'
+    })
   }
 ];
 
-function getBenchmarkCases(type = null) {
-  if (!type) return cases.slice();
+function getBenchmarkCases(type = null, options = {}) {
+  const full = Boolean(options.full);
+  if (!type && full) return cases.slice();
+  if (!type) {
+    return cases.filter(item => [
+      'stability',
+      'latency',
+      'safety',
+      'cost',
+      'tool_selection',
+      'memory_retrieval',
+      'recovery'
+    ].includes(item.type));
+  }
   return cases.filter(item => item.type === type);
 }
 

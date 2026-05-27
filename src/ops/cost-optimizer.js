@@ -2,11 +2,13 @@
 
 const telemetryCollector = require('./telemetry-collector');
 const tokenAnalyzer = require('./token-analyzer');
+const resourceAnalyzer = require('./resource-analyzer');
 const guards = require('./ops-guards');
 
-function analyzeCost(services = {}) {
+function analyzeCost(services = {}, userId = '0') {
   const telemetry = telemetryCollector.getTelemetrySummary(services);
   const token = tokenAnalyzer.summarizeTokenUsage(services);
+  const resources = resourceAnalyzer.analyzeResources(services, userId);
   const recommendations = [];
   const counters = telemetry.counters || {};
   const aiCalls = Number(counters.aiCall || 0);
@@ -40,6 +42,24 @@ function analyzeCost(services = {}) {
     });
   }
 
+  if (resources.memory.telemetrySizeBytes > 120000) {
+    recommendations.push({
+      action: 'prune_telemetry',
+      reason: 'Telemetry mulai membesar.',
+      confidence: 0.78,
+      impact: 'Mengurangi storage ops tanpa menyentuh memory user.'
+    });
+  }
+
+  if (resources.workflow.stuckWorkflowCount > 0) {
+    recommendations.push({
+      action: 'review_stuck_workflows',
+      reason: 'Ada workflow stale/conflict.',
+      confidence: 0.7,
+      impact: 'Meningkatkan throughput kerja jangka panjang.'
+    });
+  }
+
   if (recommendations.length === 0) {
     recommendations.push({
       action: 'keep_current_policy',
@@ -51,8 +71,12 @@ function analyzeCost(services = {}) {
 
   return {
     estimatedTokenUsage: token,
+    resources,
     aiPerRequest: Number(aiPerRequest.toFixed(2)),
     cacheHint: 'Pertahankan cache jawaban pendek dan summary context untuk query berulang.',
+    contextCompressionHint: 'Gunakan compressed context saat token rata-rata naik atau memory user besar.',
+    maxTokenHint: 'Turunkan maxTokens untuk mode non-riset jika latency p90 tinggi.',
+    benchmarkSamplingHint: 'Jalankan benchmark manual setelah perubahan besar, bukan setiap pesan.',
     recommendations: guards.preventOverOptimization(recommendations),
     generatedAt: guards.nowIso()
   };

@@ -8,6 +8,7 @@ function createCanary(name, options = {}, services = {}) {
   const canary = {
     id: `canary_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: guards.sanitizeText(name || 'unnamed-canary', 120),
+    description: guards.sanitizeText(options.description || '', 260),
     status: 'draft',
     rolloutPercent: guards.clamp(options.rolloutPercent || 0, 0, 25),
     createdAt: guards.nowIso(),
@@ -59,7 +60,9 @@ function compareCanary(canaryId, services = {}) {
     canary,
     metricCount: metrics.length,
     average: Number(average.toFixed(2)),
-    recommendation: average >= 0.75 ? 'eligible_for_manual_promotion' : 'keep_observing_or_rollback'
+    baselineAverage: 0.75,
+    deltaVsBaseline: Number((average - 0.75).toFixed(3)),
+    recommendation: average >= 0.75 && metrics.length >= 3 ? 'eligible_for_manual_promotion' : 'keep_observing_or_rollback'
   };
 }
 
@@ -67,6 +70,14 @@ function promoteCanary(canaryId, services = {}) {
   const state = store.getOpsState(services);
   const canary = (state.canaries || []).find(item => item.id === canaryId);
   if (!canary) return { ok: false, reason: 'canary_not_found' };
+  const comparison = compareCanary(canaryId, services);
+  if (!comparison.ok || comparison.metricCount < 3 || comparison.average < 0.75) {
+    return {
+      ok: false,
+      reason: 'canary_evidence_insufficient',
+      comparison
+    };
+  }
   canary.status = 'promoted';
   canary.updatedAt = guards.nowIso();
   store.saveOpsState(services);
