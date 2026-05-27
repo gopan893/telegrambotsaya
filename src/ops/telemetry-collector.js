@@ -12,18 +12,25 @@ function recordEvent(event = {}, services = {}) {
   const state = store.getOpsState(services);
   const counters = state.telemetry.counters;
   const type = guards.sanitizeText(event.type || 'event', 80);
+  const createdAt = guards.nowIso();
   const countBefore = Number(counters[type] || 0);
   inc(counters, type);
 
   if (guards.shouldSample(countBefore, state.config.telemetrySamplingRate)) {
     store.appendBounded(state.telemetry.events, {
-      timestamp: guards.nowIso(),
+      id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      userId: event.userId ? guards.sanitizeText(event.userId, 60) : undefined,
       type,
+      scope: guards.sanitizeText(event.scope || event.component || 'bot', 80),
       name: guards.sanitizeText(event.name || type, 120),
       component: guards.sanitizeText(event.component || 'bot', 80),
       status: guards.sanitizeText(event.status || 'ok', 40),
       latencyMs: Math.max(0, Number(event.latencyMs || 0)),
-      meta: guards.sanitizeMeta(event.meta || {})
+      metadata: guards.sanitizeMeta(event.metadata || event.meta || {}),
+      meta: guards.sanitizeMeta(event.metadata || event.meta || {}),
+      error: event.error ? guards.sanitizeText(event.error, 240) : undefined,
+      createdAt,
+      timestamp: createdAt
     }, state.config.maxEvents);
   }
 
@@ -54,7 +61,42 @@ function recordCommand(command, userId, services = {}) {
     type: 'command',
     name: clean,
     component: 'telegram',
+    scope: 'command',
+    userId,
     meta: { userId: userId ? guards.sanitizeText(userId, 40) : undefined }
+  }, services);
+}
+
+function recordMemoryAccess(payload = {}, services = {}) {
+  const state = store.getOpsState(services);
+  inc(state.telemetry.counters, 'memoryAccess');
+  return recordEvent({
+    type: 'memoryAccess',
+    name: payload.name || 'memory',
+    component: 'memory',
+    scope: payload.scope || 'memory',
+    status: payload.status || 'ok',
+    latencyMs: payload.latencyMs,
+    metadata: {
+      memoryType: payload.memoryType,
+      resultCount: payload.resultCount,
+      hit: payload.hit
+    }
+  }, services);
+}
+
+function recordReasoningPath(payload = {}, services = {}) {
+  return recordEvent({
+    type: 'reasoningPath',
+    name: payload.name || 'reasoning',
+    component: 'reasoning',
+    scope: payload.scope || 'ai-pipeline',
+    status: payload.status || 'ok',
+    latencyMs: payload.latencyMs,
+    metadata: {
+      mode: payload.mode,
+      steps: Array.isArray(payload.steps) ? payload.steps.slice(0, 8) : []
+    }
   }, services);
 }
 
@@ -95,12 +137,21 @@ function recordAIUsage(payload = {}, services = {}) {
     }, state.config.maxLatencySamples);
   }
   store.appendBounded(state.telemetry.events, {
-    timestamp: guards.nowIso(),
+    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type: 'aiCall',
-    name: provider,
-    component: 'ai-provider',
+    scope: 'ai-provider',
     status: payload.success === false ? 'failed' : 'ok',
     latencyMs: Math.round(latencyMs),
+    metadata: {
+      model,
+      cached: Boolean(payload.cached),
+      provider
+    },
+    error: payload.error ? guards.sanitizeText(payload.error, 160) : undefined,
+    createdAt: guards.nowIso(),
+    timestamp: guards.nowIso(),
+    name: provider,
+    component: 'ai-provider',
     meta: {
       model,
       cached: Boolean(payload.cached),
@@ -133,12 +184,17 @@ function recordToolUsage(payload = {}, services = {}) {
     }, state.config.maxLatencySamples);
   }
   store.appendBounded(state.telemetry.events, {
-    timestamp: guards.nowIso(),
+    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type: 'toolExecution',
-    name: tool,
-    component: 'tool',
+    scope: 'tool',
     status: payload.success === false ? 'failed' : 'ok',
     latencyMs: Math.round(latencyMs),
+    metadata: guards.sanitizeMeta(payload.meta || {}),
+    error: payload.error ? guards.sanitizeText(payload.error, 160) : undefined,
+    createdAt: guards.nowIso(),
+    timestamp: guards.nowIso(),
+    name: tool,
+    component: 'tool',
     meta: payload.meta || {}
   }, state.config.maxEvents);
   store.compactState(state);
@@ -187,6 +243,16 @@ function getTelemetrySummary(services = {}) {
     return sorted[idx];
   };
   const recentErrors = guards.getRecent(state.telemetry.recentErrors || [], 15 * 60 * 1000);
+  const failureClusters = {};
+  for (const err of state.telemetry.recentErrors || []) {
+    const key = `${err.component || err.scope || 'unknown'}:${String(err.message || '').slice(0, 80)}`;
+    failureClusters[key] = (failureClusters[key] || 0) + 1;
+  }
+  const clusterList = Object.entries(failureClusters)
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+  const anomalyScore = Math.min(1, Number(((recentErrors.length / 12) + ((sorted[sorted.length - 1] || 0) > 15000 ? 0.25 : 0)).toFixed(2)));
   return {
     counters: { ...state.telemetry.counters },
     commandUsage: { ...state.telemetry.commandUsage },
@@ -200,6 +266,8 @@ function getTelemetrySummary(services = {}) {
       max: sorted[sorted.length - 1] || 0
     },
     recentErrorCount: recentErrors.length,
+    failureClusters: clusterList,
+    anomalyScore,
     token: tokenAnalyzer.summarizeTokenUsage(services),
     generatedAt: guards.nowIso()
   };
@@ -218,6 +286,8 @@ module.exports = {
   recordCommand,
   recordAIUsage,
   recordToolUsage,
+  recordMemoryAccess,
+  recordReasoningPath,
   recordError,
   recordLatency,
   getTelemetrySummary,

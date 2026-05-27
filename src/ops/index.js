@@ -30,6 +30,10 @@ const tuningController = safeRequire('tuning-controller');
 const canaryController = safeRequire('canary-controller');
 const evaluationScheduler = safeRequire('evaluation-scheduler');
 const opsKnowledgeBase = safeRequire('ops-knowledge-base');
+const opsWorkflow = safeRequire('ops-workflow');
+const resourceAnalyzer = safeRequire('resource-analyzer');
+const abTesting = safeRequire('ab-testing');
+const adaptiveOps = safeRequire('adaptive-ops');
 
 function createOpsSystem() {
   return {
@@ -53,6 +57,10 @@ function createOpsSystem() {
     canaryController,
     evaluationScheduler,
     opsKnowledgeBase,
+    opsWorkflow,
+    resourceAnalyzer,
+    abTesting,
+    adaptiveOps,
     getStatus(services = {}) {
       const health = healthMonitor.getHealth ? healthMonitor.getHealth(services) : { status: 'unknown', issues: [] };
       const telemetry = telemetryCollector.getTelemetrySummary ? telemetryCollector.getTelemetrySummary(services) : {};
@@ -82,7 +90,11 @@ function createOpsSystem() {
           'TuningController',
           'CanaryController',
           'EvaluationScheduler',
-          'OpsKnowledgeBase'
+          'OpsKnowledgeBase',
+          'OpsWorkflow',
+          'ResourceAnalyzer',
+          'ABTesting',
+          'AdaptiveOps'
         ]
       };
     }

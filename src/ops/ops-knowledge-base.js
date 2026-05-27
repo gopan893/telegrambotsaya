@@ -30,6 +30,54 @@ const fixRecipes = {
   ]
 };
 
+const defaultKnowledge = [
+  {
+    title: 'Render free tier memory limit awareness',
+    content: 'Render free tier rawan OOM jika RSS mendekati 512MB. Pantau /health, prune telemetry, dan batasi context.',
+    tags: ['render', 'memory', 'infra']
+  },
+  {
+    title: 'Webhook troubleshooting',
+    content: 'Jika webhook tidak menerima update, cek WEBHOOK_URL/TELEGRAM_WEBHOOK_URL, setWebhook log, dan path /webhook/<token>.',
+    tags: ['webhook', 'telegram', 'deploy']
+  },
+  {
+    title: 'Redis unavailable fallback',
+    content: 'Jika Redis gagal, bot fallback ke JSON. Ini aman untuk skala kecil, tetapi perlu pruning dan atomic write.',
+    tags: ['redis', 'storage', 'fallback']
+  },
+  {
+    title: 'AI provider rate limit handling',
+    content: 'Rate limit provider ditangani dengan circuit breaker dan fallback provider. Kurangi AI call dan gunakan cache.',
+    tags: ['provider', 'rate-limit', 'ai']
+  },
+  {
+    title: 'Telegram API failure handling',
+    content: 'Jika sendMessage gagal, bot retry tanpa reply_to/parse_mode. Pantau tool errors dan latency Telegram.',
+    tags: ['telegram', 'tool', 'api']
+  },
+  {
+    title: 'High latency checklist',
+    content: 'Cek latency p90, provider response, queue pressure, token size, dan deep reasoning yang tidak perlu.',
+    tags: ['latency', 'performance']
+  },
+  {
+    title: 'Memory bloat checklist',
+    content: 'Cek memory count, graph size, telemetry size, stale workflow, dan prune item low-importance.',
+    tags: ['memory', 'pruning']
+  },
+  {
+    title: 'Benchmark regression checklist',
+    content: 'Bandingkan latest vs baseline, lihat metric turun, cek commit terakhir, lalu pilih tuning sebelum rollback.',
+    tags: ['benchmark', 'regression']
+  },
+  {
+    title: 'Safe rollback checklist',
+    content: 'Rollback hanya jika ada evidence regresi kuat. Hindari force push. Validasi ulang dengan /health dan /benchmark.',
+    tags: ['rollback', 'safety']
+  }
+];
+
 function addOpsLesson(lesson, services = {}) {
   const state = store.getOpsState(services);
   const item = {
@@ -47,7 +95,15 @@ function addOpsLesson(lesson, services = {}) {
 function searchOpsKnowledge(query = '', services = {}) {
   const state = store.getOpsState(services);
   const q = String(query || '').toLowerCase();
-  const lessons = (state.opsLessons || []).filter(item => {
+  const all = [
+    ...defaultKnowledge.map((item, index) => ({
+      id: `default_${index + 1}`,
+      createdAt: null,
+      ...item
+    })),
+    ...(state.opsLessons || [])
+  ];
+  const lessons = all.filter(item => {
     const hay = `${item.title} ${item.content} ${(item.tags || []).join(' ')}`.toLowerCase();
     return !q || hay.includes(q);
   }).slice(-10).reverse();
@@ -75,6 +131,31 @@ function getDeploymentChecklist() {
   ];
 }
 
+function getPostmortemTemplate() {
+  return [
+    'Ringkasan incident:',
+    'Dampak:',
+    'Root cause sementara:',
+    'Evidence:',
+    'Mitigasi:',
+    'Recovery yang dijalankan:',
+    'Pencegahan ulang:',
+    'Owner dan follow-up:'
+  ];
+}
+
+function getOperationalSummary(services = {}) {
+  const state = store.getOpsState(services);
+  return {
+    knownFailurePatterns: defaultKnowledge.filter(item => item.tags.includes('infra') || item.tags.includes('api')).length,
+    customLessons: (state.opsLessons || []).length,
+    tuningHistory: (state.tuningHistory || []).slice(-5),
+    benchmarkHistory: (state.benchmarkRuns || []).slice(-5),
+    infraConstraints: defaultKnowledge.filter(item => item.tags.includes('render') || item.tags.includes('memory')),
+    postmortemTemplate: getPostmortemTemplate()
+  };
+}
+
 function getRollbackChecklist() {
   return [
     'Identifikasi commit terakhir yang dicurigai.',
@@ -90,5 +171,7 @@ module.exports = {
   searchOpsKnowledge,
   getFixRecipe,
   getDeploymentChecklist,
-  getRollbackChecklist
+  getRollbackChecklist,
+  getPostmortemTemplate,
+  getOperationalSummary
 };

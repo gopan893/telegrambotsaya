@@ -101,6 +101,98 @@ function preventOverOptimization(recommendations = []) {
     .slice(0, 6);
 }
 
+function incidentEscalationGuard(state, severity, evidenceCount = 0) {
+  if (severity !== 'critical') return { allowed: true, severity };
+  const recentCritical = getRecent(state.incidents || [], 10 * 60 * 1000)
+    .filter(item => item.severity === 'critical').length;
+  if (evidenceCount < 2 && recentCritical < 1) {
+    return {
+      allowed: false,
+      severity: 'incident',
+      reason: 'Critical escalation ditahan sampai ada evidence berulang.'
+    };
+  }
+  return { allowed: true, severity };
+}
+
+function unstableTuningGuard(state, setting, minIntervalMs = 30 * 60 * 1000) {
+  const recent = (state.tuningHistory || []).slice().reverse().find(item => item.setting === setting);
+  if (!recent) return { allowed: true };
+  const ts = Date.parse(recent.timestamp || 0);
+  if (Number.isFinite(ts) && Date.now() - ts < minIntervalMs) {
+    return { allowed: false, reason: 'Tuning terlalu sering untuk setting yang sama.' };
+  }
+  return { allowed: true };
+}
+
+function unsafeOptimizationBlocker(recommendation = {}) {
+  const text = `${recommendation.action || ''} ${recommendation.setting || ''} ${recommendation.reason || ''}`;
+  if (/disable.*safety|skip.*safety|remove.*guard|bypass/i.test(text)) {
+    return { allowed: false, reason: 'Optimasi tidak boleh mengurangi safety guard.' };
+  }
+  return { allowed: true };
+}
+
+function runawayCostPrevention(state, action = '') {
+  const recentBenchmarks = getRecent(state.benchmarkRuns || [], 15 * 60 * 1000).length;
+  const recentAiCalls = getRecent(state.telemetry?.events || [], 15 * 60 * 1000)
+    .filter(item => item.type === 'aiCall').length;
+  if (/benchmark|evaluation/i.test(action) && recentBenchmarks >= 3) {
+    return { allowed: false, reason: 'Benchmark terlalu sering dalam 15 menit terakhir.' };
+  }
+  if (/ai|reasoning/i.test(action) && recentAiCalls >= 40) {
+    return { allowed: false, reason: 'AI ops call terlalu tinggi dalam 15 menit terakhir.' };
+  }
+  return { allowed: true };
+}
+
+function regressionRollbackGuard(regression = {}) {
+  if (!regression.regressionDetected && !regression.detected) {
+    return { allowed: false, reason: 'Rollback tidak disarankan tanpa bukti regresi.' };
+  }
+  if (!['high', 'critical'].includes(regression.severity)) {
+    return { allowed: false, reason: 'Regresi belum cukup berat untuk rollback; gunakan tuning dulu.' };
+  }
+  return { allowed: true };
+}
+
+function loopPrevention(state, key, windowMs = 5 * 60 * 1000) {
+  if (!state._loops) state._loops = {};
+  const now = Date.now();
+  const entry = state._loops[key] || { count: 0, startedAt: now };
+  if (now - entry.startedAt > windowMs) {
+    entry.count = 0;
+    entry.startedAt = now;
+  }
+  entry.count += 1;
+  state._loops[key] = entry;
+  return {
+    allowed: entry.count <= 3,
+    count: entry.count,
+    reason: entry.count > 3 ? 'Loop diagnostics/recovery dicegah.' : 'ok'
+  };
+}
+
+function recoverCorruptedTelemetry(state) {
+  if (!state.telemetry || typeof state.telemetry !== 'object') {
+    state.telemetry = {};
+  }
+  if (!state.telemetry.counters || typeof state.telemetry.counters !== 'object') {
+    state.telemetry.counters = {};
+  }
+  for (const key of ['events', 'latencySamples', 'tokenSamples', 'recentErrors']) {
+    if (!Array.isArray(state.telemetry[key])) state.telemetry[key] = [];
+  }
+  return state.telemetry;
+}
+
+function brittleImprovementPrevention(sampleCount, confidence = 0.5) {
+  if (Number(sampleCount || 0) < 3 && Number(confidence || 0) < 0.85) {
+    return { allowed: false, reason: 'Sample terlalu sedikit untuk optimasi permanen.' };
+  }
+  return { allowed: true };
+}
+
 function safeError(err, scope = 'unknown') {
   return {
     scope,
@@ -122,5 +214,13 @@ module.exports = {
   isSensitiveAction,
   guardAutonomousAction,
   preventOverOptimization,
+  incidentEscalationGuard,
+  unstableTuningGuard,
+  unsafeOptimizationBlocker,
+  runawayCostPrevention,
+  regressionRollbackGuard,
+  loopPrevention,
+  recoverCorruptedTelemetry,
+  brittleImprovementPrevention,
   safeError
 };

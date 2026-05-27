@@ -38,9 +38,18 @@ function defaultState() {
     },
     incidents: [],
     benchmarkRuns: [],
+    benchmarkBaselineId: null,
     rollbackPlans: [],
     tuningHistory: [],
     canaries: [],
+    abTests: [],
+    adaptive: {
+      thresholds: {},
+      incidentPatterns: {},
+      lastTuningAt: null,
+      lastDiagnosticsAt: null,
+      lastRecoveryAt: null
+    },
     evaluations: [],
     opsLessons: [],
     recoveryHistory: [],
@@ -92,6 +101,12 @@ function ensureShape(state) {
     ...base.config,
     ...(merged.config || {})
   };
+  merged.adaptive = {
+    ...base.adaptive,
+    ...(merged.adaptive || {})
+  };
+  if (!merged.adaptive.thresholds || typeof merged.adaptive.thresholds !== 'object') merged.adaptive.thresholds = {};
+  if (!merged.adaptive.incidentPatterns || typeof merged.adaptive.incidentPatterns !== 'object') merged.adaptive.incidentPatterns = {};
 
   for (const key of [
     'latencySamples',
@@ -109,6 +124,7 @@ function ensureShape(state) {
     'rollbackPlans',
     'tuningHistory',
     'canaries',
+    'abTests',
     'evaluations',
     'opsLessons',
     'recoveryHistory'
@@ -187,6 +203,7 @@ function compactState(state) {
   state.rollbackPlans = (state.rollbackPlans || []).slice(-30);
   state.tuningHistory = (state.tuningHistory || []).slice(-40);
   state.canaries = (state.canaries || []).slice(-30);
+  state.abTests = (state.abTests || []).slice(-30);
   state.evaluations = (state.evaluations || []).slice(-40);
   state.recoveryHistory = (state.recoveryHistory || []).slice(-50);
   state.updatedAt = nowIso();

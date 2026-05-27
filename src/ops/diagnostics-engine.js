@@ -4,13 +4,18 @@ const healthMonitor = require('./health-monitor');
 const telemetryCollector = require('./telemetry-collector');
 const guards = require('./ops-guards');
 
-function addDiagnosis(items, type, severity, cause, fix, confidence) {
+function addDiagnosis(items, type, severity, cause, fix, confidence, evidence = [], safeNextAction = '') {
   items.push({
     type,
+    category: type,
+    status: severity === 'info' ? 'ok' : 'attention',
     severity,
     suspectedCause: cause,
+    evidence: Array.isArray(evidence) ? evidence : [evidence],
     recommendedFixes: Array.isArray(fix) ? fix : [fix],
-    confidence
+    recommendedFix: Array.isArray(fix) ? fix[0] : fix,
+    confidence,
+    safeNextAction: safeNextAction || (Array.isArray(fix) ? fix[0] : fix)
   });
 }
 
@@ -25,7 +30,7 @@ function diagnose(services = {}, input = {}) {
       'Cek MISTRAL_API_KEY/GROQ_API_KEY di Render.',
       'Cek rate limit provider.',
       'Biarkan circuit breaker cooldown sebelum retry.'
-    ], 0.86);
+    ], 0.86, issues, 'Gunakan fallback provider atau perbaiki env provider.');
   }
 
   if (issues.includes('HIGH_RAM_USAGE') || issues.includes('CRITICAL_RAM_PRESSURE')) {
@@ -33,7 +38,7 @@ function diagnose(services = {}, input = {}) {
       'Kurangi context/memory yang dimasukkan ke prompt.',
       'Prune telemetry dan cache lama.',
       'Hindari benchmark berat otomatis.'
-    ], 0.82);
+    ], 0.82, [`rss=${health.memory?.rssMb || 0}MB`], 'Jalankan /recover untuk rekomendasi pruning non-destruktif.');
   }
 
   if (issues.includes('QUEUE_PRESSURE') || issues.includes('QUEUE_CRITICAL')) {
@@ -41,7 +46,7 @@ function diagnose(services = {}, input = {}) {
       'Kurangi orchestration untuk pesan sederhana.',
       'Naikkan cooldown atau batasi concurrency.',
       'Gunakan fallback simple mode sementara.'
-    ], 0.78);
+    ], 0.78, [`queue=${health.queue?.pending || 0}/${health.queue?.maxQueueSize || 0}`], 'Tunda benchmark dan gunakan lightweight mode sementara.');
   }
 
   if ((telemetry.recentErrorCount || 0) >= 5) {
@@ -49,7 +54,7 @@ function diagnose(services = {}, input = {}) {
       'Lihat /incidents untuk pola error.',
       'Cek provider/tool yang gagal paling sering.',
       'Aktifkan recovery plan non-destruktif.'
-    ], 0.7);
+    ], 0.7, [`recentErrorCount=${telemetry.recentErrorCount || 0}`], 'Cek /incidents dan /recover.');
   }
 
   if (telemetry.token?.spike?.spike) {
@@ -57,14 +62,14 @@ function diagnose(services = {}, input = {}) {
       'Gunakan summary context.',
       'Kurangi maxTokens untuk mode non-riset.',
       'Aktifkan sampling telemetry dan cache.'
-    ], 0.74);
+    ], 0.74, [`tokenSpike=${telemetry.token.spike.ratio}x`], 'Gunakan mode cost-optimization dan cek /tokens.');
   }
 
   if (items.length === 0) {
     addDiagnosis(items, 'healthy', 'info', 'Tidak ada gejala produksi serius pada telemetry ringan.', [
       'Lanjutkan monitoring berkala.',
       'Jalankan /benchmark setelah perubahan besar.'
-    ], 0.68);
+    ], 0.68, ['health=ok'], 'Tidak perlu recovery.');
   }
 
   const worst = items.find(item => item.severity === 'critical')
@@ -73,11 +78,16 @@ function diagnose(services = {}, input = {}) {
     || items[0];
 
   return {
+    status: worst.status,
     diagnosis: worst.type,
+    category: worst.category,
     severity: worst.severity,
     suspectedCause: worst.suspectedCause,
+    evidence: worst.evidence,
     recommendedFixes: worst.recommendedFixes,
+    recommendedFix: worst.recommendedFix,
     confidence: worst.confidence,
+    safeNextAction: worst.safeNextAction,
     findings: items,
     generatedAt: guards.nowIso()
   };
@@ -87,8 +97,11 @@ function formatDiagnosis(result) {
   return [
     `Diagnosis: ${result.diagnosis}`,
     `Severity: ${result.severity}`,
+    `Category: ${result.category}`,
     `Confidence: ${Number(result.confidence || 0).toFixed(2)}`,
     `Cause: ${result.suspectedCause}`,
+    `Evidence: ${(result.evidence || []).join(', ') || '-'}`,
+    `Safe next action: ${result.safeNextAction || '-'}`,
     '',
     'Rekomendasi:',
     ...(result.recommendedFixes || []).map(item => `- ${item}`)
