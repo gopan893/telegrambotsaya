@@ -3,40 +3,163 @@
 const { detectComplexity, hasAny } = require('./intent-complexity-detector');
 const guards = require('./adaptive-guards');
 
+const SIGNALS = {
+  health: [
+    'pusing',
+    'sakit kepala',
+    'mual',
+    'demam',
+    'batuk',
+    'flu',
+    'lemas',
+    'capek',
+    'sakit perut',
+    'tidak enak badan',
+    'obat',
+    'dokter'
+  ],
+  coding: [
+    'error',
+    'stack trace',
+    'bug',
+    'crash',
+    'tidak jalan',
+    'npm error',
+    'referenceerror',
+    'syntaxerror',
+    'kode',
+    'coding',
+    'javascript',
+    'node',
+    'node.js',
+    'react',
+    'next.js',
+    'nextjs',
+    'express',
+    'api',
+    'login',
+    'auth'
+  ],
+  ops: [
+    'lambat',
+    'latency',
+    'memory',
+    'ram',
+    'render',
+    'deploy',
+    'deployment',
+    'health',
+    'diagnostic',
+    'diagnostics',
+    'benchmark',
+    'webhook',
+    'redis',
+    'postgresql',
+    'database_url',
+    'env',
+    'server'
+  ],
+  decision: [
+    'pilih',
+    'lebih baik',
+    'keputusan',
+    'opsi',
+    'alternatif',
+    'rekomendasi',
+    'sebaiknya',
+    'vs',
+    'atau'
+  ],
+  reflection: [
+    'renungkan',
+    'refleksi',
+    'blind spot',
+    'pola pikir',
+    'kenapa saya',
+    'sulit konsisten',
+    'kebiasaan',
+    'motivasi',
+    'bingung dengan diri'
+  ],
+  learning: [
+    'belajar',
+    'ajarkan',
+    'roadmap belajar',
+    'dari nol',
+    'mentor',
+    'latihan',
+    'materi',
+    'pahami',
+    'jelaskan konsep'
+  ],
+  strategic: [
+    'risiko',
+    'strategi',
+    'roadmap',
+    'trade-off',
+    'trade off',
+    'asumsi',
+    'second-order',
+    'jangka panjang',
+    'rencana besar',
+    'skala'
+  ],
+  research: [
+    'riset',
+    'sumber',
+    'validasi',
+    'fakta',
+    'referensi',
+    'search',
+    'cari sumber',
+    'berita terbaru',
+    'terbaru',
+    'update terbaru'
+  ]
+};
+
 function routeMessage(input = {}) {
   const text = String(input.text || '');
   const lower = text.toLowerCase();
   const complexity = detectComplexity(text);
-  let mode = 'auto';
-  let reason = 'Pesan sederhana, gunakan assistant biasa.';
+  let mode = 'simple';
+  let reason = 'Pesan sederhana, gunakan assistant ringan.';
   let confidence = 0.55;
 
-  if (hasAny(lower, ['error', 'stack trace', 'bug', 'crash', 'tidak jalan', 'npm error', 'referenceerror'])) {
-    mode = 'coding-debugging';
+  if (hasAny(lower, SIGNALS.health)) {
+    mode = 'health';
+    reason = 'Pesan berisi keluhan kesehatan, gunakan jawaban empatik dan aman.';
+    confidence = 0.84;
+  } else if (hasAny(lower, SIGNALS.reflection)) {
+    mode = 'reflection';
+    reason = 'Pesan meminta refleksi atau bantuan memahami pola diri.';
+    confidence = 0.78;
+  } else if (hasAny(lower, SIGNALS.coding)) {
+    mode = 'coding';
     reason = 'Pesan terlihat seperti debugging/coding.';
     confidence = 0.82;
-  } else if (hasAny(lower, ['lambat', 'latency', 'memory', 'ram', 'render', 'deploy', 'health', 'diagnostic'])) {
-    mode = 'system-analysis';
-    reason = 'Pesan berkaitan dengan operasi, performa, atau deployment.';
-    confidence = 0.78;
-  } else if (hasAny(lower, ['pilih', 'lebih baik', 'keputusan', 'opsi', 'alternatif', 'redis atau postgresql'])) {
-    mode = 'decision-support';
+  } else if (hasAny(lower, SIGNALS.decision)) {
+    mode = 'decision';
     reason = 'Pesan meminta bantuan mengambil keputusan.';
     confidence = 0.8;
-  } else if (hasAny(lower, ['belajar', 'ajarkan', 'roadmap belajar', 'dari nol', 'mentor'])) {
-    mode = 'learning-mentor';
+  } else if (hasAny(lower, SIGNALS.ops)) {
+    mode = 'ops';
+    reason = 'Pesan berkaitan dengan operasi, performa, atau deployment.';
+    confidence = 0.78;
+  } else if (hasAny(lower, SIGNALS.learning)) {
+    mode = 'learning';
     reason = 'Pesan meminta pembelajaran atau roadmap.';
     confidence = 0.8;
-  } else if (hasAny(lower, ['risiko', 'strategi', 'roadmap', 'trade-off', 'asumsi', 'second-order'])) {
-    mode = 'strategic-thinking';
+  } else if (hasAny(lower, SIGNALS.research)) {
+    mode = 'research';
+    reason = 'Pesan membutuhkan riset, validasi sumber, atau informasi terbaru.';
+    confidence = 0.72;
+  } else if (hasAny(lower, SIGNALS.strategic)) {
+    mode = 'strategic';
     reason = 'Pesan membutuhkan strategic reasoning.';
     confidence = 0.78;
-  } else if (hasAny(lower, ['renungkan', 'refleksi', 'blind spot', 'pola pikir', 'kenapa saya'])) {
-    mode = 'meta-reasoning';
-    reason = 'Pesan membutuhkan refleksi/metacognition.';
-    confidence = 0.74;
   } else if (complexity.level === 'high') {
-    mode = 'strategic-thinking';
+    mode = 'strategic';
     reason = 'Kompleksitas tinggi, aktifkan reasoning strategis.';
     confidence = 0.68;
   }

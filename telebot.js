@@ -725,6 +725,34 @@ function scoreAnswerQuality(question, answer) {
 function getModePrompt(mode) {
   const activeMode = safeLower(mode);
 
+  if (activeMode === 'simple') {
+    return 'Mode simple: jawab natural, ringkas, langsung ke inti, dan jangan mengaktifkan reasoning panjang jika tidak perlu.';
+  }
+
+  if (activeMode === 'coding') {
+    return 'Mode coding: fokus penyebab, solusi, kode/patch bila perlu, dan langkah test singkat.';
+  }
+
+  if (activeMode === 'strategic') {
+    return 'Mode strategic: jelaskan opsi, risiko, trade-off, prioritas, dan next action.';
+  }
+
+  if (activeMode === 'decision') {
+    return 'Mode decision: bantu membingkai keputusan, bandingkan opsi, jelaskan kriteria, risiko, dan rekomendasi tanpa mengambil keputusan final.';
+  }
+
+  if (activeMode === 'reflection') {
+    return 'Mode reflection: jawab empatik, bantu melihat pola, dan beri pertanyaan reflektif singkat.';
+  }
+
+  if (activeMode === 'ops') {
+    return 'Mode ops: fokus root cause, diagnostics, health, langkah verifikasi, dan mitigasi aman.';
+  }
+
+  if (activeMode === 'health') {
+    return 'Mode health: jawab empatik, beri saran umum ringan, sebutkan gejala serius yang perlu bantuan medis, jangan membuat diagnosis pasti, dan jangan mengaku dokter.';
+  }
+
   if (activeMode === 'kerja' || activeMode === 'builder') {
     return 'Jawab profesional, ringkas, dan terstruktur.';
   }
@@ -4602,10 +4630,16 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   const mode = safeLower(args).trim();
 
   const modeAliases = {
+    simple: 'simple',
+    coding: 'coding',
+    health: 'health',
+    ops: 'ops',
+    decision: 'decision',
+    reflection: 'reflection',
+    strategic: 'strategic',
     learning: 'belajar',
     critical: 'kritis',
     research: 'riset',
-    reflection: 'refleksi',
     'self-reflection': 'refleksi',
     analysis: 'deep',
     'deep-analysis': 'deep',
@@ -4614,7 +4648,6 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     'collaborative-thinking': 'kolaborasi',
     'research-intelligence': 'research-intelligence',
     'mentor-intelligence': 'mentor-intelligence',
-    strategic: 'strategis',
     'strategic-planning': 'strategis',
     'system-analysis': 'system-analysis',
     'analisis-sistem': 'system-analysis',
@@ -4652,7 +4685,6 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     'workspace-os': 'cognitive-workspace',
     'meta-reasoning': 'meta-reasoning',
     meta: 'meta-reasoning',
-    health: 'health-watch',
     'health-watch': 'health-watch',
     opshealth: 'health-watch',
     benchmark: 'benchmark',
@@ -4660,17 +4692,16 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     'incident-response': 'incident-response',
     cost: 'cost-optimization',
     'cost-optimization': 'cost-optimization',
-    ops: 'continuous-improvement',
     'continuous-improvement': 'continuous-improvement',
     'learning-mentor': 'learning-mentor',
     'decision-support': 'decision-support',
-    decision: 'decision-support',
+    'decision-basic': 'decision',
     debugging: 'coding-debugging',
     'coding-debugging': 'coding-debugging'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning', 'health-watch', 'benchmark', 'incident-response', 'cost-optimization', 'continuous-improvement', 'learning-mentor', 'decision-support', 'coding-debugging'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'simple', 'coding', 'learning', 'strategic', 'decision', 'reflection', 'research', 'ops', 'health', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning', 'health-watch', 'benchmark', 'incident-response', 'cost-optimization', 'continuous-improvement', 'learning-mentor', 'decision-support', 'coding-debugging'].includes(normalizedMode)) {
     u.mode = normalizedMode;
     u.manualModeOverride = normalizedMode !== 'auto';
     if (normalizedMode === 'auto') {
@@ -4687,7 +4718,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement | learning-mentor | decision-support | coding-debugging',
+      'Format: /mode auto | simple | coding | learning | strategic | decision | reflection | research | ops | health | kerja | santai | belajar | kritis | riset | builder | refleksi | deep | mentor',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -6398,6 +6429,42 @@ await withUserActionLock(userId, async () => {
     text: userText
   });
 
+  const hasAttachment = Boolean(msg?.photo || msg?.document || msg?.voice);
+  const conversationAction = conversationState?.action || 'normal';
+  if (
+    adaptiveDecision?.applied &&
+    adaptiveDecision.mode === 'simple' &&
+    !hasAttachment &&
+    ['normal', 'new_topic', 'clear_pending'].includes(conversationAction)
+  ) {
+    logMessageFlow('ai_pipeline_calling', {
+      userId,
+      chatId,
+      pipeline: 'adaptive_simple_chat',
+      adaptiveMode: adaptiveDecision.mode,
+      text: userText
+    });
+    const simpleAnswer = await processAIMessage(chatId, userId, userText, msg);
+    if (simpleAnswer) {
+      logMessageFlow('ai_pipeline_result', {
+        userId,
+        chatId,
+        pipeline: 'adaptive_simple_chat',
+        processed: true,
+        answerPreview: simpleAnswer
+      });
+      recordConversationReplySafe({
+        userId,
+        chatId,
+        userText,
+        botText: simpleAnswer,
+        intent: adaptiveDecision.mode
+      });
+      if (u.digest?.enabled) scheduleDigestJob(userId);
+      return;
+    }
+  }
+
   // Salurkan ke modul Autonomous AI Engine baru
   const autonomousResult = await autonomousEngine.processMessage(userId, chatId, userText, msg, {
     telegramPost,
@@ -6906,7 +6973,7 @@ async function processAIMessage(chatId, userId, text, msg) {
   }
 
   answer = personalityResponse(
-    ensureUser(userId).mode,
+    getEffectiveMode(ensureUser(userId)),
     humanAISafety.applyHumanJudgmentFooter(answer, text)
   );
 
@@ -6917,7 +6984,7 @@ async function processAIMessage(chatId, userId, text, msg) {
       chatId,
       userText: text,
       answerText: answer,
-      mode: ensureUser(userId).mode,
+      mode: getEffectiveMode(ensureUser(userId)),
       intent: 'legacy_ai_fallback'
     });
     if (interactive?.reply_markup) {

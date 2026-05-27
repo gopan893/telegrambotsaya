@@ -4,6 +4,11 @@ const guards = require('./guards');
 
 function detectRequestedMode(userMessage = '', explicitMode = '') {
   const mode = guards.sanitizeText(explicitMode, 80).toLowerCase();
+  if (mode === 'simple') return 'standard';
+  if (mode === 'strategic' || mode === 'decision') return 'strategic-thinking';
+  if (mode === 'research') return 'deep-research-os';
+  if (mode === 'reflection') return 'meta-reasoning';
+  if (mode === 'coding' || mode === 'ops' || mode === 'health') return 'standard';
   if (['strategic-thinking', 'strategis'].includes(mode)) return 'strategic-thinking';
   if (['personal-intelligence'].includes(mode)) return 'personal-intelligence';
   if (['deep-research-os'].includes(mode)) return 'deep-research-os';

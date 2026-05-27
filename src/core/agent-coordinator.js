@@ -161,6 +161,15 @@ class AgentCoordinator {
 
   normalizeUserMode(userMode) {
     const mode = String(userMode || '').toLowerCase();
+    if (['simple'].includes(mode)) return 'Standard';
+    if (['coding'].includes(mode)) return 'System Analysis';
+    if (['learning'].includes(mode)) return 'Mentor Intelligence';
+    if (['strategic'].includes(mode)) return 'Strategic Thinking';
+    if (['decision'].includes(mode)) return 'Strategic Thinking';
+    if (['reflection'].includes(mode)) return 'Meta Reasoning';
+    if (['research'].includes(mode)) return 'Research Intelligence';
+    if (['ops'].includes(mode)) return 'System Analysis';
+    if (['health'].includes(mode)) return 'Safe Mode';
     if (['kolaborasi', 'collaborative', 'collaborative-thinking'].includes(mode)) return 'Collaborative Thinking';
     if (['research-intelligence', 'riset-intelligence', 'riset-mendalam'].includes(mode)) return 'Research Intelligence';
     if (['mentor-intelligence', 'mentor'].includes(mode)) return 'Mentor Intelligence';
