@@ -30,12 +30,30 @@ function getCompactPromptHint() {
   ].join('\n');
 }
 
+function removeMarkdownEmphasis(text) {
+  return String(text || '')
+    .replace(/^#{1,6}\s+/g, '')
+    .replace(/\*\*\*([^*\n]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/(^|[\s([{'"])\*([^*\n]+)\*(?=$|[\s.,!?;:)\]}'"])/g, '$1$2')
+    .replace(/(^|[\s([{'"])_([^_\n]+)_(?=$|[\s.,!?;:)\]}'"])/g, '$1$2');
+}
+
+function normalizeBullet(line) {
+  const trimmed = String(line || '').trimStart();
+  if (/^[-*+]\s+/.test(trimmed)) {
+    return `• ${trimmed.replace(/^[-*+]\s+/, '')}`;
+  }
+  return trimmed;
+}
+
 function normalizeLine(line, inCodeFence) {
   if (inCodeFence) {
     return String(line || '').replace(/[ \t]+$/g, '');
   }
 
-  return String(line || '')
+  return removeMarkdownEmphasis(normalizeBullet(line))
     .replace(/[ \t]+$/g, '')
     .replace(/[ \t]{3,}/g, '  ');
 }
