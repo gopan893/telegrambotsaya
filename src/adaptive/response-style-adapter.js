@@ -1,5 +1,7 @@
 'use strict';
 
+const multiDeviceUX = require('../ux/multi-device-response');
+
 function getStyleForMode(mode = 'auto') {
   const map = {
     'learning-mentor': 'Jelaskan bertahap, beri contoh, dan ukur pemahaman.',
@@ -20,6 +22,7 @@ function buildPromptHint(decision = {}) {
     `Alasan: ${decision.reason || '-'}`,
     `Confidence: ${Number(decision.confidence || 0).toFixed(2)}`,
     getStyleForMode(mode),
+    multiDeviceUX.getCompactPromptHint(),
     decision.safetyNote ? `Safety note: ${decision.safetyNote}` : ''
   ].filter(Boolean).join('\n');
 }

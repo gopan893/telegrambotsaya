@@ -16,6 +16,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - AI OS untuk goals, workflows, graph, insight, dan workspace
 - Human-AI Collaboration untuk thinking, learning, reflection, dan decision support
 - AI Operations untuk health, benchmark, reliability, regression, dan recovery
+- Multi-device UX mode agar jawaban nyaman dibaca di Telegram mobile, Telegram desktop, web client, laptop, dan desktop
 
 ## Mulai Cepat
 
@@ -104,3 +105,14 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 ## Catatan Penting
 
 Kalau project lama kamu punya file `telebot.js` sendiri, pindahkan logic khusus lama secara bertahap ke file ini. Versi ini dibuat sebagai fondasi baru yang lebih kuat dan lebih mudah dikembangkan.
+
+## Multi-Device UX
+
+Bot sekarang menyuntikkan aturan format jawaban yang mobile-friendly ke system prompt:
+
+- Ringkasan atau inti jawaban muncul lebih dulu.
+- Paragraf dibuat pendek dan mudah discan.
+- Bullet dibuat sederhana tanpa nested list berlebihan.
+- Jawaban panjang dipecah menjadi section kecil.
+- Code block tetap rapi untuk kebutuhan coding.
+- Normalisasi output membatasi blank line berlebihan sebelum dikirim ke Telegram.

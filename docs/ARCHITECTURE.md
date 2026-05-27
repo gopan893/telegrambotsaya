@@ -936,6 +936,26 @@ Telegram input
 
 Pertanyaan sederhana tidak memicu semua layer. Adaptive router hanya memberi sinyal mode dan prompt hint pendek.
 
+### Multi-Device UX Mode
+
+Setiap jawaban AI melewati dua lapisan UX ringan:
+
+- `src/ux/multi-device-response.js` menyimpan aturan format lintas perangkat.
+- `getSystemPrompt()` menyuntikkan aturan agar AI menulis jawaban yang nyaman di HP, tablet, laptop, desktop, Telegram mobile, Telegram desktop, dan web client.
+- `response-style-adapter` menambahkan hint mobile-friendly saat adaptive mode aktif.
+- `sanitizeOutgoingText()` menormalisasi blank line dan trailing space sebelum pesan dikirim.
+
+Prinsipnya:
+
+- inti jawaban muncul dulu;
+- paragraf pendek;
+- bullet sederhana;
+- section kecil untuk jawaban panjang;
+- code block tetap rapi;
+- tidak memakai tabel besar atau nested bullet dalam kecuali sangat perlu.
+
+Trade-off: sistem tidak memaksa hard wrap per baris karena itu bisa merusak URL, code block, dan format Telegram. Responsiveness terutama dikendalikan lewat prompt dan normalisasi spacing.
+
 ### Dashboard API Foundation
 
 Endpoint ringan:
@@ -958,6 +978,7 @@ Endpoint ini hanya menampilkan struktur publik, health ringkas, storage status, 
 
 ```bash
 node --check telebot.js
+node scratch/test-multi-device-ux.js
 node scratch/test-final-cognitive-os.js
 node scratch/test-ops.js
 npm run check

@@ -21,6 +21,7 @@ const opsSystem = require('./src/ops');
 const { createStorageManager } = require('./src/storage');
 const adaptiveSystem = require('./src/adaptive');
 const collaborationSystem = require('./src/collaboration');
+const multiDeviceUX = require('./src/ux/multi-device-response');
 
 
 let scheduleLib = null;
@@ -291,7 +292,8 @@ function looksLikeIntentJSON(text) {
 }
 
 function sanitizeOutgoingText(text) {
-  let t = stripCodeFences(text);
+  const original = String(text || '').trim();
+  let t = stripCodeFences(original);
 
   if (looksLikeIntentJSON(t)) {
     const parsed = extractJsonObject(t);
@@ -301,7 +303,7 @@ function sanitizeOutgoingText(text) {
     }
   }
 
-  return t.trim();
+  return multiDeviceUX.normalizeForTelegram(original);
 }
 
 function simpleDetectLanguage(text) {
@@ -935,6 +937,8 @@ Kamu adalah asisten pribadi bernama "${u.botName}".
 Gunakan bahasa yang sama dengan pesan pengguna. Jika pengguna memakai campuran bahasa, ikuti bahasa dominan; jika tidak jelas, gunakan bahasa Indonesia.
 
 ${getModePrompt(getEffectiveMode(u))}
+
+${multiDeviceUX.getPromptRules()}
 
 Kalau tidak tahu, bilang tidak tahu.
 
