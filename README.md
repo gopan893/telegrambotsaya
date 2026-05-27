@@ -18,6 +18,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - AI Operations untuk health, benchmark, reliability, regression, dan recovery
 - Multi-device UX mode agar jawaban nyaman dibaca di Telegram mobile, Telegram desktop, web client, laptop, dan desktop
 - Conversation continuity layer agar follow-up seperti `iya`, `lanjut`, `jelaskan`, dan pergantian topik dipahami natural
+- Interaction layer dengan inline keyboard, menu cepat, callback handler, dan confirmation flow untuk aksi penting
 
 ## Mulai Cepat
 
@@ -82,6 +83,8 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 
 ```text
 /help
+/menu
+/actions
 /mode
 /adaptive status
 /think masalah
@@ -128,3 +131,14 @@ Layer `src/conversation/` menangani pesan non-command sebelum masuk AI pipeline:
 - topik baru seperti coding/debugging tidak dipaksa ke konteks lama;
 - `lanjut` tanpa konteks cukup akan memicu klarifikasi singkat;
 - context window dibatasi beberapa pesan terakhir agar ringan untuk Render free tier.
+
+## Interactive Telegram UX
+
+Layer `src/interactions/` menambahkan tombol Telegram tanpa memaksa semua jawaban memakai tombol:
+
+- `/menu` dan `/actions` membuka menu utama.
+- Jawaban coding bisa menawarkan tombol `Buat kode`, `Debug`, `Jelaskan error`, atau pilihan auth.
+- Jawaban learning bisa menawarkan `Roadmap`, `Sederhanakan`, `Latihan`, dan `Quiz`.
+- Jawaban decision support bisa menawarkan `Bandingkan opsi`, `Lihat risiko`, `Rekomendasi`, dan `Next step`.
+- Aksi penting seperti `/reset` meminta konfirmasi inline terlebih dahulu.
+- State tombol memakai Redis jika tersedia, lalu fallback ke memory Map jika Redis tidak ada.

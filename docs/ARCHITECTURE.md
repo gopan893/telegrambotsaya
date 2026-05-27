@@ -991,6 +991,33 @@ Edge case penting:
 - Pending action kedaluwarsa otomatis agar bot tidak stuck pada topik lama.
 - Jika conversation layer error, webhook tetap punya fallback ke pipeline AI lama.
 
+### Interaction Layer Telegram
+
+Layer `src/interactions/` membuat bot lebih interaktif tanpa mengganggu chat normal.
+
+```text
+AI response
+-> classify context
+-> decide whether buttons help
+-> store small interaction state
+-> send inline keyboard
+-> callback_query
+-> route action
+-> continue conversation or request confirmation
+```
+
+Modul:
+
+- `interaction-manager.js`: menentukan apakah jawaban perlu tombol.
+- `keyboard-builder.js`: helper inline keyboard Telegram.
+- `callback-router.js`: routing `callback_query` berbasis `callback_data`.
+- `action-handlers.js`: aksi cepat seperti ringkas, jelaskan lagi, roadmap, coding, learning, decision, dan ops.
+- `confirmation-handler.js`: konfirmasi untuk aksi penting seperti reset memory.
+- `interaction-state.js`: state sementara memakai Redis jika ada, fallback ke memory Map.
+- `interactive-menu.js`: `/menu`, `/actions`, dan keyboard bantuan.
+
+Trade-off: tombol hanya ditampilkan pada konteks yang membantu. Pertanyaan sederhana tetap dijawab biasa agar Telegram tidak terasa ramai.
+
 ### Dashboard API Foundation
 
 Endpoint ringan:

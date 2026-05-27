@@ -23,6 +23,7 @@ const adaptiveSystem = require('./src/adaptive');
 const collaborationSystem = require('./src/collaboration');
 const multiDeviceUX = require('./src/ux/multi-device-response');
 const conversationManager = require('./src/conversation');
+const interactions = require('./src/interactions');
 
 
 let scheduleLib = null;
@@ -2231,7 +2232,7 @@ async function handlePing(chatId, msg) {
   );
 }
 
-async function handleReset(chatId, userId, msg) {
+async function performUserReset(userId) {
   const u = ensureUser(userId);
 
   u.summary = '';
@@ -2250,12 +2251,31 @@ async function handleReset(chatId, userId, msg) {
   u.lastFileText = null;
 
   await persist();
+}
+
+async function handleReset(chatId, userId, msg) {
+  await interactions.confirmationHandler.requestConfirmation(
+    getInteractionServices(),
+    {
+      chatId,
+      userId,
+      messageId: msg.message_id
+    },
+    {
+      type: 'reset_user_memory',
+      text: 'Ini akan menghapus memory personal, todo, reminder lokal, preferensi, alias, mood, dan cache file user ini. Lanjutkan?'
+    }
+  );
+}
+
+async function handleResetConfirmed(chatId, userId, messageId) {
+  await performUserReset(userId);
 
   await safeSendMessage(
     chatId,
     '🧹 Memory personal sudah direset.',
     {
-      reply_to_message_id: msg.message_id
+      reply_to_message_id: messageId
     }
   );
 }
@@ -3104,6 +3124,33 @@ function getOpsServices() {
   };
 }
 
+function getInteractionServices() {
+  return {
+    telegramPost,
+    safeSendMessage,
+    sendChunkedMessage,
+    sendStreamingAnswer,
+    askAI,
+    getSmartAnswer,
+    getSystemPrompt,
+    ensureUser,
+    persist,
+    opsSystem,
+    getOpsServices,
+    aiOS,
+    isAdmin,
+    processAIMessage,
+    resetUserMemory: performUserReset,
+    handleResetConfirmed,
+    summarizeSearchWithRefs,
+    getWeather,
+    searchLocation,
+    calculate,
+    getCurrentTime,
+    getCurrentDate
+  };
+}
+
 function splitPipeArgs(args) {
   return String(args || '')
     .split('|')
@@ -3464,6 +3511,59 @@ function recordConversationReplySafe(input = {}) {
     log.warn('Conversation reply record skipped:', err.message);
     return null;
   }
+}
+
+function logMessageFlow(stage, data = {}) {
+  const payload = {
+    ...data,
+    text: data.text ? String(data.text).slice(0, 180) : undefined,
+    answerPreview: data.answerPreview ? String(data.answerPreview).slice(0, 180) : undefined
+  };
+  log.info(`message_flow:${stage}`, payload);
+}
+
+function isPlainGreetingInput(text) {
+  const lower = safeLower(text)
+    .replace(/[.!?😊🙏]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return [
+    'halo',
+    'hai',
+    'hi',
+    'hello',
+    'pagi',
+    'siang',
+    'sore',
+    'malam',
+    'assalamualaikum'
+  ].includes(lower);
+}
+
+function isSubstantiveUserMessage(text) {
+  const clean = String(text || '').trim();
+  if (!clean || isPlainGreetingInput(clean)) return false;
+  if (clean.length >= 18) return true;
+  return /(jelaskan|spesifikasi|buatkan|kode|coding|analisis|kenapa|bagaimana|iphone|xiaomi|next\.?js|login|\?)/i.test(clean);
+}
+
+function looksLikeDefaultGreeting(answer) {
+  const lower = safeLower(answer)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!lower) return false;
+  if (lower.includes('ada yang bisa saya bantu')) return true;
+  if (lower.includes('ada yang bisa aku bantu')) return true;
+  if (lower.includes('apa yang bisa saya bantu')) return true;
+  if (lower.includes('how can i help')) return true;
+  return lower.startsWith('halo') && lower.length <= 90 && lower.includes('bantu');
+}
+
+function shouldRejectGenericGreeting(answer, userText) {
+  return isSubstantiveUserMessage(userText) && looksLikeDefaultGreeting(answer);
 }
 
 async function handleAdaptiveCommands(chatId, userId, cmd, args, msg) {
@@ -4760,6 +4860,7 @@ async function handleHelp(chatId, msg) {
 /ping - cek bot hidup
 /reset - reset memory pribadi
 /help - bantuan
+/menu atau /actions - menu interaktif
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
 /system - status agent production [admin]
@@ -4882,7 +4983,10 @@ Bahasa alami:
   await sendChunkedMessage(
     chatId,
     help,
-    { reply_to_message_id: msg.message_id }
+    {
+      reply_to_message_id: msg.message_id,
+      reply_markup: interactions.keyboardBuilder.mainMenuKeyboard()
+    }
   );
 }
 
@@ -4892,6 +4996,8 @@ function isUnknownCommand(cmd) {
     '/ping',
     '/reset',
     '/help',
+    '/menu',
+    '/actions',
     '/belajar',
     '/stats',
     '/system',
@@ -5839,6 +5945,11 @@ app.post(WEBHOOK_PATH, async (req, res) => {
       const chatId = cb.message?.chat?.id;
       const feedbackUserId = cb.from?.id;
 
+      const handledInteraction = await interactions.callbackRouter.handleCallbackQuery(getInteractionServices(), cb);
+      if (handledInteraction) {
+        return res.sendStatus(200);
+      }
+
       if (cb.data === 'positive') {
         if (feedbackUserId) {
           await agentLearning.registerFeedback('telegram_callback', feedbackUserId, 'positive', {
@@ -5887,6 +5998,15 @@ await withUserActionLock(userId, async () => {
   const cmd = getCommandBase(text);
   const args = getCommandArgs(text);
 
+  logMessageFlow('incoming', {
+    userId,
+    chatId,
+    text: userText,
+    hasText: Boolean(text),
+    hasCaption: Boolean(captionText),
+    hasAttachment: Boolean(msg.photo || msg.document || msg.voice)
+  });
+
   const msgKey = getMessageKey(update);
   if (!rememberWithTTL(processedMessageKeys, msgKey, 5 * 60 * 1000)) {
     return;
@@ -5931,6 +6051,13 @@ await withUserActionLock(userId, async () => {
   }
 
   const resolvedCmd = resolveAlias(userId, cmd);
+  logMessageFlow('route_detected', {
+    userId,
+    chatId,
+    route: resolvedCmd ? 'command' : 'non-command',
+    command: resolvedCmd || null,
+    text: userText
+  });
   if (resolvedCmd) {
     opsSystem.telemetry.recordCommand(resolvedCmd, userId, getOpsServices());
   }
@@ -5942,6 +6069,14 @@ await withUserActionLock(userId, async () => {
 
   if (resolvedCmd === '/ping') { await handlePing(chatId, msg); return; }
   if (resolvedCmd === '/reset') { await handleReset(chatId, userId, msg); return; }
+  if (resolvedCmd === '/menu' || resolvedCmd === '/actions') {
+    await interactions.interactiveMenu.showMainMenu(getInteractionServices(), {
+      chatId,
+      userId,
+      messageId: msg.message_id
+    });
+    return;
+  }
   if (resolvedCmd === '/help') { await handleHelp(chatId, msg); return; }
   if (resolvedCmd === '/belajar') { await sendChunkedMessage(chatId, buildLearningGuide(), { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
@@ -6037,6 +6172,13 @@ await withUserActionLock(userId, async () => {
   }
 
   const conversationState = prepareConversationStateSafe(userId, chatId, userText, resolvedCmd, msg);
+  logMessageFlow('conversation_state', {
+    userId,
+    chatId,
+    action: conversationState.action,
+    reason: conversationState.reason,
+    text: userText
+  });
 
   if (conversationState.action === 'direct') {
     const directText = conversationState.responseText || 'Bisa jelaskan sedikit lagi maksudnya?';
@@ -6060,6 +6202,13 @@ await withUserActionLock(userId, async () => {
   }
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg);
+  logMessageFlow('ai_pipeline_calling', {
+    userId,
+    chatId,
+    pipeline: 'autonomous',
+    adaptiveMode: adaptiveDecision?.mode,
+    text: userText
+  });
 
   // Salurkan ke modul Autonomous AI Engine baru
   const autonomousResult = await autonomousEngine.processMessage(userId, chatId, userText, msg, {
@@ -6090,9 +6239,11 @@ await withUserActionLock(userId, async () => {
     downloadFile: downloadTelegramFile,
     opsSystem,
     opsServices: getOpsServices(),
+    interactionManager: interactions.manager,
     adaptiveDecision,
     adaptiveSystem,
     conversationState,
+    shouldRejectGenericGreeting,
     env: {
       OWNER_CHAT_ID,
       ADMIN_SET
@@ -6101,6 +6252,13 @@ await withUserActionLock(userId, async () => {
   });
 
   if (autonomousResult && autonomousResult.processed) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'autonomous',
+      processed: true,
+      answerPreview: autonomousResult.answerText
+    });
     recordConversationReplySafe({
       userId,
       chatId,
@@ -6112,8 +6270,30 @@ await withUserActionLock(userId, async () => {
     return;
   }
 
+  logMessageFlow('ai_pipeline_result', {
+    userId,
+    chatId,
+    pipeline: 'autonomous',
+    processed: false,
+    reason: autonomousResult?.reason || 'not_processed',
+    answerPreview: autonomousResult?.answerText,
+    text: userText
+  });
+  logMessageFlow('ai_pipeline_calling', {
+    userId,
+    chatId,
+    pipeline: 'legacy_chat_fallback',
+    text: userText
+  });
   const fallbackAnswer = await processAIMessage(chatId, userId, userText, msg);
   if (fallbackAnswer) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'legacy_chat_fallback',
+      processed: true,
+      answerPreview: fallbackAnswer
+    });
     recordConversationReplySafe({
       userId,
       chatId,
@@ -6492,9 +6672,40 @@ async function processAIMessage(chatId, userId, text, msg) {
   let answer;
 
   try {
+    logMessageFlow('legacy_ai_start', {
+      userId,
+      chatId,
+      text
+    });
     answer = await smartReply(userId, text, systemPrompt);
+
+    if (shouldRejectGenericGreeting(answer, text)) {
+      logMessageFlow('legacy_ai_generic_greeting_retry', {
+        userId,
+        chatId,
+        answerPreview: answer,
+        text
+      });
+      answer = await askAI(
+        `${systemPrompt}\n\nJawab langsung isi pesan user. Jangan gunakan greeting pembuka generik kecuali user hanya menyapa.`,
+        `Pesan user asli:\n${text}`,
+        {
+          userId,
+          question: `direct:${text}`,
+          allowSearch: true,
+          allowCache: false,
+          temperature: 0.55,
+          maxTokens: 1000
+        }
+      );
+      answer = sanitizeOutgoingText(answer);
+    }
   } catch (err) {
-    console.error('smartReply error:', err.message);
+    log.error('AI fallback gagal:', {
+      userId,
+      chatId,
+      error: err.message
+    });
 
     answer =
       '❌ Maaf, AI sedang sibuk atau terjadi error sementara.';
@@ -6509,9 +6720,27 @@ async function processAIMessage(chatId, userId, text, msg) {
     answer
   );
 
+  let interactionExtra = {};
+  try {
+    const interactive = await interactions.manager.buildInteractiveResponse({
+      userId,
+      chatId,
+      userText: text,
+      answerText: answer,
+      mode: ensureUser(userId).mode,
+      intent: 'legacy_ai_fallback'
+    });
+    if (interactive?.reply_markup) {
+      interactionExtra.reply_markup = interactive.reply_markup;
+    }
+  } catch (err) {
+    log.warn('Interaction keyboard skipped:', err.message);
+  }
+
   await sendStreamingAnswer(chatId, answer, {
     reply_to_message_id: msg.message_id,
-    disable_web_page_preview: true
+    disable_web_page_preview: true,
+    ...interactionExtra
   });
 
   pushChatHistory({
@@ -6713,6 +6942,7 @@ installProcessGuards({ logger: log, shutdown });
 
 async function start() {
   await initRedis();
+  interactions.configure({ redisClient });
   await initStorage();
   await loadAllMemories();
   await loadPlugins();

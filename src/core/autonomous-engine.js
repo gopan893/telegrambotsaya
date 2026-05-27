@@ -803,6 +803,22 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     const groundedAnswer = crossModal.applyGroundingGuard(traceId, verification.finalAnswer, context.crossModalContext);
     if (groundedAnswer.annotation && !verification.annotation) verification.annotation = groundedAnswer.annotation;
     const sanitizedAnswer = safety.sanitizeOutput(traceId, groundedAnswer.answer);
+    if (
+      typeof botServices.shouldRejectGenericGreeting === 'function' &&
+      botServices.shouldRejectGenericGreeting(sanitizedAnswer, userMessage) &&
+      !isToolRequest &&
+      !hasAttachment
+    ) {
+      observability.logEvent(traceId, 'Orchestrator', 'GENERIC_GREETING_REJECTED_FOR_NON_COMMAND', {
+        inputLength: userMessage.length
+      });
+      messageBus.cleanupContext(traceId);
+      return {
+        processed: false,
+        answerText: sanitizedAnswer,
+        reason: 'generic_greeting_rejected'
+      };
+    }
     const workflowReport = agentCoordinator.finalizeWorkflow(
       traceId,
       delegationPlan,
@@ -813,9 +829,35 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     );
     messageBus.updateContext(traceId, 'workflowReport', workflowReport);
 
+    let interactionExtra = {};
+    if (botServices.interactionManager?.buildInteractiveResponse && !hasAttachment) {
+      try {
+        const interactive = await botServices.interactionManager.buildInteractiveResponse({
+          userId,
+          chatId,
+          userText: userMessage,
+          answerText: sanitizedAnswer,
+          mode: currentMode,
+          intent,
+          hasAttachment,
+          isToolRequest
+        });
+        if (interactive?.reply_markup) {
+          interactionExtra.reply_markup = interactive.reply_markup;
+        }
+      } catch (err) {
+        observability.logEvent(traceId, 'InteractionLayer', 'KEYBOARD_SKIPPED', {
+          error: err.message
+        });
+      }
+    }
+
     // Kirim jawaban
     if (!isToolRequest || (executionResult && !executionResult.ok) || verification.annotation || hasAttachment) {
-      await sendStreamingAnswer(chatId, sanitizedAnswer, { reply_to_message_id: msgObj.message_id });
+      await sendStreamingAnswer(chatId, sanitizedAnswer, {
+        reply_to_message_id: msgObj.message_id,
+        ...interactionExtra
+      });
     }
 
     pushChatHistory({ userId, chatId, role: 'user', text: userMessage, timestamp: Date.now() });
