@@ -18,6 +18,9 @@ const agentLearning = require('./src/agents/learning');
 const selfImprovementAgent = require('./src/agents/self-improvement');
 const aiOS = require('./src/ai-os');
 const opsSystem = require('./src/ops');
+const { createStorageManager } = require('./src/storage');
+const adaptiveSystem = require('./src/adaptive');
+const collaborationSystem = require('./src/collaboration');
 
 
 let scheduleLib = null;
@@ -51,6 +54,7 @@ const {
   GROQ_API_KEY,
   TAVILY_API_KEY,
   OPENWEATHER_API_KEY,
+  DATABASE_URL,
   REDIS_URL,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
@@ -68,6 +72,10 @@ const {
 } = config;
 
 const FILE_DIR = process.cwd();
+const storageManager = createStorageManager({
+  env: config,
+  jsonBaseDir: FILE_DIR
+});
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -843,6 +851,18 @@ function getModePrompt(mode) {
     return 'Fokus continuous improvement: evaluasi telemetry, benchmark, lesson operasional, tuning, dan pencegahan regresi.';
   }
 
+  if (activeMode === 'learning-mentor') {
+    return 'Fokus mentor belajar: jelaskan bertahap, beri contoh, latihan, knowledge gap, dan cara mengukur progress.';
+  }
+
+  if (activeMode === 'decision-support') {
+    return 'Fokus decision support: bantu membingkai keputusan, opsi, kriteria, risiko, opportunity cost, dan confidence. Jangan mengambil keputusan final untuk user.';
+  }
+
+  if (activeMode === 'coding-debugging') {
+    return 'Fokus coding/debugging: cari akar masalah, jelaskan dampak, beri patch kecil, dan sarankan test.';
+  }
+
   if (activeMode === 'auto') {
     return 'Sesuaikan gaya jawaban dengan konteks.';
   }
@@ -856,7 +876,14 @@ function ensureUser(userId) {
   if (!userMemory[id]) {
     userMemory[id] = {
       botName: 'Bot AI',
-      mode: 'santai',
+      mode: 'auto',
+      manualModeOverride: false,
+      adaptive: {
+        enabled: true,
+        activeMode: null,
+        lastReason: '',
+        lastConfidence: 0
+      },
       aliases: {},
       todos: [],
       reminders: [],
@@ -878,7 +905,25 @@ function ensureUser(userId) {
     };
   }
 
+  const u = userMemory[id];
+  if (!u.adaptive || typeof u.adaptive !== 'object') {
+    u.adaptive = {
+      enabled: true,
+      activeMode: null,
+      lastReason: '',
+      lastConfidence: 0
+    };
+  }
+  if (typeof u.manualModeOverride !== 'boolean') u.manualModeOverride = false;
+
   return userMemory[id];
+}
+
+function getEffectiveMode(user) {
+  const u = user || {};
+  if (u.manualModeOverride && u.mode) return u.mode;
+  if (u.adaptive?.enabled !== false && u.adaptive?.activeMode) return u.adaptive.activeMode;
+  return u.mode || 'auto';
 }
 
 function getSystemPrompt(userId) {
@@ -889,7 +934,7 @@ Kamu adalah asisten pribadi bernama "${u.botName}".
 
 Gunakan bahasa yang sama dengan pesan pengguna. Jika pengguna memakai campuran bahasa, ikuti bahasa dominan; jika tidak jelas, gunakan bahasa Indonesia.
 
-${getModePrompt(u.mode)}
+${getModePrompt(getEffectiveMode(u))}
 
 Kalau tidak tahu, bilang tidak tahu.
 
@@ -1130,6 +1175,7 @@ function getCachedAnswer(question) {
 
 async function initRedis() {
   if (!REDIS_URL || !RedisClass) {
+    console.log('ℹ️ Redis tidak aktif, fallback cache memory/local.');
     return;
   }
 
@@ -1147,7 +1193,19 @@ async function initRedis() {
   }
 }
 
+async function initStorage() {
+  const status = await storageManager.init({ redisClient });
+  const pgNote = status.postgres?.ok ? 'PostgreSQL aktif' : 'PostgreSQL tidak aktif, fallback JSON';
+  console.log(`🗄️ Storage: ${status.persistentType} (${pgNote}), cache ${status.cache}.`);
+}
+
 async function loadData(key, defaultValue) {
+  try {
+    return await storageManager.readData(key, defaultValue);
+  } catch (err) {
+    console.error(`Storage read ${key} gagal:`, err.message);
+  }
+
   if (redisClient) {
     try {
       const val = await redisClient.get(key);
@@ -1161,14 +1219,11 @@ async function loadData(key, defaultValue) {
 }
 
 async function saveData(key, data) {
-  const str = JSON.stringify(data, null, 2);
-
-  if (redisClient) {
-    try {
-      await redisClient.set(key, str);
-    } catch (e) {
-      console.error(`Redis save ${key} gagal:`, e.message);
-    }
+  try {
+    const saved = await storageManager.saveData(key, data);
+    if (saved) return;
+  } catch (err) {
+    console.error(`Storage save ${key} gagal:`, err.message);
   }
 
   try {
@@ -2406,6 +2461,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const aios = status.aiOS || {};
   const aiosUser = aiOS.getStatus(userId, getAiosServices());
   const ops = opsSystem.getStatus(getOpsServices());
+  const storage = storageManager.status();
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -2432,6 +2488,7 @@ Ops Reliability: ${ops.reliability.score}/100 (${ops.reliability.status})
 Ops Errors 15m: ${ops.telemetry.recentErrorCount}
 Ops Latency p90: ${ops.telemetry.latency.p90}ms
 Ops Diagnosis: ${ops.diagnosis.diagnosis} (${ops.diagnosis.severity})
+Storage: ${storage.persistentType}, cache ${storage.cache?.type || '-'}
 Issues:
 - ${issues}`;
 
@@ -3029,11 +3086,14 @@ function getOpsServices() {
     botSettings,
     aiCircuitBreaker,
     redisClient,
+    storageManager,
+    storageStatus: storageManager.status(),
     webhookStatus: WEBHOOK_URL || TELEGRAM_WEBHOOK_URL ? 'configured' : 'local',
     getRuntimeStatus: () => autonomousEngine.getRuntimeStatus(),
     env: {
       MISTRAL_API_KEY,
       GROQ_API_KEY,
+      DATABASE_URL,
       REDIS_URL
     }
   };
@@ -3348,6 +3408,99 @@ Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
   }
 
   return false;
+}
+
+function getAiosStatusSafe(userId) {
+  try {
+    return aiOS.getStatus(userId, getAiosServices());
+  } catch (_) {
+    return {};
+  }
+}
+
+function detectAdaptiveModeForMessage(userId, userText, command, msg) {
+  const u = ensureUser(userId);
+  return adaptiveSystem.route({
+    text: userText,
+    command,
+    user: u,
+    aiOSStatus: getAiosStatusSafe(userId),
+    hasAttachment: Boolean(msg?.photo || msg?.document || msg?.voice)
+  }, {
+    ensureUser,
+    persist
+  });
+}
+
+async function handleAdaptiveCommands(chatId, userId, cmd, args, msg) {
+  if (cmd !== '/adaptive') return false;
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  const u = ensureUser(userId);
+  const action = safeLower(args).trim() || 'status';
+
+  if (action === 'on') {
+    u.adaptive.enabled = true;
+    u.manualModeOverride = false;
+    u.mode = 'auto';
+    await persist();
+    await safeSendMessage(chatId, 'Adaptive mode aktif. Bot akan memilih mode otomatis untuk pesan natural.', replyOpt);
+    return true;
+  }
+
+  if (action === 'off') {
+    u.adaptive.enabled = false;
+    u.adaptive.activeMode = null;
+    await persist();
+    await safeSendMessage(chatId, 'Adaptive mode dimatikan. Gunakan /mode untuk memilih mode manual.', replyOpt);
+    return true;
+  }
+
+  if (action === 'reset') {
+    adaptiveSystem.reset(u);
+    await persist();
+    await safeSendMessage(chatId, 'Adaptive profile direset. Mode kembali ke auto.', replyOpt);
+    return true;
+  }
+
+  if (action !== 'status') {
+    await safeSendMessage(chatId, 'Format: /adaptive | /adaptive status | /adaptive on | /adaptive off | /adaptive reset', replyOpt);
+    return true;
+  }
+
+  const status = adaptiveSystem.status(u, getAiosStatusSafe(userId));
+  const text =
+`Adaptive Mode
+Enabled: ${status.enabled ? 'ya' : 'tidak'}
+Manual override: ${status.manualModeOverride ? 'ya' : 'tidak'}
+Current mode: ${status.currentMode}
+Active adaptive mode: ${status.activeMode || '-'}
+Last reason: ${status.lastReason}
+Last confidence: ${Number(status.lastConfidence || 0).toFixed(2)}
+Active goals/workflows: ${status.activeGoals}/${status.activeWorkflows}
+
+Priority:
+1. Safety/governance
+2. Explicit command
+3. Manual /mode override
+4. Adaptive auto mode
+5. Default simple assistant`;
+  await sendChunkedMessage(chatId, text, replyOpt);
+  return true;
+}
+
+async function handleCollaborationCommands(chatId, userId, cmd, args, msg) {
+  if (!collaborationSystem.commands.has(cmd)) return false;
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  const u = ensureUser(userId);
+  const needsText = !['/journal', '/collab', '/collab-reset'].includes(cmd);
+  if (needsText && !String(args || '').trim()) {
+    await safeSendMessage(chatId, `Format: ${cmd} <topik atau masalah>`, replyOpt);
+    return true;
+  }
+  const response = collaborationSystem.respond(cmd, args, userId, u);
+  await persist();
+  await sendChunkedMessage(chatId, response, replyOpt);
+  return true;
 }
 
 async function handleFeedback(chatId, msg) {
@@ -4225,12 +4378,22 @@ async function handleMode(chatId, userId, cmd, args, msg) {
     cost: 'cost-optimization',
     'cost-optimization': 'cost-optimization',
     ops: 'continuous-improvement',
-    'continuous-improvement': 'continuous-improvement'
+    'continuous-improvement': 'continuous-improvement',
+    'learning-mentor': 'learning-mentor',
+    'decision-support': 'decision-support',
+    decision: 'decision-support',
+    debugging: 'coding-debugging',
+    'coding-debugging': 'coding-debugging'
   };
   const normalizedMode = modeAliases[mode] || mode;
 
-  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning', 'health-watch', 'benchmark', 'incident-response', 'cost-optimization', 'continuous-improvement'].includes(normalizedMode)) {
+  if (['kerja', 'santai', 'auto', 'belajar', 'kritis', 'riset', 'builder', 'refleksi', 'deep', 'mentor', 'optimasi', 'kolaborasi', 'research-intelligence', 'mentor-intelligence', 'strategis', 'system-analysis', 'document-analysis', 'visual-analysis', 'data-understanding', 'cross-modal', 'research-file', 'safe-mode', 'governance-review', 'controlled-agent', 'explainability', 'recovery', 'strategic-thinking', 'personal-intelligence', 'deep-research-os', 'cognitive-workspace', 'meta-reasoning', 'health-watch', 'benchmark', 'incident-response', 'cost-optimization', 'continuous-improvement', 'learning-mentor', 'decision-support', 'coding-debugging'].includes(normalizedMode)) {
     u.mode = normalizedMode;
+    u.manualModeOverride = normalizedMode !== 'auto';
+    if (normalizedMode === 'auto') {
+      u.adaptive.enabled = true;
+      u.adaptive.activeMode = null;
+    }
     await persist();
 
     await safeSendMessage(
@@ -4241,7 +4404,7 @@ async function handleMode(chatId, userId, cmd, args, msg) {
   } else {
     await safeSendMessage(
       chatId,
-      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement',
+      'Format: /mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement | learning-mentor | decision-support | coding-debugging',
       { reply_to_message_id: msg.message_id }
     );
   }
@@ -4567,6 +4730,18 @@ async function handleHelp(chatId, msg) {
 /stats - statistik
 /system - status agent production [admin]
 /improve - laporan self-improvement [admin]
+/adaptive status|on|off|reset - adaptive mode otomatis
+/think masalah - thinking partner
+/learnplan topik - roadmap belajar
+/mentalmodel konsep - mental model
+/decision pilihan/masalah - decision support
+/blindspot rencana - cari blind spot
+/assumptions argumen - cek asumsi
+/perspectives masalah - multi perspektif
+/insight catatan - simpan insight
+/journal [catatan] - journal refleksi
+/collab - status Human-AI Collaboration
+/collab-reset - reset data collaboration user
 /ops - status AI Production Ops [admin]
 /health - health monitor [admin]
 /perf - latency, token, dan cost summary [admin]
@@ -4627,7 +4802,7 @@ async function handleHelp(chatId, msg) {
 
 /setname <nama> - ganti nama bot
 /savepref k = v - simpan preferensi
-/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement
+/mode kerja | santai | auto | belajar | kritis | riset | builder | refleksi | deep | mentor | optimasi | kolaborasi | research-intelligence | mentor-intelligence | strategis | system-analysis | document-analysis | visual-analysis | data-understanding | cross-modal | research-file | safe-mode | governance-review | controlled-agent | explainability | recovery | strategic-thinking | personal-intelligence | deep-research-os | cognitive-workspace | meta-reasoning | health-watch | benchmark | incident-response | cost-optimization | continuous-improvement | learning-mentor | decision-support | coding-debugging
 /alias nama_alias = /command
 /riwayat kata
 
@@ -4687,6 +4862,18 @@ function isUnknownCommand(cmd) {
     '/stats',
     '/system',
     '/improve',
+    '/adaptive',
+    '/think',
+    '/learnplan',
+    '/mentalmodel',
+    '/decision',
+    '/blindspot',
+    '/assumptions',
+    '/perspectives',
+    '/insight',
+    '/journal',
+    '/collab',
+    '/collab-reset',
     '/ops',
     '/health',
     '/perf',
@@ -5537,6 +5724,43 @@ app.get('/healthz', (req, res) => {
   res.json(autonomousEngine.getRuntimeStatus());
 });
 
+app.get('/api/dashboard', (req, res) => {
+  const ops = opsSystem.getStatus(getOpsServices());
+  res.json({
+    name: 'Human-AI Cognitive Operating System',
+    public: true,
+    note: 'Endpoint ini tidak mengekspos memory user atau data internal sensitif.',
+    storage: storageManager.status(),
+    health: {
+      status: ops.health.status,
+      uptimeSeconds: ops.health.uptimeSeconds,
+      memory: ops.health.memory
+    },
+    modules: [
+      'adaptive-mode-router',
+      'human-ai-collaboration',
+      'ai-os',
+      'ops',
+      'storage-manager',
+      'knowledge-graph',
+      'goal-workflow'
+    ],
+    dashboardTargets: [
+      'Memory',
+      'Goals',
+      'Workflows',
+      'Knowledge Graph',
+      'Insights',
+      'Reflections',
+      'Research',
+      'Ops/Health',
+      'Benchmarks',
+      'Settings'
+    ],
+    futureStack: ['Next.js', 'Tailwind CSS', 'shadcn/ui', 'PostgreSQL', 'Redis', 'Auth.js/Clerk/Supabase Auth']
+  });
+});
+
 app.get('/oauth2callback', async (req, res) => {
   const code = req.query.code;
   const state = req.query.state;
@@ -5689,6 +5913,8 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/stats') { await handleStats(chatId, userId, msg); return; }
   if (resolvedCmd === '/system') { await handleSystemStatus(chatId, userId, msg); return; }
   if (resolvedCmd === '/improve') { await handleImproveStatus(chatId, userId, msg); return; }
+  if (await handleAdaptiveCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
@@ -5764,6 +5990,8 @@ await withUserActionLock(userId, async () => {
     return;
   }
 
+  const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg);
+
   // Salurkan ke modul Autonomous AI Engine baru
   const autonomousResult = await autonomousEngine.processMessage(userId, chatId, userText, msg, {
     telegramPost,
@@ -5793,6 +6021,8 @@ await withUserActionLock(userId, async () => {
     downloadFile: downloadTelegramFile,
     opsSystem,
     opsServices: getOpsServices(),
+    adaptiveDecision,
+    adaptiveSystem,
     env: {
       OWNER_CHAT_ID,
       ADMIN_SET
@@ -6370,6 +6600,10 @@ async function shutdown() {
       } catch (_) {}
     }
 
+    try {
+      await storageManager.close();
+    } catch (_) {}
+
     if (server) {
       try {
         await new Promise(resolve => server.close(resolve));
@@ -6388,6 +6622,7 @@ installProcessGuards({ logger: log, shutdown });
 
 async function start() {
   await initRedis();
+  await initStorage();
   await loadAllMemories();
   await loadPlugins();
   await restoreAllReminders();
