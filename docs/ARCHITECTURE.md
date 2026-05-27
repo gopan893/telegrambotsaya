@@ -74,6 +74,27 @@ Modul ini sudah dipakai oleh `telebot.js` tanpa mengubah command Telegram lama.
 3. Pisahkan memory/context manager agar prompt panjang bisa dikontrol lebih baik.
 4. Tambahkan test smoke untuk command penting sebelum deploy.
 
+## Production Storage Foundation
+
+Tahap storage production menambahkan `src/storage/` sebagai abstraction layer:
+
+```text
+telebot.js
+-> storage-manager
+-> PostgreSQL app_kv_store jika DATABASE_URL tersedia
+-> JSON fallback jika PostgreSQL tidak tersedia
+-> Redis cache jika REDIS_URL tersedia
+-> memory cache fallback jika Redis tidak tersedia
+```
+
+Keputusan penting:
+
+- Data legacy seperti `memory`, `lessons`, `user_memory`, `knowledge`, `bot_settings`, dan `chat_history` tetap disimpan dengan key yang sama.
+- PostgreSQL memakai satu tabel `app_kv_store` berisi JSONB agar kompatibel dengan struktur lama.
+- `STORAGE_DRIVER=json` bisa dipakai untuk memaksa fallback lokal saat development.
+- Redis hanya menjadi cache/session sementara. Jika Redis mati, bot tetap berjalan dengan memory cache lokal.
+- `DATABASE_URL` dan `REDIS_URL` tidak diwajibkan oleh `validateConfig`, sehingga Render free tier tetap aman saat belum memakai add-on database.
+
 ## Tahap 3: Autonomous AI System
 
 Alur utama sekarang diarahkan ke `src/core/autonomous-engine.js` setelah command Telegram lama selesai diproses.
@@ -848,8 +869,8 @@ Final architecture menggabungkan bot Telegram lama, AI OS, Ops, adaptive routing
 Folder `src/storage` menambahkan:
 
 - `database.js`: koneksi PostgreSQL optional lewat package `pg`.
-- `migrations.js`: schema production untuk users, adaptive_profiles, memories, goals, workflows, workflow_steps, insights, graph_nodes, graph_edges, reflections, research_sessions, workspace_notes, telemetry_events, incidents, benchmark_runs, ops_lessons, dan `bot_kv`.
-- `postgres-store.js`: persistent store PostgreSQL dengan migrasi otomatis dan key-value compatibility layer.
+- `migrations.js`: migration ringan untuk `app_kv_store` dan copy aman dari legacy `bot_kv` jika tabel lama pernah ada.
+- `postgres-store.js`: persistent store PostgreSQL berbasis JSONB key-value compatibility layer.
 - `redis-store.js`: Redis cache jika `REDIS_URL` tersedia, fallback memory cache jika tidak.
 - `storage-manager.js`: memilih PostgreSQL jika `DATABASE_URL` aktif, fallback JSON jika gagal/tidak tersedia, dan tetap menjaga cache Redis/memory.
 

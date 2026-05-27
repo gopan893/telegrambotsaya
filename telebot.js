@@ -60,6 +60,7 @@ const {
   TAVILY_API_KEY,
   OPENWEATHER_API_KEY,
   DATABASE_URL,
+  STORAGE_DRIVER,
   REDIS_URL,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
@@ -1232,14 +1233,14 @@ async function initRedis() {
 }
 
 async function initStorage() {
-  const status = await storageManager.init({ redisClient });
+  const status = await storageManager.initStorage({ redisClient });
   const pgNote = status.postgres?.ok ? 'PostgreSQL aktif' : 'PostgreSQL tidak aktif, fallback JSON';
   console.log(`🗄️ Storage: ${status.persistentType} (${pgNote}), cache ${status.cache}.`);
 }
 
 async function loadData(key, defaultValue) {
   try {
-    return await storageManager.readData(key, defaultValue);
+    return await storageManager.loadData(key, defaultValue);
   } catch (err) {
     console.error(`Storage read ${key} gagal:`, err.message);
   }
@@ -2480,10 +2481,14 @@ async function handleCalibration(chatId, userId, cmd, args, msg) {
 async function handleStats(chatId, userId, msg) {
   const mem = process.memoryUsage();
   const u = ensureUser(userId);
+  const storage = storageManager.getStorageStatus();
 
   const msgText =
 `Uptime: ${Math.floor(process.uptime() / 60)} menit
 Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB
+Storage: ${storage.driver}
+PostgreSQL: ${storage.postgresAvailable ? 'aktif' : 'fallback JSON'}
+Redis: ${storage.redisAvailable ? 'aktif' : 'memory/local'}
 Aturan: ${lessons.rules.length}
 Histori chat: ${shortMemory.length}
 Pengetahuan: ${knowledgeBase.length}
@@ -2518,7 +2523,7 @@ async function handleSystemStatus(chatId, userId, msg) {
   const aios = status.aiOS || {};
   const aiosUser = aiOS.getStatus(userId, getAiosServices());
   const ops = opsSystem.getStatus(getOpsServices());
-  const storage = storageManager.status();
+  const storage = storageManager.getStorageStatus();
   const issues = status.issues?.length ? status.issues.join('\n- ') : 'tidak ada';
 
   const text =
@@ -3144,13 +3149,14 @@ function getOpsServices() {
     aiCircuitBreaker,
     redisClient,
     storageManager,
-    storageStatus: storageManager.status(),
+    storageStatus: storageManager.getStorageStatus(),
     webhookStatus: WEBHOOK_URL || TELEGRAM_WEBHOOK_URL ? 'configured' : 'local',
     getRuntimeStatus: () => autonomousEngine.getRuntimeStatus(),
     env: {
       MISTRAL_API_KEY,
       GROQ_API_KEY,
       DATABASE_URL,
+      STORAGE_DRIVER,
       REDIS_URL
     }
   };
@@ -6053,7 +6059,7 @@ app.get('/healthz', (req, res) => {
 app.get('/api/dashboard', (req, res) => {
   const ops = opsSystem.getStatus(getOpsServices());
   const runtime = autonomousEngine.getRuntimeStatus();
-  const storage = storageManager.status();
+  const storage = storageManager.getStorageStatus();
   res.json({
     name: 'Human-AI Cognitive Operating System',
     version: 'final-cognitive-os',
@@ -6062,7 +6068,7 @@ app.get('/api/dashboard', (req, res) => {
     storage: {
       persistentType: storage.persistentType,
       postgresConfigured: Boolean(DATABASE_URL),
-      postgresConnected: Boolean(storage.postgres?.connected),
+      postgresConnected: Boolean(storage.postgresAvailable),
       cacheType: storage.cache?.type || 'memory-cache',
       redisConfigured: Boolean(REDIS_URL)
     },
@@ -7178,7 +7184,7 @@ async function shutdown() {
     }
 
     try {
-      await storageManager.close();
+      await storageManager.closeStorage();
     } catch (_) {}
 
     if (server) {

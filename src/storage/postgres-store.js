@@ -28,8 +28,16 @@ function createPostgresStore(options = {}) {
     }
 
     if (options.runMigrations !== false) {
-      await runMigrations(pool);
-      migrated = true;
+      try {
+        const migration = await runMigrations(pool);
+        migrated = Boolean(migration?.ok);
+      } catch (err) {
+        lastError = err.message;
+        available = false;
+        try { await pool.end(); } catch (_) {}
+        pool = null;
+        return { ok: false, reason: lastError };
+      }
     }
 
     available = true;
@@ -37,22 +45,23 @@ function createPostgresStore(options = {}) {
     return { ok: true, migrated };
   }
 
-  async function readKey(key, defaultValue) {
+  async function getJson(key, defaultValue) {
     if (!available || !pool) return defaultValue;
     try {
-      const result = await pool.query('SELECT value FROM bot_kv WHERE key = $1 LIMIT 1', [key]);
+      const result = await pool.query('SELECT value FROM app_kv_store WHERE key = $1 LIMIT 1', [key]);
       return result.rows[0]?.value ?? defaultValue;
     } catch (err) {
       lastError = err.message;
+      available = false;
       return defaultValue;
     }
   }
 
-  async function writeKey(key, value) {
+  async function setJson(key, value) {
     if (!available || !pool) return false;
     try {
       await pool.query(
-        `INSERT INTO bot_kv(key, value, updated_at)
+        `INSERT INTO app_kv_store(key, value, updated_at)
          VALUES($1, $2::jsonb, NOW())
          ON CONFLICT(key)
          DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
@@ -61,7 +70,35 @@ function createPostgresStore(options = {}) {
       return true;
     } catch (err) {
       lastError = err.message;
+      available = false;
       return false;
+    }
+  }
+
+  async function deleteKey(key) {
+    if (!available || !pool) return false;
+    try {
+      await pool.query('DELETE FROM app_kv_store WHERE key = $1', [key]);
+      return true;
+    } catch (err) {
+      lastError = err.message;
+      available = false;
+      return false;
+    }
+  }
+
+  async function listKeys(prefix = '') {
+    if (!available || !pool) return [];
+    try {
+      const result = await pool.query(
+        'SELECT key FROM app_kv_store WHERE key LIKE $1 ORDER BY key ASC LIMIT 500',
+        [`${String(prefix || '')}%`]
+      );
+      return result.rows.map(row => row.key);
+    } catch (err) {
+      lastError = err.message;
+      available = false;
+      return [];
     }
   }
 
@@ -70,14 +107,8 @@ function createPostgresStore(options = {}) {
     const namespace = String(tableName || '').replace(/[^a-z_]/g, '');
     if (!namespace) return { ok: false, reason: 'invalid_table' };
     try {
-      await pool.query(
-        `INSERT INTO bot_kv(key, value, updated_at)
-         VALUES($1, $2::jsonb, NOW())
-         ON CONFLICT(key)
-         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-        [`${namespace}:${record.id}`, JSON.stringify(record)]
-      );
-      return { ok: true };
+      const ok = await setJson(`${namespace}:${record.id}`, record);
+      return ok ? { ok: true } : { ok: false, reason: lastError || 'write_failed' };
     } catch (err) {
       lastError = err.message;
       return { ok: false, reason: err.message };
@@ -95,7 +126,9 @@ function createPostgresStore(options = {}) {
   function status() {
     return {
       type: 'postgres',
+      table: 'app_kv_store',
       available,
+      connected: available,
       migrated,
       lastError
     };
@@ -103,8 +136,12 @@ function createPostgresStore(options = {}) {
 
   return {
     init,
-    readKey,
-    writeKey,
+    getJson,
+    setJson,
+    deleteKey,
+    listKeys,
+    readKey: getJson,
+    writeKey: setJson,
     upsertRecord,
     close,
     status

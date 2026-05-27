@@ -1,5 +1,9 @@
 'use strict';
 
+let singletonPool = null;
+let singletonUrl = '';
+let lastError = null;
+
 function safeRequirePg() {
   try {
     return require('pg');
@@ -45,6 +49,28 @@ function createPostgresPool(databaseUrl, options = {}) {
   };
 }
 
+function getPool(databaseUrl = process.env.DATABASE_URL, options = {}) {
+  if (!databaseUrl) {
+    lastError = 'DATABASE_URL tidak diset';
+    return null;
+  }
+
+  if (singletonPool && singletonUrl === databaseUrl) {
+    return singletonPool;
+  }
+
+  const created = createPostgresPool(databaseUrl, options);
+  if (!created.ok) {
+    lastError = created.reason;
+    return null;
+  }
+
+  singletonPool = created.pool;
+  singletonUrl = databaseUrl;
+  lastError = null;
+  return singletonPool;
+}
+
 async function checkPool(pool) {
   if (!pool) return { ok: false, reason: 'pool_missing' };
   try {
@@ -55,8 +81,40 @@ async function checkPool(pool) {
   }
 }
 
+async function query(sql, params = [], options = {}) {
+  const pool = options.pool || getPool(options.databaseUrl || process.env.DATABASE_URL, options);
+  if (!pool) {
+    return null;
+  }
+
+  try {
+    return await pool.query(sql, params);
+  } catch (err) {
+    lastError = err.message;
+    return null;
+  }
+}
+
+async function closeDatabase() {
+  if (singletonPool) {
+    try {
+      await singletonPool.end();
+    } catch (_) {}
+  }
+  singletonPool = null;
+  singletonUrl = '';
+}
+
+function getLastDatabaseError() {
+  return lastError;
+}
+
 module.exports = {
   createPostgresPool,
   checkPool,
+  getPool,
+  query,
+  closeDatabase,
+  getLastDatabaseError,
   maskDatabaseUrl
 };

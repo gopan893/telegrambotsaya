@@ -41,10 +41,21 @@ File env juga mendukung `DATABASE_URL`, `REDIS_URL`, `WEBHOOK_URL`, `GROQ_API_KE
 
 Storage production:
 
-- Jika `DATABASE_URL` tersedia, bot memakai PostgreSQL dan menjalankan migrasi tabel inti otomatis.
-- Jika PostgreSQL tidak tersedia, bot tetap berjalan dengan JSON fallback.
+- `STORAGE_DRIVER=auto` akan memakai PostgreSQL jika `DATABASE_URL` tersedia dan sehat.
+- `STORAGE_DRIVER=json` memaksa bot memakai file JSON lokal walau `DATABASE_URL` ada.
+- PostgreSQL menyimpan data legacy bot di tabel ringan `app_kv_store` sebagai JSONB.
+- Jika PostgreSQL error atau `DATABASE_URL` kosong, bot tetap berjalan dengan JSON fallback.
 - Jika `REDIS_URL` tersedia, bot memakai Redis sebagai cache/session sementara.
-- Jika Redis tidak tersedia, bot tetap berjalan dengan memory/local fallback.
+- Jika Redis error atau `REDIS_URL` kosong, bot tetap berjalan dengan memory/local fallback.
+
+Contoh `DATABASE_URL` PostgreSQL Render:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+STORAGE_DRIVER=auto
+```
+
+Jangan menaruh `DATABASE_URL` di chat publik atau commit GitHub.
 
 Catatan arsitektur dan rencana modularisasi ada di `docs/ARCHITECTURE.md`.
 

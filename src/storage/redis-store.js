@@ -104,6 +104,29 @@ function createRedisStore(options = {}) {
     return fallback.del(key);
   }
 
+  async function getCache(key) {
+    const raw = await get(key);
+    if (raw == null) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  async function setCache(key, value, ttlSeconds = 0) {
+    const payload = typeof value === 'string' ? value : JSON.stringify(value);
+    return set(key, payload, ttlSeconds);
+  }
+
+  async function deleteCache(key) {
+    return del(key);
+  }
+
+  function isRedisAvailable() {
+    return Boolean(available && client);
+  }
+
   async function close() {
     if (client && !options.client) {
       try { await client.quit(); } catch (_) {}
@@ -115,6 +138,7 @@ function createRedisStore(options = {}) {
     return {
       type: available ? 'redis' : 'memory-cache',
       available,
+      redisAvailable: isRedisAvailable(),
       lastError,
       fallback: fallback.status()
     };
@@ -125,6 +149,10 @@ function createRedisStore(options = {}) {
     get,
     set,
     del,
+    getCache,
+    setCache,
+    deleteCache,
+    isRedisAvailable,
     close,
     status
   };
