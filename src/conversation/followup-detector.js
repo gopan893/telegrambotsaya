@@ -14,7 +14,8 @@ const DENY = new Set([
 
 const CONTINUE = new Set([
   'lanjut', 'lanjutkan', 'terus', 'next', 'continue', 'boleh lanjut',
-  'jelaskan', 'detail', 'lebih detail', 'terangkan', 'bahas'
+  'jelaskan', 'detail', 'lebih detail', 'terangkan', 'bahas',
+  'kenapa', 'mengapa', 'maksudnya', 'kok bisa'
 ]);
 
 const REFERENTIAL = [

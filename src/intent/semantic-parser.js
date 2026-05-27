@@ -117,6 +117,25 @@ function isAnalyticalQuestion(text) {
   return isMatch && !hasActionVerb;
 }
 
+function normalizeTimeSpacing(text) {
+  return String(text || '')
+    .replace(/(\d+(?:[.,]\d+)?)(jam|hari|menit|minggu|bulan|tahun|detik)\b/gi, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasDurationUnit(text) {
+  const lower = normalizeTimeSpacing(text).toLowerCase();
+  return /\d+(?:[.,]\d+)?\s+(jam|hari|menit|minggu|bulan|tahun|detik)\b/i.test(lower);
+}
+
+function isCurrentTimeQuestion(text) {
+  const lower = normalizeTimeSpacing(text).toLowerCase();
+  return (lower.includes('jam') || lower.includes('waktu')) &&
+    !hasDurationUnit(lower) &&
+    (lower.includes('sekarang') || lower.includes('pukul') || lower.includes('jam berapa') || lower.includes('waktu di'));
+}
+
 /**
  * Menganalisis pesan pengguna secara semantik menggunakan LLM.
  * 
@@ -145,6 +164,15 @@ async function parseSemanticIntent(userMessage, userId, botServices) {
       confidence: 1.0,
       params: {},
       reason: 'Pertanyaan dideteksi sebagai kueri analitis/teoritis biasa.'
+    };
+  }
+
+  if (hasDurationUnit(userMessage) && !isCurrentTimeQuestion(userMessage)) {
+    return {
+      intent: 'NONE',
+      confidence: 1.0,
+      params: {},
+      reason: 'Input mengandung durasi waktu, bukan permintaan jam saat ini atau kalkulator murni.'
     };
   }
 
@@ -273,5 +301,7 @@ module.exports = {
   VALID_INTENTS,
   isPromptInjection,
   isAnalyticalQuestion,
+  hasDurationUnit,
+  isCurrentTimeQuestion,
   parseSemanticIntent
 };

@@ -25,6 +25,7 @@ const multiDeviceUX = require('./src/ux/multi-device-response');
 const humanAISafety = require('./src/ux/human-ai-safety');
 const conversationManager = require('./src/conversation');
 const interactions = require('./src/interactions');
+const naturalLanguage = require('./src/natural-language/natural-router');
 
 
 let scheduleLib = null;
@@ -3516,6 +3517,137 @@ function recordConversationReplySafe(input = {}) {
   }
 }
 
+function buildNaturalChatPrompt(userText, conversationState, route) {
+  const context = [
+    conversationState?.promptContext ? `Konteks percakapan:\n${conversationState.promptContext}` : '',
+    conversationState?.instruction ? `Instruksi follow-up:\n${conversationState.instruction}` : '',
+    route?.normalizedText && route.normalizedText !== userText ? `Normalisasi routing: ${route.normalizedText}` : ''
+  ].filter(Boolean).join('\n\n');
+
+  return [
+    context,
+    'Jawab seperti asisten AI umum yang ramah, natural, dan membantu.',
+    'Jika pesan user berupa keluhan, tanggapi dengan empati.',
+    'Jika tidak yakin, minta klarifikasi singkat.',
+    'Jangan mengulang jawaban lama; lanjutkan konteks jika user sedang follow-up.',
+    '',
+    `Pesan user asli:\n${userText}`
+  ].filter(Boolean).join('\n\n');
+}
+
+async function askGeneralNaturalChat(userId, userText, conversationState, route) {
+  const systemPrompt = [
+    getSystemPrompt(userId),
+    'Kamu sedang berada di jalur fallback natural language.',
+    'Prioritaskan jawaban langsung, hangat, dan relevan seperti AI assistant umum.',
+    'Untuk follow-up pendek seperti "kenapa?" atau "maksudnya?", gunakan konteks percakapan terakhir.'
+  ].join('\n\n');
+
+  return askAI(
+    systemPrompt,
+    buildNaturalChatPrompt(userText, conversationState, route),
+    {
+      userId,
+      question: `natural:${userText}`,
+      allowSearch: true,
+      allowCache: false,
+      temperature: 0.55,
+      maxTokens: 900
+    }
+  );
+}
+
+async function sendNaturalLanguageAnswer(chatId, userId, userText, msg, answer, intent) {
+  const finalAnswer = personalityResponse(
+    ensureUser(userId).mode,
+    humanAISafety.applyHumanJudgmentFooter(sanitizeOutgoingText(answer), userText)
+  );
+
+  let interactionExtra = {};
+  try {
+    const interactive = await interactions.manager.buildInteractiveResponse({
+      userId,
+      chatId,
+      userText,
+      answerText: finalAnswer,
+      mode: ensureUser(userId).mode,
+      intent
+    });
+    if (interactive?.reply_markup) {
+      interactionExtra.reply_markup = interactive.reply_markup;
+    }
+  } catch (err) {
+    log.warn('Natural interaction keyboard skipped:', err.message);
+  }
+
+  await sendStreamingAnswer(chatId, finalAnswer, {
+    reply_to_message_id: msg.message_id,
+    disable_web_page_preview: true,
+    ...interactionExtra
+  });
+
+  pushChatHistory({
+    userId,
+    chatId,
+    role: 'assistant',
+    text: finalAnswer,
+    timestamp: nowMs()
+  });
+  await saveConversationPair(userId, userText, finalAnswer);
+  await rememberImportantFact(userId, userText);
+  await autoLearn(userText, finalAnswer);
+  recordConversationReplySafe({
+    userId,
+    chatId,
+    userText,
+    botText: finalAnswer,
+    intent
+  });
+  return finalAnswer;
+}
+
+async function handleNaturalLanguageRoute(chatId, userId, userText, msg, conversationState) {
+  try {
+    const route = naturalLanguage.detectNaturalIntent(userText, { conversationState });
+    logMessageFlow('natural_route_detected', {
+      userId,
+      chatId,
+      intent: route.intent,
+      confidence: route.confidence,
+      text: route.normalizedText
+    });
+
+    if (route.intent === 'UNIT_CONVERSION') {
+      return sendNaturalLanguageAnswer(chatId, userId, userText, msg, route.conversion.answer, route.intent);
+    }
+
+    if (route.intent === 'MATH_CALCULATION') {
+      return sendNaturalLanguageAnswer(chatId, userId, userText, msg, calculate(route.expression), 'HITUNG');
+    }
+
+    if (route.intent === 'HEALTH_ADVICE') {
+      return sendNaturalLanguageAnswer(chatId, userId, userText, msg, naturalLanguage.buildHealthAdvice(userText), route.intent);
+    }
+
+    if (['FOLLOW_UP', 'EXPLANATION_REQUEST', 'EMOTIONAL_SUPPORT'].includes(route.intent)) {
+      const answer = await askGeneralNaturalChat(userId, userText, conversationState, route);
+      return sendNaturalLanguageAnswer(chatId, userId, userText, msg, answer, route.intent);
+    }
+  } catch (err) {
+    log.warn('Natural language route fallback:', err.message);
+    return sendNaturalLanguageAnswer(
+      chatId,
+      userId,
+      userText,
+      msg,
+      'Maaf, aku sempat gagal memahami pesanmu. Bisa kirim ulang atau jelaskan sedikit lagi?',
+      'NATURAL_ROUTE_ERROR'
+    );
+  }
+
+  return null;
+}
+
 function logMessageFlow(stage, data = {}) {
   const payload = {
     ...data,
@@ -3565,8 +3697,22 @@ function looksLikeDefaultGreeting(answer) {
   return lower.startsWith('halo') && lower.length <= 90 && lower.includes('bantu');
 }
 
+function looksLikeNonAnswer(answer) {
+  const lower = safeLower(answer)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return [
+    'aku belum bisa menjawab itu',
+    'saya belum bisa menjawab itu',
+    'aku tidak bisa menjawab itu',
+    'saya tidak bisa menjawab itu'
+  ].some(phrase => lower.includes(phrase));
+}
+
 function shouldRejectGenericGreeting(answer, userText) {
-  return isSubstantiveUserMessage(userText) && looksLikeDefaultGreeting(answer);
+  return isSubstantiveUserMessage(userText) && (looksLikeDefaultGreeting(answer) || looksLikeNonAnswer(answer));
 }
 
 async function handleAdaptiveCommands(chatId, userId, cmd, args, msg) {
@@ -5435,7 +5581,7 @@ async function handleSummary(chatId, userId, msg) {
 
 function heuristicIntent(userMessage) {
 
-  const q = safeLower(userMessage).trim();
+  const q = safeLower(naturalLanguage.normalizeInputForRouting(userMessage)).trim();
 
   if (!q) {
     return {
@@ -5445,8 +5591,11 @@ function heuristicIntent(userMessage) {
   }
 
   if (
-    q.includes('hitung') ||
-    /^[0-9\s()+\-*/%.]+$/.test(q)
+    !naturalLanguage.shouldBypassMathTool(q) &&
+    (
+      q.includes('hitung') ||
+      /^[0-9\s()+\-*/%.]+$/.test(q)
+    )
   ) {
 
     const expr = q.includes('hitung')
@@ -5480,10 +5629,11 @@ function heuristicIntent(userMessage) {
     };
   }
 
-  if (
-    q.includes('jam') ||
-    q.includes('waktu')
-  ) {
+  const isCurrentTimeQuestion = (q.includes('jam') || q.includes('waktu')) &&
+    !/\d+(?:[.,]\d+)?\s+(jam|hari|menit|minggu|bulan|tahun|detik)\b/i.test(q) &&
+    (q.includes('sekarang') || q.includes('pukul') || q.includes('jam berapa') || q.includes('waktu di') || /^jam\s+berapa/.test(q));
+
+  if (isCurrentTimeQuestion) {
 
     let location = q
       .replace(
@@ -5814,13 +5964,15 @@ async function executeUniversalIntent(intent, params, chatId, userId, msg, syste
   }
 }
 async function handleTools(msgText, userId = '0') {
-  const low = safeLower(msgText);
+  const normalizedToolText = naturalLanguage.normalizeInputForRouting(msgText);
+  const low = safeLower(normalizedToolText);
 
   if (low.includes('tanggal') && (low.includes('berapa') || low.includes('hari ini') || low.includes('sekarang'))) {
     return getCurrentDate();
   }
 
   const isTimeQuestion = (low.includes('jam') || low.includes('waktu')) &&
+    !/\d+(?:[.,]\d+)?\s+(jam|hari|menit|minggu|bulan|tahun|detik)\b/i.test(low) &&
     (low.includes('berapa') || low.includes('sekarang') || low.includes('pukul'));
 
   if (isTimeQuestion) {
@@ -5832,8 +5984,8 @@ async function handleTools(msgText, userId = '0') {
     return getCurrentTime(q);
   }
 
-  if ((low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
-    const expr = String(msgText || '').replace(/[^0-9+\-*/().%]/g, '');
+  if (!naturalLanguage.shouldBypassMathTool(low) && (low.includes('hitung') || low.match(/\d+[\+\-\*\/]\d+/)) && !low.includes('cuaca')) {
+    const expr = String(normalizedToolText || '').replace(/[^0-9+\-*/().%]/g, '');
     if (expr) return calculate(expr);
   }
 
@@ -6221,6 +6373,19 @@ await withUserActionLock(userId, async () => {
       timestamp: nowMs()
     });
     await saveConversationPair(userId, userText, directText);
+    return;
+  }
+
+  const naturalAnswer = await handleNaturalLanguageRoute(chatId, userId, userText, msg, conversationState);
+  if (naturalAnswer) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_language_route',
+      processed: true,
+      answerPreview: naturalAnswer
+    });
+    if (u.digest?.enabled) scheduleDigestJob(userId);
     return;
   }
 
@@ -6737,7 +6902,7 @@ async function processAIMessage(chatId, userId, text, msg) {
   }
 
   if (!answer || answer.length < 2) {
-    answer = '❌ Aku belum bisa menjawab itu.';
+    answer = 'Aku belum yakin menangkap maksudnya. Bisa jelaskan sedikit lagi atau beri contoh yang kamu maksud?';
   }
 
   answer = personalityResponse(
