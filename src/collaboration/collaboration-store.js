@@ -17,6 +17,7 @@ function ensureCollab(user = {}) {
         learningPlans: 0
       }
     };
+    user.collaboration.recentMode = null;
   }
   for (const key of ['insights', 'journal', 'decisions']) {
     if (!Array.isArray(user.collaboration[key])) user.collaboration[key] = [];
@@ -62,7 +63,9 @@ function reset(user = {}) {
       decisions: 0,
       reflections: 0,
       learningPlans: 0
-    }
+    },
+    recentMode: null,
+    updatedAt: null
   };
   return user.collaboration;
 }
@@ -77,7 +80,9 @@ function normalizeCollab(value = {}) {
       decisions: Number(value.analytics?.decisions || 0),
       reflections: Number(value.analytics?.reflections || 0),
       learningPlans: Number(value.analytics?.learningPlans || 0)
-    }
+    },
+    recentMode: typeof value.recentMode === 'string' ? value.recentMode : null,
+    updatedAt: value.updatedAt || null
   };
   return collab;
 }

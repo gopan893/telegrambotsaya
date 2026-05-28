@@ -3134,6 +3134,7 @@ Recommendation: ${comparison.recommendation}`;
 
 function getAiosServices() {
   return {
+    aiOS,
     ensureUser,
     persist,
     storageManager
@@ -3956,9 +3957,26 @@ async function handleCollaborationCommands(chatId, userId, cmd, args, msg) {
     await safeSendMessage(chatId, `Format: ${cmd} <topik atau masalah>`, replyOpt);
     return true;
   }
-  const response = await collaborationSystem.respond(cmd, args, userId, u, getAiosServices());
-  await persist();
-  await sendChunkedMessage(chatId, response, replyOpt);
+  try {
+    const response = await collaborationSystem.respond(cmd, args, userId, u, getAiosServices());
+    await persist();
+    await sendChunkedMessage(chatId, response, replyOpt);
+  } catch (err) {
+    log.warn('Collaboration command fallback:', err.message);
+    const fallback = await askAI(
+      getSystemPrompt(userId),
+      `Jawab sebagai thinking partner yang ringkas dan aman. Command: ${cmd}\nTopik: ${args || '-'}`,
+      {
+        userId,
+        question: `collaboration-fallback:${cmd}:${args || ''}`,
+        allowSearch: false,
+        allowCache: false,
+        temperature: 0.45,
+        maxTokens: 700
+      }
+    );
+    await sendChunkedMessage(chatId, fallback || 'Maaf, collaboration module sedang fallback. Coba jelaskan topiknya sekali lagi.', replyOpt);
+  }
   return true;
 }
 
