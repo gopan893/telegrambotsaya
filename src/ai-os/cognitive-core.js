@@ -148,9 +148,24 @@ class CognitiveCore {
     const { ensureUser } = botServices;
     const u = ensureUser(userId);
     u.aios = guards.makeEmptyState();
+    clearStorageBuckets(userId, botServices);
     guards.persistAsync(botServices);
     return { ok: true };
   }
+}
+
+function clearStorageBuckets(userId, botServices = {}) {
+  const storage = botServices.storageManager;
+  if (!storage?.loadData || !storage?.saveData) return;
+  const id = guards.normalizeUserId(userId);
+  const keys = ['aios_memories', 'aios_goals', 'aios_workflows', 'aios_insights'];
+  Promise.all(keys.map(async (key) => {
+    const bucket = await storage.loadData(key, {});
+    if (bucket && typeof bucket === 'object') {
+      bucket[id] = [];
+      await storage.saveData(key, bucket);
+    }
+  })).catch(() => {});
 }
 
 function buildPromptRules(strategy = {}) {

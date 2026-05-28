@@ -6,6 +6,8 @@ const goalManager = require('./goal-manager');
 const workflowEngine = require('./workflow-engine');
 const knowledgeGraph = require('./knowledge-graph');
 const memoryBus = require('./memory-bus');
+const insightStore = require('./insight-store');
+const utils = require('./aios-utils');
 
 function syncContext(userId, query = '', botServices, options = {}) {
   const state = guards.ensureAIOSState(userId, botServices);
@@ -48,6 +50,36 @@ function syncContext(userId, query = '', botServices, options = {}) {
       graphEdges: state.graph.edges.length,
       recentInsights: insights.length
     }
+  };
+}
+
+async function buildAIOSContext(userId, query = '', services = {}) {
+  try {
+    await unifiedMemory.hydrateMemoryFromStorage?.(userId, services);
+    await goalManager.hydrateGoalsFromStorage?.(userId, services);
+    await workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
+    await insightStore.hydrateInsightsFromStorage?.(userId, services);
+  } catch (_) {}
+
+  const relevantMemory = unifiedMemory.searchMemory(userId, query, { limit: 5 }, services);
+  const activeGoals = goalManager.listGoals(userId, { status: 'active', limit: 5 }, services);
+  const activeWorkflows = workflowEngine.listWorkflows(userId, { status: 'active', limit: 5 }, services);
+  const recentInsights = await insightStore.listInsights(userId, { limit: 5 }, services);
+
+  const summaryText = [
+    activeGoals.length ? `Goals: ${activeGoals.map(goal => goal.title).join(', ')}` : '',
+    activeWorkflows.length ? `Workflows: ${activeWorkflows.map(workflow => workflow.title).join(', ')}` : '',
+    relevantMemory.length ? `Memory: ${relevantMemory.map(memory => utils.compactText(memory.content, 80)).join(' | ')}` : '',
+    recentInsights.length ? `Insights: ${recentInsights.map(insight => utils.compactText(insight.content || insight.text, 80)).join(' | ')}` : ''
+  ].filter(Boolean).join('\n') || '-';
+
+  return {
+    userId: guards.normalizeUserId(userId),
+    relevantMemory,
+    activeGoals,
+    activeWorkflows,
+    recentInsights,
+    summaryText: utils.compactText(summaryText, 1400)
   };
 }
 
@@ -105,6 +137,7 @@ function formatInsights(insights = []) {
 }
 
 module.exports = {
+  buildAIOSContext,
   syncContext,
   compressContextSummary,
   formatGoals,
