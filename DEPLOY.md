@@ -15,17 +15,9 @@ cp .env.example .env
 Isi:
 
 - `TELEGRAM_TOKEN` dari BotFather
-- `AI_PROVIDER=mistral` jika kamu memakai Mistral
-- `MISTRAL_API_KEY` dari Mistral La Plateforme
-- `MISTRAL_MODEL=mistral-large-latest`
-
-Kalau kamu memakai OpenAI:
-
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=isi_api_key_openai
-OPENAI_MODEL=gpt-5.2
-```
+- `MISTRAL_API_KEY` dari Mistral
+- `OWNER_CHAT_ID` untuk admin bot
+- `WEBHOOK_URL` jika memakai webhook, atau `RENDER_EXTERNAL_HOSTNAME` jika deploy di Render
 
 ## 3. Jalankan
 

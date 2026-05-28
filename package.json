@@ -1,8 +1,7 @@
 {
   "name": "telegram-ai-level-tertinggi",
   "version": "2.0.0",
-  "description": "Telegram AI bot dengan OpenAI Responses API, memori, mode kerja, dan knowledge base lokal.",
-  "type": "module",
+  "description": "Autonomous Telegram AI Agent (Polymath) dengan Fallback Multi-Model, RAG, dan Notifikasi Proaktif.",
   "main": "telebot.js",
   "scripts": {
     "start": "node telebot.js",
@@ -15,8 +14,14 @@
     "node": ">=20"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
-    "openai": "^6.9.1",
-    "telegraf": "^4.16.3"
+    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "node-schedule": "^2.1.1",
+    "googleapis": "^126.0.0",
+    "sharp": "^0.33.0",
+    "form-data": "^4.0.0",
+    "ioredis": "^5.3.2",
+    "pg": "^8.12.0",
+    "pdf-parse": "^1.1.1"
   }
 }

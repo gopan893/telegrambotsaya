@@ -11,6 +11,12 @@ pnpm-debug.log*
 # Data runtime bot, memori user, dan state chat jangan dipush.
 data/state.json
 data/*.json
+ab_log.json
+bot_settings.json
+chat_history.json
+knowledge.json
+lessons.json
+user_memory.json
 
 # File lokal sementara.
 *.log
