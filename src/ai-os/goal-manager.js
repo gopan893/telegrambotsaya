@@ -1,11 +1,14 @@
 'use strict';
 
 const guards = require('./guards');
+const aiosGuards = require('./aios-guards');
+const utils = require('./aios-utils');
 const memoryBus = require('./memory-bus');
 const knowledgeGraph = require('./knowledge-graph');
 const strategicReasoning = require('./strategic-reasoning');
 
 const GOAL_STATUSES = new Set(['active', 'paused', 'completed', 'archived']);
+const STORAGE_KEY = 'aios_goals';
 
 function normalizePriority(priority) {
   const text = guards.sanitizeText(priority || 'medium', 40).toLowerCase();
@@ -55,13 +58,16 @@ function createGoal(userId, input = {}, botServices) {
     confidence: 0.85
   }, botServices);
   if (memoryResult.ok && memoryResult.memory?.id) goal.linkedMemoryIds.push(memoryResult.memory.id);
-  const graph = knowledgeGraph.evolveGraphFromText(userId, `Goal ${goal.title}. ${goal.description}`, botServices, {
-    source: 'goal-manager',
-    confidence: 0.82,
-    maxConcepts: 5
-  });
-  if (graph.ok) goal.linkedGraphNodeIds = graph.nodes.map((node) => node.id).slice(0, 30);
+  if (botServices?.enableAdvancedAIOS) {
+    const graph = knowledgeGraph.evolveGraphFromText(userId, `Goal ${goal.title}. ${goal.description}`, botServices, {
+      source: 'goal-manager',
+      confidence: 0.82,
+      maxConcepts: 5
+    });
+    if (graph.ok) goal.linkedGraphNodeIds = graph.nodes.map((node) => node.id).slice(0, 30);
+  }
   guards.touchState(state);
+  mirrorGoalsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, goal };
 }
@@ -70,6 +76,14 @@ function updateGoal(userId, goalId, field, value, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   const goal = state.goals.find((item) => item.id === goalId);
   if (!goal) return { ok: false, reason: 'GOAL_NOT_FOUND' };
+
+  if (field && typeof field === 'object') {
+    for (const [patchField, patchValue] of Object.entries(field)) {
+      const result = updateGoal(userId, goalId, patchField, patchValue, botServices);
+      if (!result.ok) return result;
+    }
+    return { ok: true, goal };
+  }
 
   const key = guards.sanitizeText(field || '', 80).toLowerCase();
   if (key === 'status') {
@@ -96,6 +110,7 @@ function updateGoal(userId, goalId, field, value, botServices) {
 
   goal.updatedAt = guards.nowIso();
   guards.touchState(state);
+  mirrorGoalsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, goal };
 }
@@ -120,8 +135,33 @@ function attachWorkflow(userId, goalId, workflowId, botServices) {
   if (!goal.linkedWorkflowIds.includes(workflowId)) goal.linkedWorkflowIds.push(workflowId);
   goal.updatedAt = guards.nowIso();
   guards.touchState(state);
+  mirrorGoalsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, goal };
+}
+
+function getGoal(userId, goalId, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  return state.goals.find(goal => goal.id === goalId) || null;
+}
+
+function archiveGoal(userId, goalId, botServices) {
+  return updateGoal(userId, goalId, 'status', 'archived', botServices);
+}
+
+function calculateGoalStats(userId, botServices) {
+  const goals = listGoals(userId, { limit: guards.DEFAULT_LIMITS.goals }, botServices);
+  const active = goals.filter(goal => goal.status === 'active');
+  const completed = goals.filter(goal => goal.status === 'completed' || goal.status === 'archived');
+  const progress = goals.length
+    ? goals.reduce((sum, goal) => sum + normalizeProgressPercent(goal.progress), 0) / goals.length
+    : 0;
+  return {
+    total: goals.length,
+    active: active.length,
+    completed: completed.length,
+    averageProgress: Number(progress.toFixed(1))
+  };
 }
 
 function attachMemory(userId, goalId, memoryId, botServices) {
@@ -246,8 +286,39 @@ function resetGoals(userId, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   state.goals = [];
   guards.touchState(state);
+  mirrorGoalsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true };
+}
+
+async function hydrateGoalsFromStorage(userId, services = {}) {
+  const state = guards.ensureAIOSState(userId, services);
+  if (!services.storageManager?.loadData) return state;
+  try {
+    const stored = await utils.loadUserBucket(STORAGE_KEY, userId, services, []);
+    if (stored.length && !state.goals.length) {
+      state.goals = aiosGuards.enforceGoalLimit(stored);
+      guards.touchState(state);
+    }
+  } catch (_) {}
+  return state;
+}
+
+async function mirrorGoalsToStorage(userId, state, services = {}) {
+  if (!services.storageManager?.saveData) return false;
+  try {
+    const safe = aiosGuards.enforceGoalLimit(guards.safeArray(state.goals));
+    state.goals = safe;
+    return await utils.saveUserBucket(STORAGE_KEY, userId, safe, services);
+  } catch (_) {
+    return false;
+  }
+}
+
+function normalizeProgressPercent(progress) {
+  const n = Number(progress || 0);
+  if (!Number.isFinite(n)) return 0;
+  return n <= 1 ? n * 100 : Math.min(100, n);
 }
 
 function estimateFeasibility(goal, analysis) {
@@ -269,17 +340,23 @@ function estimateFeasibility(goal, analysis) {
 }
 
 module.exports = {
+  STORAGE_KEY,
   createGoal,
   updateGoal,
   listGoals,
+  getGoal,
   getActiveGoals,
   attachWorkflow,
+  archiveGoal,
   attachMemory,
   attachGraphNode,
   trackProgress,
+  calculateGoalStats,
   suggestNextAction,
   analyzeGoalReasoning,
   detectStaleGoals,
   archiveCompletedGoals,
-  resetGoals
+  resetGoals,
+  hydrateGoalsFromStorage,
+  normalizeProgressPercent
 };

@@ -1,6 +1,10 @@
 'use strict';
 
 const guards = require('./guards');
+const aiosGuards = require('./aios-guards');
+const utils = require('./aios-utils');
+
+const STORAGE_KEY = 'aios_memories';
 
 function normalizeMemoryInput(userId, input = {}) {
   const type = guards.MEMORY_TYPES.has(input.type) ? input.type : 'semantic';
@@ -51,6 +55,7 @@ function addMemory(userId, input, botServices) {
     existing.lastAccessedAt = guards.nowIso();
     existing.tags = guards.uniqueList([...(existing.tags || []), ...(memory.tags || [])], 16);
     guards.touchState(state);
+    mirrorMemoryToStorage(userId, state, botServices);
     guards.persistAsync(botServices);
     return { ok: true, memory: existing, deduped: true };
   }
@@ -61,8 +66,30 @@ function addMemory(userId, input, botServices) {
   state.memories.push(memory);
   pruneMemory(userId, {}, botServices);
   guards.touchState(state);
+  mirrorMemoryToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, memory, deduped: false };
+}
+
+async function createMemory(userId, data = {}, services) {
+  const size = aiosGuards.preventHugeInput(data.content || data.text || '');
+  if (!size.ok) return { ok: false, reason: size.reason };
+  const result = addMemory(userId, data, services);
+  if (result.ok) {
+    const state = guards.ensureAIOSState(userId, services);
+    await mirrorMemoryToStorage(userId, state, services);
+  }
+  return result;
+}
+
+async function listMemories(userId, options = {}, services) {
+  const state = await hydrateMemoryFromStorage(userId, services);
+  const limit = Math.max(1, Math.min(Number(options.limit || 10), 50));
+  const type = options.type || null;
+  return guards.safeArray(state.memories)
+    .filter(memory => !type || memory.type === type)
+    .sort((a, b) => Date.parse(b.updatedAt || b.createdAt || 0) - Date.parse(a.updatedAt || a.createdAt || 0))
+    .slice(0, limit);
 }
 
 function searchMemory(userId, query = '', options = {}, botServices) {
@@ -111,8 +138,20 @@ function updateMemory(userId, memoryId, patch = {}, botServices) {
   if (patch.source) memory.source = guards.compactText(patch.source, 80);
   memory.updatedAt = guards.nowIso();
   guards.touchState(state);
+  mirrorMemoryToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, memory };
+}
+
+async function deleteMemory(userId, memoryId, services) {
+  const state = await hydrateMemoryFromStorage(userId, services);
+  const before = state.memories.length;
+  state.memories = state.memories.filter(memory => memory.id !== memoryId);
+  if (state.memories.length === before) return { ok: false, reason: 'MEMORY_NOT_FOUND' };
+  guards.touchState(state);
+  await mirrorMemoryToStorage(userId, state, services);
+  guards.persistAsync(services);
+  return { ok: true, deleted: memoryId };
 }
 
 function pruneMemory(userId, options = {}, botServices) {
@@ -125,6 +164,7 @@ function pruneMemory(userId, options = {}, botServices) {
     const recency = access ? Math.max(0, 1 - ((Date.now() - access) / (120 * 24 * 60 * 60 * 1000))) : 0.3;
     return (memory.importance || 0.4) + (memory.confidence || 0.5) * 0.4 + recency * 0.2;
   });
+  mirrorMemoryToStorage(userId, state, botServices);
   return { pruned: before - state.memories.length + staleRemoved, remaining: state.memories.length };
 }
 
@@ -165,18 +205,48 @@ function resetMemory(userId, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   state.memories = [];
   guards.touchState(state);
+  mirrorMemoryToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true };
 }
 
+async function hydrateMemoryFromStorage(userId, services = {}) {
+  const state = guards.ensureAIOSState(userId, services);
+  if (!services.storageManager?.loadData) return state;
+  try {
+    const stored = await utils.loadUserBucket(STORAGE_KEY, userId, services, []);
+    if (stored.length && !state.memories.length) {
+      state.memories = aiosGuards.enforceMemoryLimit(stored);
+      guards.touchState(state);
+    }
+  } catch (_) {}
+  return state;
+}
+
+async function mirrorMemoryToStorage(userId, state, services = {}) {
+  if (!services.storageManager?.saveData) return false;
+  try {
+    const safe = aiosGuards.enforceMemoryLimit(guards.safeArray(state.memories));
+    state.memories = safe;
+    return await utils.saveUserBucket(STORAGE_KEY, userId, safe, services);
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
+  STORAGE_KEY,
+  createMemory,
+  listMemories,
   addMemory,
   searchMemory,
   getRelevantMemory,
   updateMemory,
+  deleteMemory,
   pruneMemory,
   compressMemory,
   getMemoryStats,
   resetMemory,
-  scoreMemory
+  scoreMemory,
+  hydrateMemoryFromStorage
 };

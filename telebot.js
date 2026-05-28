@@ -3134,8 +3134,10 @@ Recommendation: ${comparison.recommendation}`;
 
 function getAiosServices() {
   return {
+    aiOS,
     ensureUser,
-    persist
+    persist,
+    storageManager
   };
 }
 
@@ -3196,7 +3198,7 @@ function splitPipeArgs(args) {
 }
 
 function formatGoalLine(goal, index) {
-  const pct = Math.round((goal.progress || 0) * 100);
+  const pct = Math.round(aiOS.goalManager.normalizeProgressPercent?.(goal.progress) ?? ((goal.progress || 0) * 100));
   const next = goal.strategicReflection?.nextAction ? ` Next: ${goal.strategicReflection.nextAction}` : '';
   return `${index + 1}. ${goal.id} - ${goal.title} [${goal.status}, ${goal.priority}, ${pct}%]${next}`;
 }
@@ -3208,35 +3210,123 @@ function formatWorkflowLine(workflow, index) {
   return `${index + 1}. ${workflow.id} - ${workflow.title} [${workflow.status}, ${done}/${(workflow.steps || []).length} step, blocker ${blockers}]${next}`;
 }
 
+function formatMemoryLine(memory, index) {
+  const text = aiOS.utils?.compactText
+    ? aiOS.utils.compactText(memory.content, 120)
+    : String(memory.content || '').slice(0, 120);
+  return `${index + 1}. ${memory.id} [${memory.type}] ${text}`;
+}
+
+function formatInsightLine(insight, index) {
+  const text = aiOS.utils?.compactText
+    ? aiOS.utils.compactText(insight.content || insight.text, 140)
+    : String(insight.content || insight.text || '').slice(0, 140);
+  return `${index + 1}. ${insight.id} - ${text} (${Number(insight.confidence || 0).toFixed(2)})`;
+}
+
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
 
   if (cmd === '/aios') {
-    const status = aiOS.getStatus(userId, services);
     const u = ensureUser(userId);
+    await Promise.allSettled([
+      aiOS.unifiedMemory.hydrateMemoryFromStorage?.(userId, services),
+      aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services),
+      aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services),
+      aiOS.insightStore.hydrateInsightsFromStorage?.(userId, services),
+      aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services)
+    ]);
+    const memoryStats = aiOS.unifiedMemory.getMemoryStats(userId, services);
+    const goalStats = aiOS.goalManager.calculateGoalStats(userId, services);
+    const workflowStats = aiOS.workflowEngine.getWorkflowStats(userId, services);
+    const insightStats = await aiOS.insightStore.getInsightStats(userId, services);
+    const graphStats = aiOS.knowledgeGraph.getGraphStats(userId, services);
+    const storage = storageManager.getStorageStatus();
+    const adaptive = adaptiveSystem.status(u, getAiosStatusSafe(userId));
     const text =
 `AI OS Status
-Mode aktif: ${u.mode}
-Active goals: ${status.activeGoals}
-Active workflows: ${status.activeWorkflows}
-Memory count: ${status.totalMemory}
-Graph: ${status.graphNodes} node, ${status.graphEdges} edge
-Recent insights: ${status.recentInsights.length}
-Average confidence: ${status.averageConfidence.toFixed(2)}
-Stale goals/workflows: ${status.staleGoals}/${status.staleWorkflows}
-Workflow completion: ${Math.round((status.workflowCompletionRatio || 0) * 100)}%
-Workflow conflicts: ${status.workflowConflicts}
-Research memory: ${status.researchMemoryCount}
-Reflection count: ${status.reflectionCount}
-
-Insight:
-${status.recentInsightsText}`;
+Mode: ${u.mode}
+Adaptive: ${adaptive.enabled ? 'on' : 'off'} (${adaptive.activeMode || '-'})
+Storage: ${storage.driver}, Redis: ${storage.redisAvailable ? 'on' : 'memory/local'}
+Memory: ${memoryStats.total}
+Goals aktif: ${goalStats.active}/${goalStats.total}
+Workflows aktif: ${workflowStats.active}/${workflowStats.total}
+Insights: ${insightStats.total}
+Graph: ${graphStats.nodes} node, ${graphStats.edges} edge
+Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`;
     await sendChunkedMessage(chatId, text, replyOpt);
     return true;
   }
 
+  if (cmd === '/memory') {
+    const memories = await aiOS.unifiedMemory.listMemories(userId, { limit: 10 }, services);
+    const text = memories.length
+      ? memories.map(formatMemoryLine).join('\n')
+      : 'Belum ada memory AI OS. Simpan dengan /remember <teks>.';
+    await sendChunkedMessage(chatId, `Memory terbaru:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/remember') {
+    const guard = aiOS.guards.preventHugeInput(args || '');
+    if (!guard.ok) {
+      await safeSendMessage(chatId, guard.reason, replyOpt);
+      return true;
+    }
+    const content = String(args || '').trim();
+    if (!content) {
+      await safeSendMessage(chatId, 'Format: /remember <teks yang ingin disimpan>', replyOpt);
+      return true;
+    }
+    const result = await aiOS.unifiedMemory.createMemory(userId, {
+      type: 'semantic',
+      content,
+      source: 'user',
+      tags: ['manual'],
+      confidence: 0.85,
+      importance: 0.72
+    }, services);
+    if (result.ok) {
+      await aiOS.insightStore.createInsight(userId, {
+        type: 'memory',
+        content,
+        source: 'remember-command',
+        relatedConcepts: ['manual-memory'],
+        confidence: 0.75,
+        importance: 0.62
+      }, services);
+      aiOS.knowledgeGraph.evolveGraphFromText(userId, content, services, {
+        source: 'remember-command',
+        confidence: 0.72,
+        maxConcepts: 5
+      });
+    }
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Memory disimpan:\n${result.memory.id}` : `Gagal menyimpan memory: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/forget') {
+    const memoryId = String(args || '').trim();
+    if (!memoryId) {
+      await safeSendMessage(chatId, 'Format: /forget <memoryId>', replyOpt);
+      return true;
+    }
+    const result = await aiOS.unifiedMemory.deleteMemory(userId, memoryId, services);
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Memory dihapus: ${memoryId}` : `Gagal menghapus memory: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
   if (cmd === '/goals') {
+    await aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services);
     const goals = aiOS.goalManager.listGoals(userId, {}, services);
     const text = goals.length
       ? goals.map(formatGoalLine).join('\n')
@@ -3252,7 +3342,13 @@ ${status.recentInsightsText}`;
       return true;
     }
     const result = aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
-    if (result.ok) aiOS.goalManager.analyzeGoalReasoning(userId, result.goal, services);
+    if (result.ok) {
+      aiOS.knowledgeGraph.evolveGraphFromText(userId, `Goal ${result.goal.title}. ${result.goal.description}`, services, {
+        source: 'goal-command',
+        confidence: 0.78,
+        maxConcepts: 5
+      });
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3269,6 +3365,7 @@ ${status.recentInsightsText}`;
       await safeSendMessage(chatId, 'Format: /goalupdate <goalId> | <status/progress/description/priority/target> | <value>', replyOpt);
       return true;
     }
+    await aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services);
     const result = aiOS.goalManager.updateGoal(userId, goalId, field, value, services);
     await safeSendMessage(
       chatId,
@@ -3281,6 +3378,7 @@ ${status.recentInsightsText}`;
   }
 
   if (cmd === '/workflows') {
+    await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
     const workflows = aiOS.workflowEngine.listActiveWorkflows(userId, services, 20);
     const text = workflows.length
       ? workflows.map(formatWorkflowLine).join('\n')
@@ -3296,6 +3394,13 @@ ${status.recentInsightsText}`;
       return true;
     }
     const result = aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId }, services);
+    if (result.ok) {
+      aiOS.knowledgeGraph.evolveGraphFromText(userId, `Workflow ${result.workflow.title}. ${result.workflow.description}`, services, {
+        source: 'workflow-command',
+        confidence: 0.76,
+        maxConcepts: 5
+      });
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3312,6 +3417,7 @@ ${status.recentInsightsText}`;
       await safeSendMessage(chatId, 'Format: /workflowstep <workflowId> | <step>', replyOpt);
       return true;
     }
+    await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
     const result = aiOS.workflowEngine.addStep(userId, workflowId, step, services);
     await safeSendMessage(
       chatId,
@@ -3329,11 +3435,12 @@ ${status.recentInsightsText}`;
       await safeSendMessage(chatId, 'Format: /workflowdone <workflowId> | <stepNumber>', replyOpt);
       return true;
     }
+    await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
     const result = aiOS.workflowEngine.markStepDone(userId, workflowId, stepNumber, services);
     await safeSendMessage(
       chatId,
       result.ok
-        ? `Step selesai: ${result.step.title}`
+        ? `Step selesai: ${result.step.text || result.step.title}`
         : `Gagal menandai step: ${result.reason}`,
       replyOpt
     );
@@ -3386,6 +3493,7 @@ ${status.recentInsightsText}`;
   }
 
   if (cmd === '/graph') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
     const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
     const text =
 `Knowledge Graph
@@ -3403,9 +3511,9 @@ ${graph.edgesText}`;
   }
 
   if (cmd === '/insights') {
-    const insights = aiOS.memoryBus.getRecentInsights(userId, services, 10);
+    const insights = await aiOS.insightStore.listInsights(userId, { limit: 10 }, services);
     const text = insights.length
-      ? insights.map((item, index) => `${index + 1}. ${item.text} (confidence ${item.confidence.toFixed(2)})`).join('\n')
+      ? insights.map(formatInsightLine).join('\n')
       : 'Belum ada insight AI OS.';
     await sendChunkedMessage(chatId, `Insight penting:\n${text}`, replyOpt);
     return true;
@@ -3448,7 +3556,8 @@ ${graph.edgesText}`;
       await safeSendMessage(chatId, 'Format: /reflect <teks atau topik>', replyOpt);
       return true;
     }
-    const analysis = aiOS.strategicReasoning.analyzeGoal(topic, aiOS.contextSync.syncContext(userId, topic, services));
+    const context = await aiOS.contextSync.buildAIOSContext(userId, topic, services);
+    const analysis = aiOS.strategicReasoning.analyzeGoal(topic, context);
     const reflection = aiOS.reflectionEngine.storeReflectionMemory(userId, {
       question: topic,
       insight: analysis.nextActions[0] || topic,
@@ -3479,7 +3588,7 @@ Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
       await safeSendMessage(chatId, 'Format: /strategy <goal atau masalah>', replyOpt);
       return true;
     }
-    const context = aiOS.contextSync.syncContext(userId, topic, services);
+    const context = await aiOS.contextSync.buildAIOSContext(userId, topic, services);
     const analysis = aiOS.strategicReasoning.analyzeGoal(topic, context);
     aiOS.memoryBus.publishInsight(userId, `Strategic insight: ${analysis.recommendation}`, services, {
       source: 'strategy-command',
@@ -3487,6 +3596,14 @@ Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
       importance: 0.74,
       tags: ['strategy', 'decision']
     });
+    await aiOS.insightStore.createInsight(userId, {
+      type: 'strategic',
+      content: analysis.recommendation,
+      source: 'strategy-command',
+      relatedConcepts: ['strategy', 'decision'],
+      confidence: analysis.confidence,
+      importance: 0.74
+    }, services);
     await sendChunkedMessage(chatId, aiOS.strategicReasoning.formatStrategicAnalysis(analysis), replyOpt);
     return true;
   }
@@ -3520,6 +3637,32 @@ function detectAdaptiveModeForMessage(userId, userText, command, msg) {
     ensureUser,
     persist
   });
+}
+
+function shouldHydrateAIOSForMessage(userText = '', adaptiveDecision = {}) {
+  const text = String(userText || '').toLowerCase();
+  if (['strategic', 'decision', 'learning', 'reflection', 'research', 'personal-intelligence', 'cognitive-workspace'].includes(adaptiveDecision?.mode)) {
+    return true;
+  }
+  return /(goal|tujuan|workflow|alur kerja|memory|memori|ingat|project|proyek|roadmap|strategi|lanjut|langkah berikut|next action|keputusan|insight|graph|workspace)/i.test(text);
+}
+
+async function hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision) {
+  if (!shouldHydrateAIOSForMessage(userText, adaptiveDecision)) return false;
+  const services = getAiosServices();
+  try {
+    await Promise.allSettled([
+      aiOS.unifiedMemory.hydrateMemoryFromStorage?.(userId, services),
+      aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services),
+      aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services),
+      aiOS.insightStore.hydrateInsightsFromStorage?.(userId, services),
+      aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services)
+    ]);
+    return true;
+  } catch (err) {
+    log.warn('AI OS hydrate skipped:', err.message);
+    return false;
+  }
 }
 
 function prepareConversationStateSafe(userId, chatId, userText, command, msg) {
@@ -3814,9 +3957,26 @@ async function handleCollaborationCommands(chatId, userId, cmd, args, msg) {
     await safeSendMessage(chatId, `Format: ${cmd} <topik atau masalah>`, replyOpt);
     return true;
   }
-  const response = collaborationSystem.respond(cmd, args, userId, u);
-  await persist();
-  await sendChunkedMessage(chatId, response, replyOpt);
+  try {
+    const response = await collaborationSystem.respond(cmd, args, userId, u, getAiosServices());
+    await persist();
+    await sendChunkedMessage(chatId, response, replyOpt);
+  } catch (err) {
+    log.warn('Collaboration command fallback:', err.message);
+    const fallback = await askAI(
+      getSystemPrompt(userId),
+      `Jawab sebagai thinking partner yang ringkas dan aman. Command: ${cmd}\nTopik: ${args || '-'}`,
+      {
+        userId,
+        question: `collaboration-fallback:${cmd}:${args || ''}`,
+        allowSearch: false,
+        allowCache: false,
+        temperature: 0.45,
+        maxTokens: 700
+      }
+    );
+    await sendChunkedMessage(chatId, fallback || 'Maaf, collaboration module sedang fallback. Coba jelaskan topiknya sekali lagi.', replyOpt);
+  }
   return true;
 }
 
@@ -5090,6 +5250,9 @@ async function handleHelp(chatId, msg) {
 /canary rollback id [admin]
 /ops-reset - reset data ops runtime [admin]
 /aios - status ringkas AI OS
+/memory - 10 memory terbaru AI OS
+/remember teks - simpan memory manual
+/forget memoryId - hapus memory AI OS
 /goals - daftar goal AI OS
 /goaladd judul | deskripsi | prioritas | targetDate
 /goalupdate goalId | status/progress/description | value
@@ -5223,6 +5386,9 @@ function isUnknownCommand(cmd) {
     '/opsreset',
     '/ops-reset',
     '/aios',
+    '/memory',
+    '/remember',
+    '/forget',
     '/goals',
     '/goaladd',
     '/goalupdate',
@@ -6427,6 +6593,7 @@ await withUserActionLock(userId, async () => {
   }
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg);
+  await hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision);
   logMessageFlow('ai_pipeline_calling', {
     userId,
     chatId,

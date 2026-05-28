@@ -6,6 +6,7 @@ const memoryBus = require('./memory-bus');
 const unifiedMemory = require('./unified-memory');
 const goalManager = require('./goal-manager');
 const workflowEngine = require('./workflow-engine');
+const insightStore = require('./insight-store');
 const knowledgeGraph = require('./knowledge-graph');
 const semanticRelationshipEngine = require('./semantic-relationship-engine');
 const strategicReasoning = require('./strategic-reasoning');
@@ -16,7 +17,9 @@ const researchIntelligence = require('./research-intelligence');
 const cognitiveWorkspace = require('./cognitive-workspace');
 const learningEvolution = require('./learning-evolution');
 const cognitiveAnalytics = require('./cognitive-analytics');
-const guards = require('./guards');
+const legacyGuards = require('./guards');
+const guards = require('./aios-guards');
+const utils = require('./aios-utils');
 
 function createAIOS() {
   return {
@@ -26,6 +29,7 @@ function createAIOS() {
     unifiedMemory,
     goalManager,
     workflowEngine,
+    insightStore,
     knowledgeGraph,
     semanticRelationshipEngine,
     strategicReasoning,
@@ -37,6 +41,8 @@ function createAIOS() {
     learningEvolution,
     cognitiveAnalytics,
     guards,
+    legacyGuards,
+    utils,
     processInput: cognitiveCore.prepareInput.bind(cognitiveCore),
     afterResponse: cognitiveCore.afterResponse.bind(cognitiveCore),
     getStatus: cognitiveCore.getStatus.bind(cognitiveCore),

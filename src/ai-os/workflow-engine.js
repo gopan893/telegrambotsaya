@@ -1,11 +1,14 @@
 'use strict';
 
 const guards = require('./guards');
+const aiosGuards = require('./aios-guards');
+const utils = require('./aios-utils');
 const memoryBus = require('./memory-bus');
 const goalManager = require('./goal-manager');
 const knowledgeGraph = require('./knowledge-graph');
 
 const WORKFLOW_STATUSES = new Set(['active', 'paused', 'completed', 'archived']);
+const STORAGE_KEY = 'aios_workflows';
 
 function createWorkflow(userId, input = {}, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
@@ -36,15 +39,17 @@ function createWorkflow(userId, input = {}, botServices) {
   state.workflows.push(workflow);
   state.workflows = guards.pruneListByScore(state.workflows, guards.DEFAULT_LIMITS.workflows, scoreWorkflow);
   if (workflow.goalId) goalManager.attachWorkflow(userId, workflow.goalId, workflow.id, botServices);
-  const linkedGoal = workflow.goalId
-    ? goalManager.listGoals(userId, {}, botServices).find((goal) => goal.id === workflow.goalId)
-    : null;
-  if (linkedGoal) knowledgeGraph.linkGoalWorkflow(userId, linkedGoal, workflow, botServices);
-  knowledgeGraph.evolveGraphFromText(userId, `Workflow ${workflow.title}. ${workflow.description}`, botServices, {
-    source: 'workflow-engine',
-    confidence: 0.78,
-    maxConcepts: 5
-  });
+  if (botServices?.enableAdvancedAIOS) {
+    const linkedGoal = workflow.goalId
+      ? goalManager.listGoals(userId, {}, botServices).find((goal) => goal.id === workflow.goalId)
+      : null;
+    if (linkedGoal) knowledgeGraph.linkGoalWorkflow(userId, linkedGoal, workflow, botServices);
+    knowledgeGraph.evolveGraphFromText(userId, `Workflow ${workflow.title}. ${workflow.description}`, botServices, {
+      source: 'workflow-engine',
+      confidence: 0.78,
+      maxConcepts: 5
+    });
+  }
   memoryBus.publish(userId, {
     type: 'workflow',
     content: `Workflow: ${workflow.title}. ${workflow.description}`,
@@ -54,6 +59,7 @@ function createWorkflow(userId, input = {}, botServices) {
     importance: 0.76
   }, botServices);
   guards.touchState(state);
+  mirrorWorkflowsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, workflow };
 }
@@ -87,6 +93,7 @@ function updateWorkflow(userId, workflowId, patch = {}, botServices) {
   workflow.updatedAt = guards.nowIso();
   workflow.lastActivityAt = guards.nowIso();
   guards.touchState(state);
+  mirrorWorkflowsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, workflow };
 }
@@ -102,6 +109,7 @@ function addStep(userId, workflowId, stepText, botServices) {
   workflow.updatedAt = guards.nowIso();
   workflow.lastActivityAt = guards.nowIso();
   guards.touchState(state);
+  mirrorWorkflowsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, workflow, stepNumber: workflow.steps.length };
 }
@@ -118,6 +126,7 @@ function markStepDone(userId, workflowId, stepNumber, botServices) {
   workflow.updatedAt = guards.nowIso();
   workflow.lastActivityAt = guards.nowIso();
   guards.touchState(state);
+  mirrorWorkflowsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, workflow, step: workflow.steps[index] };
 }
@@ -136,6 +145,21 @@ function listActiveWorkflows(userId, botServices, limit = 12) {
     .filter((workflow) => workflow.status === 'active')
     .sort((a, b) => scoreWorkflow(b) - scoreWorkflow(a))
     .slice(0, limit);
+}
+
+function listWorkflows(userId, options = {}, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  const status = options.status || null;
+  const limit = Math.max(1, Math.min(Number(options.limit || 20), 100));
+  return state.workflows
+    .filter(workflow => !status || workflow.status === status)
+    .sort((a, b) => scoreWorkflow(b) - scoreWorkflow(a))
+    .slice(0, limit);
+}
+
+function getWorkflow(userId, workflowId, botServices) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  return state.workflows.find(workflow => workflow.id === workflowId) || null;
 }
 
 function getWorkflowContext(userId, query = '', botServices, limit = 5) {
@@ -181,6 +205,7 @@ function appendWorkflowMemory(userId, workflowId, text, botServices) {
   workflow.contextSummary = guards.compactText(`${workflow.contextSummary || ''} ${text}`, 1200);
   workflow.nextAction = workflow.nextAction || suggestNextAction(workflow);
   workflow.updatedAt = guards.nowIso();
+  mirrorWorkflowsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, workflow, memory: memory.memory };
 }
@@ -195,6 +220,32 @@ function addBlocker(userId, workflowId, blocker, botServices) {
 
 function setNextAction(userId, workflowId, nextAction, botServices) {
   return updateWorkflow(userId, workflowId, { nextAction }, botServices);
+}
+
+function archiveWorkflow(userId, workflowId, botServices) {
+  return updateWorkflow(userId, workflowId, { status: 'archived' }, botServices);
+}
+
+function getWorkflowStats(userId, botServices) {
+  const workflows = listWorkflows(userId, { limit: guards.DEFAULT_LIMITS.workflows }, botServices);
+  const active = workflows.filter(workflow => workflow.status === 'active');
+  let done = 0;
+  let total = 0;
+  for (const workflow of workflows) {
+    const steps = guards.safeArray(workflow.steps);
+    total += steps.length;
+    done += steps.filter(step => step.done).length;
+  }
+  return {
+    total: workflows.length,
+    active: active.length,
+    completed: workflows.filter(workflow => workflow.status === 'completed').length,
+    completionRatio: total ? Number((done / total).toFixed(3)) : 0
+  };
+}
+
+function suggestWorkflowNextStep(userId, workflowId, botServices) {
+  return suggestNextAction(getWorkflow(userId, workflowId, botServices));
 }
 
 function suggestNextAction(workflow) {
@@ -242,6 +293,7 @@ function normalizeStep(step) {
   const title = typeof step === 'string' ? step : step.title;
   return {
     id: step.id || guards.stableId('step', title),
+    text: guards.sanitizeText(title, 220),
     title: guards.sanitizeText(title, 220),
     done: !!step.done,
     createdAt: step.createdAt || guards.nowIso(),
@@ -287,18 +339,48 @@ function resetWorkflows(userId, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   state.workflows = [];
   guards.touchState(state);
+  mirrorWorkflowsToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true };
 }
 
+async function hydrateWorkflowsFromStorage(userId, services = {}) {
+  const state = guards.ensureAIOSState(userId, services);
+  if (!services.storageManager?.loadData) return state;
+  try {
+    const stored = await utils.loadUserBucket(STORAGE_KEY, userId, services, []);
+    if (stored.length && !state.workflows.length) {
+      state.workflows = aiosGuards.enforceWorkflowLimit(stored);
+      guards.touchState(state);
+    }
+  } catch (_) {}
+  return state;
+}
+
+async function mirrorWorkflowsToStorage(userId, state, services = {}) {
+  if (!services.storageManager?.saveData) return false;
+  try {
+    const safe = aiosGuards.enforceWorkflowLimit(guards.safeArray(state.workflows));
+    state.workflows = safe;
+    return await utils.saveUserBucket(STORAGE_KEY, userId, safe, services);
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
+  STORAGE_KEY,
   createWorkflow,
+  listWorkflows,
+  getWorkflow,
   updateWorkflow,
   addStep,
   markStepDone,
+  archiveWorkflow,
   pauseWorkflow,
   resumeWorkflow,
   listActiveWorkflows,
+  getWorkflowStats,
   getWorkflowContext,
   attachGoal,
   appendWorkflowMemory,
@@ -306,8 +388,10 @@ module.exports = {
   addBlocker,
   setNextAction,
   suggestNextAction,
+  suggestWorkflowNextStep,
   detectStaleWorkflows,
   detectWorkflowConflicts,
   getWorkflowReview,
-  resetWorkflows
+  resetWorkflows,
+  hydrateWorkflowsFromStorage
 };

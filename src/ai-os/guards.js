@@ -3,14 +3,14 @@
 const crypto = require('crypto');
 
 const DEFAULT_LIMITS = {
-  memories: 180,
-  goals: 40,
-  workflows: 40,
-  workflowSteps: 80,
+  memories: 300,
+  goals: 50,
+  workflows: 100,
+  workflowSteps: 50,
   graphNodes: 140,
   graphEdges: 220,
   workspaces: 30,
-  insights: 60,
+  insights: 200,
   reflections: 40,
   researchSessions: 25,
   learningPatterns: 60,
@@ -23,6 +23,8 @@ const MEMORY_TYPES = new Set([
   'workflow',
   'strategic',
   'project',
+  'coding_preference',
+  'learning',
   'reasoning',
   'correction',
   'research',

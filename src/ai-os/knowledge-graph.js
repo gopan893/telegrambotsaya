@@ -2,6 +2,9 @@
 
 const guards = require('./guards');
 const semantic = require('./semantic-relationship-engine');
+const utils = require('./aios-utils');
+
+const STORAGE_KEY = 'aios_graph';
 
 function getOrCreateNode(state, userId, label, options = {}) {
   const cleanLabel = guards.sanitizeText(label, 120).toLowerCase();
@@ -69,6 +72,7 @@ function linkEntities(userId, fromInput, toInput, relationship = 'related_to', b
   });
   pruneGraph(userId, botServices);
   guards.touchState(state);
+  mirrorGraphToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: !!edge, from, to, edge };
 }
@@ -165,6 +169,7 @@ function evolveGraphFromText(userId, text, botServices, options = {}) {
 
   pruneGraph(userId, botServices);
   guards.touchState(state);
+  mirrorGraphToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true, nodes, edges };
 }
@@ -247,6 +252,7 @@ function cleanupStaleGraph(userId, botServices, staleDays = 150) {
   const beforeEdges = state.graph.edges.length;
   state.graph.edges = state.graph.edges.filter((edge) => valid.has(edge.from) && valid.has(edge.to));
   guards.touchState(state);
+  mirrorGraphToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return {
     removedNodes: beforeNodes - state.graph.nodes.length,
@@ -276,11 +282,45 @@ function resetGraph(userId, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   state.graph = { nodes: [], edges: [] };
   guards.touchState(state);
+  mirrorGraphToStorage(userId, state, botServices);
   guards.persistAsync(botServices);
   return { ok: true };
 }
 
+async function hydrateGraphFromStorage(userId, botServices = {}) {
+  const state = guards.ensureAIOSState(userId, botServices);
+  if (!botServices.storageManager?.loadData) return state;
+  try {
+    const stored = await utils.loadUserBucket(STORAGE_KEY, userId, botServices, { nodes: [], edges: [] });
+    const hasStoredGraph = Array.isArray(stored.nodes) || Array.isArray(stored.edges);
+    const currentEmpty = !state.graph?.nodes?.length && !state.graph?.edges?.length;
+    if (hasStoredGraph && currentEmpty) {
+      state.graph = {
+        nodes: guards.safeArray(stored.nodes),
+        edges: guards.safeArray(stored.edges)
+      };
+      pruneGraph(userId, botServices);
+      guards.touchState(state);
+    }
+  } catch (_) {}
+  return state;
+}
+
+async function mirrorGraphToStorage(userId, state, botServices = {}) {
+  if (!botServices.storageManager?.saveData) return false;
+  try {
+    pruneGraph(userId, botServices);
+    return await utils.saveUserBucket(STORAGE_KEY, userId, {
+      nodes: guards.safeArray(state.graph?.nodes),
+      edges: guards.safeArray(state.graph?.edges)
+    }, botServices);
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
+  STORAGE_KEY,
   getOrCreateNode,
   upsertEdge,
   evolveGraphFromText,
@@ -294,5 +334,7 @@ module.exports = {
   cleanupStaleGraph,
   countNodeTypes,
   getGraphStats,
-  resetGraph
+  resetGraph,
+  hydrateGraphFromStorage,
+  mirrorGraphToStorage
 };
