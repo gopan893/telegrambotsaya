@@ -7,6 +7,17 @@ const interactionState = require('./interaction-state');
 
 function parseCallbackData(data) {
   const raw = String(data || '');
+  if (raw.startsWith('act:')) {
+    const parts = raw.split(':');
+    return {
+      raw,
+      namespace: 'act',
+      group: 'action',
+      action: parts[1] || '',
+      id: parts.slice(2).join(':') || ''
+    };
+  }
+
   if (!raw.startsWith('ix:')) return null;
   const parts = raw.split(':');
   return {
@@ -16,6 +27,15 @@ function parseCallbackData(data) {
     action: parts[2] || '',
     id: parts.slice(3).join(':') || ''
   };
+}
+
+async function getStoredType(userId) {
+  try {
+    const state = await interactionState.getInteraction(userId);
+    return state?.type || state?.mode || '';
+  } catch (_) {
+    return '';
+  }
 }
 
 function getCtx(query = {}) {
@@ -59,6 +79,43 @@ async function handleCallbackQuery(services, query) {
     return true;
   }
 
+  if (parsed.namespace === 'act') {
+    const ctx = getCtx(query);
+    const stateType = await getStoredType(ctx.userId);
+
+    if (parsed.action === 'summary') return actionHandlers.handleSummarize(services, query);
+    if (parsed.action === 'explain_more') return actionHandlers.handleExplainMore(services, query);
+    if (parsed.action === 'roadmap') {
+      return stateType === 'learning'
+        ? actionHandlers.handleLearningAction(services, query, 'roadmap')
+        : actionHandlers.handleMakeRoadmap(services, query);
+    }
+    if (parsed.action === 'save_memory') return actionHandlers.handleSaveMemory(services, query);
+
+    if (['code', 'debug', 'error', 'folder'].includes(parsed.action)) {
+      return actionHandlers.handleCodingAction(services, query, parsed.action);
+    }
+
+    if (['exercise', 'quiz', 'simple'].includes(parsed.action)) {
+      return actionHandlers.handleLearningAction(services, query, parsed.action);
+    }
+
+    if (['compare', 'risk', 'recommend', 'next', 'price'].includes(parsed.action)) {
+      if (stateType === 'product' || parsed.action === 'price') {
+        return actionHandlers.handleProductAction(services, query, parsed.action);
+      }
+      return actionHandlers.handleDecisionAction(services, query, parsed.action);
+    }
+
+    if (parsed.action === 'wellness_safe') return actionHandlers.handleWellnessAction(services, query, 'safe');
+    if (parsed.action === 'wellness_7d') return actionHandlers.handleWellnessAction(services, query, 'plan7d');
+    if (parsed.action === 'wellness_help') return actionHandlers.handleWellnessAction(services, query, 'help');
+
+    if (['health', 'diag', 'errors', 'recovery'].includes(parsed.action)) {
+      return actionHandlers.handleOpsAction(services, query, parsed.action);
+    }
+  }
+
   if (parsed.group === 'confirm') {
     if (parsed.action === 'yes') return confirmationHandler.confirmAction(services, query, parsed.id);
     if (parsed.action === 'no') return confirmationHandler.cancelAction(services, query, parsed.id);
@@ -90,7 +147,9 @@ async function handleCallbackQuery(services, query) {
 
   const ctx = getCtx(query);
   await interactionState.clearInteraction(ctx.userId);
-  if (typeof services.safeSendMessage === 'function') {
+  if (typeof services.sendTelegramMessage === 'function') {
+    await services.sendTelegramMessage(ctx.chatId, 'Aksi tombol tidak dikenal. Kirim pesan baru untuk melanjutkan.');
+  } else if (typeof services.safeSendMessage === 'function') {
     await services.safeSendMessage(ctx.chatId, 'Aksi tombol tidak dikenal. Kirim pesan baru untuk melanjutkan.');
   }
   return true;

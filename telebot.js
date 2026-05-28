@@ -26,6 +26,10 @@ const humanAISafety = require('./src/ux/human-ai-safety');
 const conversationManager = require('./src/conversation');
 const interactions = require('./src/interactions');
 const naturalLanguage = require('./src/natural-language/natural-router');
+const {
+  sendTelegramMessage,
+  sendTelegramWithKeyboard
+} = require('./src/utils/telegram-sender');
 
 
 let scheduleLib = null;
@@ -1352,41 +1356,21 @@ async function telegramPost(method, payload) {
 }
 
 async function safeSendMessage(chatId, text, extra = {}) {
-  const msg = String(text || '').trim();
-  if (!msg) return false;
-
-  const payload = { chat_id: chatId, text: msg, ...extra };
-
-  try {
-    await telegramPost('sendMessage', payload);
-    return true;
-  } catch (err) {
-    try {
-      const retry = { ...payload };
-      delete retry.reply_to_message_id;
-      delete retry.parse_mode;
-      await telegramPost('sendMessage', retry);
-      return true;
-    } catch (e) {
-      console.error('Send error:', e.response?.data || e.message);
-      return false;
-    }
-  }
+  return sendTelegramMessage(
+    { telegramPost, logger: log },
+    chatId,
+    text,
+    extra
+  );
 }
 
 async function sendChunkedMessage(chatId, text, extra = {}) {
-  const clean = sanitizeOutgoingText(text);
-
-  if (!clean) {
-    await safeSendMessage(chatId, 'Maaf, aku gagal menyusun jawaban dengan benar.', extra);
-    return;
-  }
-
-  const chunks = splitText(clean);
-
-  for (let i = 0; i < chunks.length; i++) {
-    await safeSendMessage(chatId, chunks[i], i === 0 ? extra : {});
-  }
+  return sendTelegramMessage(
+    { telegramPost, logger: log },
+    chatId,
+    sanitizeOutgoingText(text),
+    extra
+  );
 }
 
 async function sendPhotoUrl(chatId, photoUrl, caption = '', extra = {}) {
@@ -1455,57 +1439,12 @@ async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = 
 }
 
 async function sendStreamingAnswer(chatId, text, extra = {}) {
-  const full = sanitizeOutgoingText(text);
-
-  if (!full) {
-    await safeSendMessage(chatId, 'Maaf, aku gagal menyusun jawaban dengan benar.', extra);
-    return false;
-  }
-
-  const preview = full.length > 3900 ? `${full.slice(0, 3900)}…` : full;
-
-  let sent;
-  try {
-    sent = await telegramPost('sendMessage', {
-      chat_id: chatId,
-      text: '⏳ Menyusun jawaban...',
-      ...extra
-    });
-  } catch (_) {
-    return sendChunkedMessage(chatId, full, extra);
-  }
-
-  const messageId = sent?.data?.result?.message_id;
-  if (!messageId) {
-    return sendChunkedMessage(chatId, full, extra);
-  }
-
-  const stepSize = Math.max(80, Math.floor(preview.length / 4));
-
-  for (let i = stepSize; i < preview.length; i += stepSize) {
-    try {
-      await sleep(120);
-      await telegramPost('editMessageText', {
-        chat_id: chatId,
-        message_id: messageId,
-        text: preview.slice(0, i),
-        ...extra
-      });
-    } catch (_) {}
-  }
-
-  try {
-    await telegramPost('editMessageText', {
-      chat_id: chatId,
-      message_id: messageId,
-      text: preview,
-      ...extra
-    });
-  } catch (_) {
-    await sendChunkedMessage(chatId, full, extra);
-  }
-
-  return true;
+  return sendTelegramMessage(
+    { telegramPost, logger: log },
+    chatId,
+    sanitizeOutgoingText(text),
+    extra
+  );
 }
 
 
@@ -3170,6 +3109,8 @@ function getInteractionServices() {
     safeSendMessage,
     sendChunkedMessage,
     sendStreamingAnswer,
+    sendTelegramMessage: (chatId, text, extra = {}) => sendTelegramMessage({ telegramPost, logger: log }, chatId, text, extra),
+    sendTelegramWithKeyboard: (chatId, text, keyboard, extra = {}) => sendTelegramWithKeyboard({ telegramPost, logger: log }, chatId, text, keyboard, extra),
     askAI,
     getSmartAnswer,
     getSystemPrompt,

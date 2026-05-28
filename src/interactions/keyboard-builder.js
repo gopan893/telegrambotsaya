@@ -14,8 +14,8 @@ function mainMenuKeyboard() {
 
 function codingKeyboard() {
   return inlineKeyboard([
-    [button('Buat kode', 'ix:code:make'), button('Debug', 'ix:code:debug')],
-    [button('Jelaskan error', 'ix:code:error'), button('Struktur folder', 'ix:code:structure')]
+    [button('Buat kode', 'act:code'), button('Debug', 'act:debug')],
+    [button('Jelaskan error', 'act:error'), button('Struktur folder', 'act:folder')]
   ]);
 }
 
@@ -28,15 +28,15 @@ function codingAuthKeyboard() {
 
 function learningKeyboard() {
   return inlineKeyboard([
-    [button('Roadmap', 'ix:learn:roadmap'), button('Sederhanakan', 'ix:learn:simple')],
-    [button('Latihan', 'ix:learn:exercise'), button('Quiz', 'ix:learn:quiz')]
+    [button('Roadmap', 'act:roadmap'), button('Latihan', 'act:exercise')],
+    [button('Quiz', 'act:quiz'), button('Jelaskan sederhana', 'act:simple')]
   ]);
 }
 
 function decisionKeyboard() {
   return inlineKeyboard([
-    [button('Bandingkan opsi', 'ix:dec:compare'), button('Lihat risiko', 'ix:dec:risk')],
-    [button('Rekomendasi', 'ix:dec:recommend'), button('Next step', 'ix:dec:next')]
+    [button('Bandingkan opsi', 'act:compare'), button('Lihat risiko', 'act:risk')],
+    [button('Rekomendasi', 'act:recommend'), button('Next step', 'act:next')]
   ]);
 }
 
@@ -49,15 +49,22 @@ function decisionLensKeyboard() {
 
 function opsKeyboard() {
   return inlineKeyboard([
-    [button('Cek health', 'ix:ops:health'), button('Diagnostics', 'ix:ops:diag')],
-    [button('Lihat error', 'ix:ops:errors'), button('Recovery plan', 'ix:ops:recovery')]
+    [button('Cek health', 'act:health'), button('Diagnostics', 'act:diag')],
+    [button('Lihat error', 'act:errors'), button('Recovery plan', 'act:recovery')]
   ]);
 }
 
 function productKeyboard() {
   return inlineKeyboard([
-    [button('Bandingkan', 'ix:qa:compare'), button('Ringkas', 'ix:qa:sum')],
-    [button('Lihat harga', 'ix:qa:price'), button('Rekomendasi beli?', 'ix:qa:recommend')]
+    [button('Bandingkan', 'act:compare'), button('Ringkas', 'act:summary')],
+    [button('Lihat harga', 'act:price'), button('Rekomendasi beli?', 'act:recommend')]
+  ]);
+}
+
+function wellnessKeyboard() {
+  return inlineKeyboard([
+    [button('Ringkas', 'act:summary'), button('Tips aman', 'act:wellness_safe')],
+    [button('Rencana 7 hari', 'act:wellness_7d'), button('Kapan perlu bantuan', 'act:wellness_help')]
   ]);
 }
 
@@ -70,21 +77,21 @@ function confirmationKeyboard(actionId) {
 function nextActionKeyboard(context = {}) {
   switch (context.type) {
     case 'coding':
-      return /login|auth|jwt|session|nextauth|supabase/i.test(`${context.userText || ''}\n${context.answerText || ''}`)
-        ? codingAuthKeyboard()
-        : codingKeyboard();
+      return codingKeyboard();
     case 'learning':
       return learningKeyboard();
     case 'decision':
       return decisionKeyboard();
+    case 'wellness':
+      return wellnessKeyboard();
     case 'ops':
       return opsKeyboard();
     case 'product':
       return productKeyboard();
     case 'general':
       return inlineKeyboard([
-        [button('Ringkas', 'ix:qa:sum'), button('Jelaskan lagi', 'ix:qa:explain')],
-        [button('Buat roadmap', 'ix:qa:roadmap'), button('Simpan memory', 'ix:qa:save')]
+        [button('Ringkas', 'act:summary'), button('Jelaskan lagi', 'act:explain_more')],
+        [button('Buat roadmap', 'act:roadmap'), button('Simpan memory', 'act:save_memory')]
       ]);
     default:
       return null;
@@ -101,5 +108,6 @@ module.exports = {
   mainMenuKeyboard,
   nextActionKeyboard,
   opsKeyboard,
-  productKeyboard
+  productKeyboard,
+  wellnessKeyboard
 };
