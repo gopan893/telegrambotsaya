@@ -3233,12 +3233,14 @@ async function handleAiosCommands(chatId, userId, cmd, args, msg) {
       aiOS.unifiedMemory.hydrateMemoryFromStorage?.(userId, services),
       aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services),
       aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services),
-      aiOS.insightStore.hydrateInsightsFromStorage?.(userId, services)
+      aiOS.insightStore.hydrateInsightsFromStorage?.(userId, services),
+      aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services)
     ]);
     const memoryStats = aiOS.unifiedMemory.getMemoryStats(userId, services);
     const goalStats = aiOS.goalManager.calculateGoalStats(userId, services);
     const workflowStats = aiOS.workflowEngine.getWorkflowStats(userId, services);
     const insightStats = await aiOS.insightStore.getInsightStats(userId, services);
+    const graphStats = aiOS.knowledgeGraph.getGraphStats(userId, services);
     const storage = storageManager.getStorageStatus();
     const adaptive = adaptiveSystem.status(u, getAiosStatusSafe(userId));
     const text =
@@ -3250,6 +3252,7 @@ Memory: ${memoryStats.total}
 Goals aktif: ${goalStats.active}/${goalStats.total}
 Workflows aktif: ${workflowStats.active}/${workflowStats.total}
 Insights: ${insightStats.total}
+Graph: ${graphStats.nodes} node, ${graphStats.edges} edge
 Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`;
     await sendChunkedMessage(chatId, text, replyOpt);
     return true;
@@ -3292,6 +3295,11 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
         confidence: 0.75,
         importance: 0.62
       }, services);
+      aiOS.knowledgeGraph.evolveGraphFromText(userId, content, services, {
+        source: 'remember-command',
+        confidence: 0.72,
+        maxConcepts: 5
+      });
     }
     await safeSendMessage(
       chatId,
@@ -3333,6 +3341,13 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       return true;
     }
     const result = aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
+    if (result.ok) {
+      aiOS.knowledgeGraph.evolveGraphFromText(userId, `Goal ${result.goal.title}. ${result.goal.description}`, services, {
+        source: 'goal-command',
+        confidence: 0.78,
+        maxConcepts: 5
+      });
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3378,6 +3393,13 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       return true;
     }
     const result = aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId }, services);
+    if (result.ok) {
+      aiOS.knowledgeGraph.evolveGraphFromText(userId, `Workflow ${result.workflow.title}. ${result.workflow.description}`, services, {
+        source: 'workflow-command',
+        confidence: 0.76,
+        maxConcepts: 5
+      });
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3470,6 +3492,7 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
   }
 
   if (cmd === '/graph') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
     const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
     const text =
 `Knowledge Graph
@@ -3532,7 +3555,8 @@ ${graph.edgesText}`;
       await safeSendMessage(chatId, 'Format: /reflect <teks atau topik>', replyOpt);
       return true;
     }
-    const analysis = aiOS.strategicReasoning.analyzeGoal(topic, aiOS.contextSync.syncContext(userId, topic, services));
+    const context = await aiOS.contextSync.buildAIOSContext(userId, topic, services);
+    const analysis = aiOS.strategicReasoning.analyzeGoal(topic, context);
     const reflection = aiOS.reflectionEngine.storeReflectionMemory(userId, {
       question: topic,
       insight: analysis.nextActions[0] || topic,
@@ -3563,7 +3587,7 @@ Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
       await safeSendMessage(chatId, 'Format: /strategy <goal atau masalah>', replyOpt);
       return true;
     }
-    const context = aiOS.contextSync.syncContext(userId, topic, services);
+    const context = await aiOS.contextSync.buildAIOSContext(userId, topic, services);
     const analysis = aiOS.strategicReasoning.analyzeGoal(topic, context);
     aiOS.memoryBus.publishInsight(userId, `Strategic insight: ${analysis.recommendation}`, services, {
       source: 'strategy-command',
@@ -3571,6 +3595,14 @@ Tersimpan: ${reflection.ok ? 'ya' : 'tidak'}`;
       importance: 0.74,
       tags: ['strategy', 'decision']
     });
+    await aiOS.insightStore.createInsight(userId, {
+      type: 'strategic',
+      content: analysis.recommendation,
+      source: 'strategy-command',
+      relatedConcepts: ['strategy', 'decision'],
+      confidence: analysis.confidence,
+      importance: 0.74
+    }, services);
     await sendChunkedMessage(chatId, aiOS.strategicReasoning.formatStrategicAnalysis(analysis), replyOpt);
     return true;
   }
@@ -3604,6 +3636,32 @@ function detectAdaptiveModeForMessage(userId, userText, command, msg) {
     ensureUser,
     persist
   });
+}
+
+function shouldHydrateAIOSForMessage(userText = '', adaptiveDecision = {}) {
+  const text = String(userText || '').toLowerCase();
+  if (['strategic', 'decision', 'learning', 'reflection', 'research', 'personal-intelligence', 'cognitive-workspace'].includes(adaptiveDecision?.mode)) {
+    return true;
+  }
+  return /(goal|tujuan|workflow|alur kerja|memory|memori|ingat|project|proyek|roadmap|strategi|lanjut|langkah berikut|next action|keputusan|insight|graph|workspace)/i.test(text);
+}
+
+async function hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision) {
+  if (!shouldHydrateAIOSForMessage(userText, adaptiveDecision)) return false;
+  const services = getAiosServices();
+  try {
+    await Promise.allSettled([
+      aiOS.unifiedMemory.hydrateMemoryFromStorage?.(userId, services),
+      aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services),
+      aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services),
+      aiOS.insightStore.hydrateInsightsFromStorage?.(userId, services),
+      aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services)
+    ]);
+    return true;
+  } catch (err) {
+    log.warn('AI OS hydrate skipped:', err.message);
+    return false;
+  }
 }
 
 function prepareConversationStateSafe(userId, chatId, userText, command, msg) {
@@ -3898,7 +3956,7 @@ async function handleCollaborationCommands(chatId, userId, cmd, args, msg) {
     await safeSendMessage(chatId, `Format: ${cmd} <topik atau masalah>`, replyOpt);
     return true;
   }
-  const response = collaborationSystem.respond(cmd, args, userId, u);
+  const response = await collaborationSystem.respond(cmd, args, userId, u, getAiosServices());
   await persist();
   await sendChunkedMessage(chatId, response, replyOpt);
   return true;
@@ -6517,6 +6575,7 @@ await withUserActionLock(userId, async () => {
   }
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg);
+  await hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision);
   logMessageFlow('ai_pipeline_calling', {
     userId,
     chatId,

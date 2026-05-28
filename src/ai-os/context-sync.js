@@ -59,18 +59,21 @@ async function buildAIOSContext(userId, query = '', services = {}) {
     await goalManager.hydrateGoalsFromStorage?.(userId, services);
     await workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
     await insightStore.hydrateInsightsFromStorage?.(userId, services);
+    await knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
   } catch (_) {}
 
   const relevantMemory = unifiedMemory.searchMemory(userId, query, { limit: 5 }, services);
   const activeGoals = goalManager.listGoals(userId, { status: 'active', limit: 5 }, services);
   const activeWorkflows = workflowEngine.listWorkflows(userId, { status: 'active', limit: 5 }, services);
   const recentInsights = await insightStore.listInsights(userId, { limit: 5 }, services);
+  const graph = knowledgeGraph.searchGraph(userId, query, services, 5);
 
   const summaryText = [
     activeGoals.length ? `Goals: ${activeGoals.map(goal => goal.title).join(', ')}` : '',
     activeWorkflows.length ? `Workflows: ${activeWorkflows.map(workflow => workflow.title).join(', ')}` : '',
     relevantMemory.length ? `Memory: ${relevantMemory.map(memory => utils.compactText(memory.content, 80)).join(' | ')}` : '',
-    recentInsights.length ? `Insights: ${recentInsights.map(insight => utils.compactText(insight.content || insight.text, 80)).join(' | ')}` : ''
+    recentInsights.length ? `Insights: ${recentInsights.map(insight => utils.compactText(insight.content || insight.text, 80)).join(' | ')}` : '',
+    graph.nodes.length ? `Graph: ${graph.nodes.map(node => node.label).join(', ')}` : ''
   ].filter(Boolean).join('\n') || '-';
 
   return {
@@ -79,6 +82,7 @@ async function buildAIOSContext(userId, query = '', services = {}) {
     activeGoals,
     activeWorkflows,
     recentInsights,
+    graph,
     summaryText: utils.compactText(summaryText, 1400)
   };
 }

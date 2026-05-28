@@ -158,7 +158,7 @@ function clearStorageBuckets(userId, botServices = {}) {
   const storage = botServices.storageManager;
   if (!storage?.loadData || !storage?.saveData) return;
   const id = guards.normalizeUserId(userId);
-  const keys = ['aios_memories', 'aios_goals', 'aios_workflows', 'aios_insights'];
+  const keys = ['aios_memories', 'aios_goals', 'aios_workflows', 'aios_insights', 'aios_graph', 'collaboration_state'];
   Promise.all(keys.map(async (key) => {
     const bucket = await storage.loadData(key, {});
     if (bucket && typeof bucket === 'object') {

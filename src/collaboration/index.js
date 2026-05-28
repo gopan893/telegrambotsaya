@@ -34,12 +34,16 @@ function createCollaborationSystem() {
       '/collab',
       '/collab-reset'
     ]),
-    respond(command, text, userId, user) {
+    async respond(command, text, userId, user, services = {}) {
+      await store.hydrate(userId, user, services);
       if (command === '/collab-reset') {
         store.reset(user);
+        await store.mirror(userId, user, services);
         return 'Data Human-AI Collaboration untuk user ini sudah direset. Memory utama tidak dihapus.';
       }
-      return core.createResponse(command, text, userId, user);
+      const output = core.createResponse(command, text, userId, user);
+      await store.mirror(userId, user, services);
+      return output;
     },
     modules: {
       core,

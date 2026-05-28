@@ -50,7 +50,15 @@ async function loadUserBucket(storageKey, userId, services = {}, defaultValue = 
   const storage = services.storageManager;
   if (!storage?.loadData) return defaultValue;
   const bucket = await storage.loadData(storageKey, {});
-  return Array.isArray(bucket?.[id]) ? bucket[id] : defaultValue;
+  if (!bucket || typeof bucket !== 'object' || !Object.prototype.hasOwnProperty.call(bucket, id)) {
+    return defaultValue;
+  }
+  const value = bucket[id];
+  if (Array.isArray(defaultValue)) return Array.isArray(value) ? value : defaultValue;
+  if (defaultValue && typeof defaultValue === 'object') {
+    return value && typeof value === 'object' ? value : defaultValue;
+  }
+  return typeof value === 'undefined' ? defaultValue : value;
 }
 
 async function saveUserBucket(storageKey, userId, items, services = {}) {
@@ -58,7 +66,7 @@ async function saveUserBucket(storageKey, userId, items, services = {}) {
   const storage = services.storageManager;
   if (!storage?.loadData || !storage?.saveData) return false;
   const bucket = await storage.loadData(storageKey, {});
-  bucket[id] = Array.isArray(items) ? items : [];
+  bucket[id] = items;
   return storage.saveData(storageKey, bucket);
 }
 

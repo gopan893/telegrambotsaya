@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const aiOS = require('../src/ai-os');
+const collaboration = require('../src/collaboration');
 const { createStorageManager } = require('../src/storage');
 
 (async () => {
@@ -60,12 +61,26 @@ const { createStorageManager } = require('../src/storage');
   }, services);
   assert.equal(insight.ok, true);
 
+  const graph = aiOS.knowledgeGraph.evolveGraphFromText(userId, 'AI bot Telegram membutuhkan memory, workflow, dan storage fallback', services, {
+    source: 'test',
+    maxConcepts: 5
+  });
+  assert.equal(graph.ok, true);
+
+  const collabResponse = await collaboration.respond('/think', 'Bagaimana membuat bot lebih stabil?', userId, users[userId], services);
+  assert.match(collabResponse, /Ringkasan masalah:/);
+
   await new Promise(resolve => setTimeout(resolve, 50));
   const storedGoals = await storageManager.loadData('aios_goals', {});
   assert.equal(storedGoals[userId].length, 1);
+  const storedGraph = await storageManager.loadData('aios_graph', {});
+  assert.ok(storedGraph[userId].nodes.length > 0);
+  const storedCollab = await storageManager.loadData('collaboration_state', {});
+  assert.ok(storedCollab[userId].analytics.sessions >= 1);
   const context = await aiOS.contextSync.buildAIOSContext(userId, 'langkah berikutnya bot', services);
   assert.equal(context.activeGoals.length, 1);
   assert.equal(context.activeWorkflows.length, 1);
+  assert.ok(context.graph.nodes.length > 0);
 
   await storageManager.closeStorage();
   console.log('aios foundation checks passed');
