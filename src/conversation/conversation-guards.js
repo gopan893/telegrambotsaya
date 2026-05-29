@@ -36,6 +36,10 @@ function compactText(text, max = 500) {
   return `${clean.slice(0, Math.max(0, max - 1)).trim()}…`;
 }
 
+function safeJsonArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
 function tokenize(text) {
   return safeLower(text)
     .replace(/[^\p{L}\p{N}\s.#/+_-]/gu, ' ')
@@ -100,6 +104,50 @@ function nowMs() {
   return Date.now();
 }
 
+function similarity(a, b) {
+  const overlap = tokenOverlap(a, b);
+  const left = safeLower(a).slice(0, 300);
+  const right = safeLower(b).slice(0, 300);
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  return overlap;
+}
+
+function preventLoopingResponse(nextResponse, state = {}) {
+  const last = state.lastBotResponseSummary || state.lastResponse || '';
+  return similarity(nextResponse, last) < 0.86;
+}
+
+function preventStalePendingAction(action) {
+  if (!action) return true;
+  return nowMs() <= Number(action.expiresAt || 0) && action.status === 'active';
+}
+
+function preventCrossUserContextLeak(state = {}, userId, chatId) {
+  return safeText(state.userId) === safeText(userId) && safeText(state.chatId) === safeText(chatId);
+}
+
+function preventOverlongContext(text, max = 2200) {
+  return compactText(text, max);
+}
+
+function preventSensitiveDataPersistence(text) {
+  return safeText(text)
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
+    .replace(/\b(?:\d[ -]*?){13,19}\b/g, '[number]');
+}
+
+function preventRepeatedFallback(state = {}) {
+  const recent = safeJsonArray(state.recentMessages).slice(-4);
+  return recent.filter(item => /belum yakin|gagal memahami|klarifikasi/i.test(item.content || item.text || '')).length < 2;
+}
+
+function preventUnsafeActionWithoutConfirmation(action) {
+  if (!action) return true;
+  const sensitive = ['delete_memory', 'confirm_reset', 'clear_memory', 'run_recovery', 'delete_goal'];
+  return !sensitive.includes(action.type) || action.requiresConfirmation === true;
+}
+
 module.exports = {
   compactText,
   extractTopic,
@@ -109,8 +157,17 @@ module.exports = {
   isFreshTopicCandidate,
   isQuestion,
   nowMs,
+  preventCrossUserContextLeak,
+  preventLoopingResponse,
+  preventOverlongContext,
+  preventRepeatedFallback,
+  preventSensitiveDataPersistence,
+  preventStalePendingAction,
+  preventUnsafeActionWithoutConfirmation,
   safeLower,
+  safeJsonArray,
   safeText,
+  similarity,
   tokenOverlap,
   tokenize,
   uniqueTokens

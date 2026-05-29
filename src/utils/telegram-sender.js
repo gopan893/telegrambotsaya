@@ -130,7 +130,7 @@ async function sendTelegramMessage(bot, chatId, text, options = {}) {
     const sent = await sendPayloadWithFallback(bot, payload, logger);
     ok = ok && sent;
 
-    if (!isLast || delayMs <= 0) continue;
+    if (isLast || delayMs <= 0) continue;
     await sleep(delayMs);
   }
 

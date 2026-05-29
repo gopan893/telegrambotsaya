@@ -18,6 +18,11 @@ const CONTINUE = new Set([
   'kenapa', 'mengapa', 'maksudnya', 'kok bisa'
 ]);
 
+const CONTINUE_PATTERNS = [
+  /\b(jelaskan lagi|lebih detail|contoh lain|bandingkan|ringkas|buat roadmap|apa risikonya|apa kekurangannya|apa kelebihannya)\b/i,
+  /^(kenapa|mengapa|maksudnya|kok bisa)\??$/i
+];
+
 const REFERENTIAL = [
   'itu', 'ini', 'yang tadi', 'tadi', 'tersebut', 'bagian itu',
   'yang pertama', 'yang kedua', 'yang terakhir', 'that', 'this',
@@ -52,7 +57,7 @@ function detect(text) {
     return { kind: 'affirm', short, confidence: 0.95, reason: 'short_affirmative_reply' };
   }
 
-  if (CONTINUE.has(clean)) {
+  if (CONTINUE.has(clean) || CONTINUE_PATTERNS.some(pattern => pattern.test(clean))) {
     return { kind: 'continue', short, confidence: 0.9, reason: 'short_continue_reply' };
   }
 
@@ -67,11 +72,72 @@ function detect(text) {
   return { kind: 'none', short, confidence: 0.5, reason: 'not_a_simple_followup' };
 }
 
+function isAffirmative(text) {
+  return detect(text).kind === 'affirm';
+}
+
+function isNegative(text) {
+  return ['deny', 'cancel'].includes(detect(text).kind);
+}
+
+function isContinue(text) {
+  return detect(text).kind === 'continue';
+}
+
+function isClarificationRequest(text) {
+  const clean = normalizeShort(text);
+  return /^(kenapa|mengapa|maksudnya|kok bisa|jelaskan)\??$/i.test(clean);
+}
+
+function isReferenceToPrevious(text) {
+  return detect(text).kind === 'referential';
+}
+
+function isShortAmbiguousReply(text) {
+  const result = detect(text);
+  return result.short && ['affirm', 'continue', 'referential'].includes(result.kind);
+}
+
+function detectFollowUp(text, state = {}) {
+  const result = detect(text);
+  const hasContext = Boolean(state.activeTopic || state.lastBotResponseSummary || state.lastUserMessage || state.pendingActionId);
+  const typeMap = {
+    affirm: 'affirmative',
+    deny: 'negative',
+    cancel: 'negative',
+    continue: isClarificationRequest(text) ? 'clarification' : 'continue',
+    referential: 'reference'
+  };
+
+  if (result.kind === 'affirm' && !hasContext) {
+    return {
+      isFollowUp: false,
+      type: 'none',
+      confidence: 0.36,
+      reason: 'affirmative_without_context'
+    };
+  }
+
+  return {
+    isFollowUp: isFollowupKind(result.kind),
+    type: typeMap[result.kind] || 'none',
+    confidence: result.confidence,
+    reason: result.reason
+  };
+}
+
 function isFollowupKind(kind) {
   return ['affirm', 'deny', 'cancel', 'continue', 'referential'].includes(kind);
 }
 
 module.exports = {
   detect,
-  isFollowupKind
+  detectFollowUp,
+  isAffirmative,
+  isClarificationRequest,
+  isContinue,
+  isFollowupKind,
+  isNegative,
+  isReferenceToPrevious,
+  isShortAmbiguousReply
 };

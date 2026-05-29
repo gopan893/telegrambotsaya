@@ -2,7 +2,7 @@
 
 const guards = require('./conversation-guards');
 
-const DEFAULT_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const MAX_PENDING = 500;
 
 function makeKey(userId, chatId) {
@@ -29,6 +29,7 @@ class PendingActions {
       topic: guards.compactText(input.topic || input.query || 'topik sebelumnya', 140),
       query: guards.compactText(input.query || input.topic || '', 400),
       payload: input.payload || {},
+      requiresConfirmation: Boolean(input.requiresConfirmation),
       createdAt: input.createdAt || now,
       expiresAt: input.expiresAt || now + this.ttlMs,
       status: input.status || 'active'
@@ -134,5 +135,12 @@ class PendingActions {
 
 module.exports = {
   PendingActions,
-  createPendingActions: (options) => new PendingActions(options)
+  createPendingActions: (options) => new PendingActions(options),
+  createPendingAction: (userId, chatId, action = {}) => module.exports.defaultPendingActions.create({ ...action, userId, chatId }),
+  getPendingAction: (userId, chatId) => module.exports.defaultPendingActions.get(userId, chatId),
+  clearPendingAction: (userId, chatId) => module.exports.defaultPendingActions.clear(userId, chatId),
+  expirePendingActions: () => module.exports.defaultPendingActions.prune(),
+  isPendingActionExpired: (action) => module.exports.defaultPendingActions.isExpired(action)
 };
+
+module.exports.defaultPendingActions = new PendingActions();

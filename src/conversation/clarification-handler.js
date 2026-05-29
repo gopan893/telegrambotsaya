@@ -8,7 +8,7 @@ function needsClarification(input = {}) {
   const hasPending = Boolean(input.pending);
 
   if (hasPending) return false;
-  if (!['continue', 'referential'].includes(followup.kind)) return false;
+  if (!['affirm', 'continue', 'referential'].includes(followup.kind)) return false;
   return !hasContext;
 }
 
@@ -26,7 +26,30 @@ function buildClarification(input = {}) {
   return 'Maksud kamu yang mana? Kirim sedikit konteks supaya aku bisa lanjut dengan tepat.';
 }
 
+function shouldAskClarification(text, state, detection = {}) {
+  return needsClarification({
+    text,
+    followup: detection.kind ? detection : { kind: detection.type },
+    hasContext: Boolean(state?.activeTopic || state?.lastBotResponseSummary),
+    pending: null
+  }) || Number(detection.confidence || 1) < 0.42;
+}
+
+function buildClarificationQuestion(text, state = {}) {
+  if (state.activeTopic) {
+    return `Maksud kamu ingin melanjutkan bagian "${state.activeTopic}", atau mau bahas topik baru?`;
+  }
+  return buildClarification({ text });
+}
+
+function buildLowContextResponse() {
+  return 'Aku butuh sedikit konteks supaya tidak salah jawab. Maksud kamu ingin lanjut bagian yang mana?';
+}
+
 module.exports = {
   buildClarification,
-  needsClarification
+  buildClarificationQuestion,
+  buildLowContextResponse,
+  needsClarification,
+  shouldAskClarification
 };
