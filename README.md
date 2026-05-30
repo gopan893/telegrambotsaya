@@ -144,6 +144,27 @@ Layer `src/conversation/` menangani pesan non-command sebelum masuk AI pipeline:
 - `lanjut` tanpa konteks cukup akan memicu klarifikasi singkat;
 - context window dibatasi beberapa pesan terakhir agar ringan untuk Render free tier.
 
+## PostgreSQL Relational Storage
+
+Phase 6 menambahkan schema relational PostgreSQL tanpa menghapus fallback lama.
+
+- `app_kv_store` tetap ada untuk kompatibilitas data JSON/KV lama.
+- Jika `DATABASE_URL` valid, startup menjalankan migration idempotent dan mengaktifkan repository PostgreSQL.
+- Jika PostgreSQL kosong/error, bot tetap memakai JSON fallback.
+- Redis tetap optional untuk cache/session; tanpa `REDIS_URL`, sistem memakai memory cache lokal.
+- Tabel relational utama: `users`, `adaptive_profiles`, `memories`, `goals`, `workflows`, `workflow_steps`, `insights`, `graph_nodes`, `graph_edges`, `telemetry_events`, `incidents`, `benchmark_runs`, dan `ops_lessons`.
+- Command `/memory`, `/remember`, `/goals`, `/goaladd`, `/goalupdate`, `/workflows`, `/workflowadd`, `/workflowstep`, `/workflowdone`, `/graph`, `/insights`, `/health`, dan `/stats` aman berjalan dengan PostgreSQL maupun JSON fallback.
+
+Env storage:
+
+```text
+DATABASE_URL=
+REDIS_URL=
+PGSSL=false
+STORAGE_DRIVER=auto
+RUN_MIGRATIONS=true
+```
+
 ## Interactive Telegram UX
 
 Layer `src/interactions/` menambahkan tombol Telegram tanpa memaksa semua jawaban memakai tombol:

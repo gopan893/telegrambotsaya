@@ -17,6 +17,7 @@ chat_history.json
 knowledge.json
 lessons.json
 user_memory.json
+rel_*.json
 
 # File lokal sementara.
 *.log

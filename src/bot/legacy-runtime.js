@@ -2427,6 +2427,7 @@ Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB
 Storage: ${storage.driver}
 PostgreSQL: ${storage.postgresAvailable ? 'aktif' : 'fallback JSON'}
 Redis: ${storage.redisAvailable ? 'aktif' : 'memory/local'}
+Migration: ${storage.migrations || 'skipped'}
 Aturan: ${lessons.rules.length}
 Histori chat: ${shortMemory.length}
 Pengetahuan: ${knowledgeBase.length}
@@ -2488,7 +2489,7 @@ Ops Reliability: ${ops.reliability.score}/100 (${ops.reliability.status})
 Ops Errors 15m: ${ops.telemetry.recentErrorCount}
 Ops Latency p90: ${ops.telemetry.latency.p90}ms
 Ops Diagnosis: ${ops.diagnosis.diagnosis} (${ops.diagnosis.severity})
-Storage: ${storage.persistentType}, cache ${storage.cache?.type || '-'}
+	Storage: ${storage.persistentType}, cache ${storage.cache?.type || '-'}, migration ${storage.migrations || 'skipped'}
 Issues:
 - ${issues}`;
 
@@ -2692,8 +2693,15 @@ ${recentIncidents.length ? recentIncidents.map(formatIncidentLine).join('\n') : 
   if (cmd === '/health') {
     const health = opsSystem.healthMonitor.getHealth(services);
     const incident = opsSystem.incidentHandler.detectIncident(services, { health });
+    const storageHealth = await storageManager.healthCheck?.();
     const text =
 `${opsSystem.healthMonitor.formatHealth(health)}
+Storage:
+- PostgreSQL: ${storageHealth?.postgres || 'unknown'}
+- Redis: ${storageHealth?.redis || 'unknown'}
+- Driver: ${storageHealth?.storageDriver || storageManager.getStorageStatus().driver}
+- Migration: ${storageHealth?.migrations || 'skipped'}
+
 Providers:
 ${Object.entries(health.providers || {}).map(([name, item]) => `- ${name}: ${item.available ? 'available' : 'degraded'} (configured=${item.configured})`).join('\n')}
 
@@ -3079,6 +3087,40 @@ function getAiosServices() {
   };
 }
 
+function isRelationalStorageActive() {
+  return Boolean(storageManager.isPostgresEnabled?.());
+}
+
+function getStorageRepositoriesSafe() {
+  try {
+    return storageManager.getRepositories?.() || null;
+  } catch (err) {
+    console.warn('Storage repositories unavailable:', err.message);
+    return null;
+  }
+}
+
+async function enrichWorkflowsWithSteps(userId, workflows, repositories) {
+  if (!repositories?.workflows?.listWorkflowSteps) return workflows;
+  const enriched = [];
+  for (const workflow of workflows) {
+    try {
+      const steps = await repositories.workflows.listWorkflowSteps(userId, workflow.id);
+      enriched.push({
+        ...workflow,
+        steps: steps.map(step => ({
+          ...step,
+          done: step.status === 'done',
+          text: step.title
+        }))
+      });
+    } catch (_) {
+      enriched.push({ ...workflow, steps: workflow.steps || [] });
+    }
+  }
+  return enriched;
+}
+
 function getOpsServices() {
   return {
     ensureUser,
@@ -3200,7 +3242,10 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
   }
 
   if (cmd === '/memory') {
-    const memories = await aiOS.unifiedMemory.listMemories(userId, { limit: 10 }, services);
+    const repositories = getStorageRepositoriesSafe();
+    const memories = isRelationalStorageActive() && repositories?.memories
+      ? await repositories.memories.listMemories(userId, { limit: 10 })
+      : await aiOS.unifiedMemory.listMemories(userId, { limit: 10 }, services);
     const text = memories.length
       ? memories.map(formatMemoryLine).join('\n')
       : 'Belum ada memory AI OS. Simpan dengan /remember <teks>.';
@@ -3219,23 +3264,60 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /remember <teks yang ingin disimpan>', replyOpt);
       return true;
     }
-    const result = await aiOS.unifiedMemory.createMemory(userId, {
-      type: 'semantic',
-      content,
-      source: 'user',
-      tags: ['manual'],
-      confidence: 0.85,
-      importance: 0.72
-    }, services);
+    const repositories = getStorageRepositoriesSafe();
+    const relationalMemory = isRelationalStorageActive() && repositories?.memories
+      ? await repositories.memories.createMemory({
+        userId,
+        type: 'semantic',
+        content,
+        source: 'user',
+        tags: ['manual'],
+        confidence: 0.85,
+        importance: 0.72
+      })
+      : null;
+    const result = relationalMemory
+      ? { ok: true, memory: relationalMemory }
+      : await aiOS.unifiedMemory.createMemory(userId, {
+        type: 'semantic',
+        content,
+        source: 'user',
+        tags: ['manual'],
+        confidence: 0.85,
+        importance: 0.72
+      }, services);
     if (result.ok) {
-      await aiOS.insightStore.createInsight(userId, {
+      if (isRelationalStorageActive() && repositories?.insights) {
+        await repositories.insights.createInsight({
+          userId,
+          type: 'memory',
+          content,
+          source: 'remember-command',
+          relatedConcepts: ['manual-memory'],
+          confidence: 0.75,
+          importance: 0.62
+        });
+      } else {
+        await aiOS.insightStore.createInsight(userId, {
         type: 'memory',
         content,
         source: 'remember-command',
         relatedConcepts: ['manual-memory'],
         confidence: 0.75,
         importance: 0.62
-      }, services);
+        }, services);
+      }
+      if (isRelationalStorageActive() && repositories?.graph) {
+        await repositories.graph.upsertNode({
+          userId,
+          label: aiOS.utils?.compactText ? aiOS.utils.compactText(content, 120) : content.slice(0, 120),
+          type: 'concept',
+          summary: content,
+          source: 'remember-command',
+          importance: 0.62,
+          confidence: 0.72
+        });
+      }
       aiOS.knowledgeGraph.evolveGraphFromText(userId, content, services, {
         source: 'remember-command',
         confidence: 0.72,
@@ -3256,7 +3338,10 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /forget <memoryId>', replyOpt);
       return true;
     }
-    const result = await aiOS.unifiedMemory.deleteMemory(userId, memoryId, services);
+    const repositories = getStorageRepositoriesSafe();
+    const result = isRelationalStorageActive() && repositories?.memories
+      ? await repositories.memories.softDeleteMemory(userId, memoryId)
+      : await aiOS.unifiedMemory.deleteMemory(userId, memoryId, services);
     await safeSendMessage(
       chatId,
       result.ok ? `Memory dihapus: ${memoryId}` : `Gagal menghapus memory: ${result.reason}`,
@@ -3266,8 +3351,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
   }
 
   if (cmd === '/goals') {
-    await aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services);
-    const goals = aiOS.goalManager.listGoals(userId, {}, services);
+    const repositories = getStorageRepositoriesSafe();
+    let goals = [];
+    if (isRelationalStorageActive() && repositories?.goals) {
+      goals = await repositories.goals.listGoals(userId, { limit: 20 });
+    } else {
+      await aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services);
+      goals = aiOS.goalManager.listGoals(userId, {}, services);
+    }
     const text = goals.length
       ? goals.map(formatGoalLine).join('\n')
       : 'Belum ada goal AI OS. Buat dengan /goaladd judul | deskripsi | prioritas | targetDate';
@@ -3281,8 +3372,25 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /goaladd <judul> | <deskripsi> | <prioritas> | <targetDate optional>', replyOpt);
       return true;
     }
-    const result = aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
+    const repositories = getStorageRepositoriesSafe();
+    const goal = isRelationalStorageActive() && repositories?.goals
+      ? await repositories.goals.createGoal({ userId, title, description, priority, targetDate })
+      : null;
+    const result = goal
+      ? { ok: true, goal }
+      : aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
     if (result.ok) {
+      if (isRelationalStorageActive() && repositories?.graph) {
+        await repositories.graph.upsertNode({
+          userId,
+          label: result.goal.title,
+          type: 'goal',
+          summary: result.goal.description,
+          source: 'goal-command',
+          importance: result.goal.priority === 'high' ? 0.82 : 0.68,
+          confidence: 0.78
+        });
+      }
       aiOS.knowledgeGraph.evolveGraphFromText(userId, `Goal ${result.goal.title}. ${result.goal.description}`, services, {
         source: 'goal-command',
         confidence: 0.78,
@@ -3305,8 +3413,16 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /goalupdate <goalId> | <status/progress/description/priority/target> | <value>', replyOpt);
       return true;
     }
-    await aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services);
-    const result = aiOS.goalManager.updateGoal(userId, goalId, field, value, services);
+    const repositories = getStorageRepositoriesSafe();
+    let result;
+    if (isRelationalStorageActive() && repositories?.goals) {
+      const normalizedField = field === 'target' ? 'targetDate' : field;
+      const goal = await repositories.goals.updateGoal(userId, goalId, { [normalizedField]: value });
+      result = goal ? { ok: true, goal } : { ok: false, reason: 'GOAL_NOT_FOUND' };
+    } else {
+      await aiOS.goalManager.hydrateGoalsFromStorage?.(userId, services);
+      result = aiOS.goalManager.updateGoal(userId, goalId, field, value, services);
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3318,8 +3434,15 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
   }
 
   if (cmd === '/workflows') {
-    await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
-    const workflows = aiOS.workflowEngine.listActiveWorkflows(userId, services, 20);
+    const repositories = getStorageRepositoriesSafe();
+    let workflows = [];
+    if (isRelationalStorageActive() && repositories?.workflows) {
+      workflows = await repositories.workflows.listWorkflows(userId, { status: 'active', limit: 20 });
+      workflows = await enrichWorkflowsWithSteps(userId, workflows, repositories);
+    } else {
+      await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
+      workflows = aiOS.workflowEngine.listActiveWorkflows(userId, services, 20);
+    }
     const text = workflows.length
       ? workflows.map(formatWorkflowLine).join('\n')
       : 'Belum ada workflow aktif. Buat dengan /workflowadd judul | deskripsi | goalId optional';
@@ -3333,8 +3456,25 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /workflowadd <judul> | <deskripsi> | <goalId optional>', replyOpt);
       return true;
     }
-    const result = aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId }, services);
+    const repositories = getStorageRepositoriesSafe();
+    const workflow = isRelationalStorageActive() && repositories?.workflows
+      ? await repositories.workflows.createWorkflow({ userId, title, description, goalId })
+      : null;
+    const result = workflow
+      ? { ok: true, workflow: { ...workflow, steps: [] } }
+      : aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId }, services);
     if (result.ok) {
+      if (isRelationalStorageActive() && repositories?.graph) {
+        await repositories.graph.upsertNode({
+          userId,
+          label: result.workflow.title,
+          type: 'workflow',
+          summary: result.workflow.description,
+          source: 'workflow-command',
+          importance: 0.7,
+          confidence: 0.76
+        });
+      }
       aiOS.knowledgeGraph.evolveGraphFromText(userId, `Workflow ${result.workflow.title}. ${result.workflow.description}`, services, {
         source: 'workflow-command',
         confidence: 0.76,
@@ -3357,8 +3497,15 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /workflowstep <workflowId> | <step>', replyOpt);
       return true;
     }
-    await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
-    const result = aiOS.workflowEngine.addStep(userId, workflowId, step, services);
+    const repositories = getStorageRepositoriesSafe();
+    let result;
+    if (isRelationalStorageActive() && repositories?.workflows) {
+      const createdStep = await repositories.workflows.addWorkflowStep({ userId, workflowId, title: step });
+      result = createdStep ? { ok: true, stepNumber: createdStep.stepNumber || createdStep.step_number } : { ok: false, reason: 'WORKFLOW_NOT_FOUND' };
+    } else {
+      await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
+      result = aiOS.workflowEngine.addStep(userId, workflowId, step, services);
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3375,8 +3522,15 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /workflowdone <workflowId> | <stepNumber>', replyOpt);
       return true;
     }
-    await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
-    const result = aiOS.workflowEngine.markStepDone(userId, workflowId, stepNumber, services);
+    const repositories = getStorageRepositoriesSafe();
+    let result;
+    if (isRelationalStorageActive() && repositories?.workflows) {
+      const completed = await repositories.workflows.completeWorkflowStep(userId, workflowId, stepNumber);
+      result = completed ? { ok: true, step: { ...completed, text: completed.title } } : { ok: false, reason: 'STEP_NOT_FOUND' };
+    } else {
+      await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
+      result = aiOS.workflowEngine.markStepDone(userId, workflowId, stepNumber, services);
+    }
     await safeSendMessage(
       chatId,
       result.ok
@@ -3433,9 +3587,30 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
   }
 
   if (cmd === '/graph') {
-    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
-    const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
-    const text =
+    const repositories = getStorageRepositoriesSafe();
+    let text;
+    if (isRelationalStorageActive() && repositories?.graph) {
+      const snapshot = await repositories.graph.getGraphSnapshot(userId, { nodeLimit: 10, edgeLimit: 10 });
+      const typeCounts = snapshot.nodes.reduce((acc, node) => {
+        acc[node.type] = (acc[node.type] || 0) + 1;
+        return acc;
+      }, {});
+      const typeSummary = Object.entries(typeCounts).map(([type, count]) => `${type}:${count}`).join(', ') || '-';
+      text =
+`Knowledge Graph
+Node: ${snapshot.nodes.length}
+Edge: ${snapshot.edges.length}
+Types: ${typeSummary}
+
+Konsep:
+${snapshot.nodes.length ? snapshot.nodes.map((node, index) => `${index + 1}. ${node.id} - ${node.label} (${node.type})`).join('\n') : '-'}
+
+Relasi:
+${snapshot.edges.length ? snapshot.edges.map((edge, index) => `${index + 1}. ${edge.fromNodeId} ${edge.relationship} ${edge.toNodeId}`).join('\n') : '-'}`;
+    } else {
+      await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+      const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
+      text =
 `Knowledge Graph
 Node: ${graph.nodeCount}
 Edge: ${graph.edgeCount}
@@ -3446,12 +3621,16 @@ ${graph.nodesText}
 
 Relasi:
 ${graph.edgesText}`;
+    }
     await sendChunkedMessage(chatId, text, replyOpt);
     return true;
   }
 
   if (cmd === '/insights') {
-    const insights = await aiOS.insightStore.listInsights(userId, { limit: 10 }, services);
+    const repositories = getStorageRepositoriesSafe();
+    const insights = isRelationalStorageActive() && repositories?.insights
+      ? await repositories.insights.listInsights(userId, { limit: 10 })
+      : await aiOS.insightStore.listInsights(userId, { limit: 10 }, services);
     const text = insights.length
       ? insights.map(formatInsightLine).join('\n')
       : 'Belum ada insight AI OS.';
