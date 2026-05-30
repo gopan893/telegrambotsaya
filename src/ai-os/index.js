@@ -17,6 +17,7 @@ const researchIntelligence = require('./research-intelligence');
 const cognitiveWorkspace = require('./cognitive-workspace');
 const learningEvolution = require('./learning-evolution');
 const cognitiveAnalytics = require('./cognitive-analytics');
+const naturalIntegration = require('./natural-integration');
 const legacyGuards = require('./guards');
 const guards = require('./aios-guards');
 const utils = require('./aios-utils');
@@ -40,6 +41,7 @@ function createAIOS() {
     cognitiveWorkspace,
     learningEvolution,
     cognitiveAnalytics,
+    naturalIntegration,
     guards,
     legacyGuards,
     utils,

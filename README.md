@@ -165,6 +165,15 @@ STORAGE_DRIVER=auto
 RUN_MIGRATIONS=true
 ```
 
+## Phase 7 Stabilization Docs
+
+Dokumentasi audit dan deploy final:
+
+- `docs/COMMANDS.md`: ringkasan command core, adaptive, AI OS, collaboration, dan ops.
+- `docs/PHASE7_E2E_AUDIT.md`: checklist manual command dan natural chat.
+- `docs/RENDER_DEPLOYMENT.md`: checklist deploy Render, env, fallback, dan rollback.
+- `docs/NATURAL_AI_OS_INTEGRATION.md`: cara kerja AI OS context untuk chat natural.
+
 ## Interactive Telegram UX
 
 Layer `src/interactions/` menambahkan tombol Telegram tanpa memaksa semua jawaban memakai tombol:

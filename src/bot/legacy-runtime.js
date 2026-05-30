@@ -6719,6 +6719,41 @@ await withUserActionLock(userId, async () => {
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg, conversationState);
   await hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision);
+  const naturalAIOSResult = await aiOS.naturalIntegration.answerWithAIOSContext(userId, chatId, userText, msg, {
+    ...getAiosServices(),
+    adaptiveDecision,
+    getOpsServices,
+    log,
+    opsSystem,
+    safeSendMessage,
+    sendChunkedMessage
+  });
+  if (naturalAIOSResult?.handled) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_aios',
+      processed: true,
+      answerPreview: naturalAIOSResult.answer
+    });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: naturalAIOSResult.answer,
+      intent: `natural_aios:${naturalAIOSResult.type || adaptiveDecision?.mode || 'context'}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: naturalAIOSResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, naturalAIOSResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+    return;
+  }
   logMessageFlow('ai_pipeline_calling', {
     userId,
     chatId,
