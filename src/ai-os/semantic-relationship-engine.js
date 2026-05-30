@@ -1,88 +1,160 @@
 'use strict';
 
-const guards = require('./guards');
+const conceptExtractor = require('./concept-extractor');
+const graphUtils = require('./graph-utils');
 
 const RELATIONSHIP_PATTERNS = [
-  { relationship: 'depends_on', patterns: ['bergantung pada', 'depends on', 'butuh', 'membutuhkan', 'prasyarat'] },
-  { relationship: 'part_of', patterns: ['bagian dari', 'part of', 'komponen', 'module', 'modul'] },
-  { relationship: 'caused_by', patterns: ['disebabkan oleh', 'karena', 'caused by', 'akibat'] },
-  { relationship: 'supports', patterns: ['mendukung', 'supports', 'memperkuat', 'evidence'] },
-  { relationship: 'contradicts', patterns: ['bertentangan', 'contradicts', 'tidak cocok', 'kontradiksi'] },
-  { relationship: 'improves', patterns: ['meningkatkan', 'improves', 'optimasi', 'lebih baik'] },
-  { relationship: 'blocks', patterns: ['menghambat', 'blocks', 'terhalang', 'risiko'] },
-  { relationship: 'belongs_to_project', patterns: ['project', 'proyek', 'repo', 'aplikasi'] },
-  { relationship: 'linked_to_goal', patterns: ['goal', 'tujuan', 'target', 'roadmap'] },
-  { relationship: 'derived_from', patterns: ['berasal dari', 'derived from', 'berdasarkan', 'diambil dari'] },
-  { relationship: 'evidence_for', patterns: ['evidence for', 'bukti untuk', 'membuktikan', 'validasi'] }
+  { relationship: 'depends_on', patterns: [/bergantung\s+pada/i, /depends\s+on/i, /\bbutuh\b/i, /membutuhkan/i, /prasyarat/i] },
+  { relationship: 'requires', patterns: [/requires/i, /memerlukan/i, /wajib\s+ada/i, /harus\s+punya/i] },
+  { relationship: 'uses', patterns: [/\buntuk\b/i, /\bdipakai\s+untuk\b/i, /\bmenggunakan\b/i, /\buses\b/i, /\bpakai\b/i] },
+  { relationship: 'supports', patterns: [/mendukung/i, /supports/i, /memperkuat/i, /menopang/i] },
+  { relationship: 'risk_for', patterns: [/risiko\s+untuk/i, /risk\s+for/i, /berisiko/i, /membuat.*berat/i] },
+  { relationship: 'contradicts', patterns: [/bertentangan/i, /kontradiksi/i, /contradicts/i, /tidak\s+cocok/i] },
+  { relationship: 'improves', patterns: [/meningkatkan/i, /improves/i, /optimasi/i, /lebih\s+baik/i] },
+  { relationship: 'blocks', patterns: [/menghambat/i, /\bblocks\b/i, /terhalang/i, /blocker/i] },
+  { relationship: 'part_of', patterns: [/bagian\s+dari/i, /part\s+of/i, /komponen/i, /\bmodule\b/i, /\bmodul\b/i] },
+  { relationship: 'linked_to_goal', patterns: [/\bgoal\b/i, /tujuan/i, /target/i, /roadmap/i] },
+  { relationship: 'linked_to_workflow', patterns: [/\bworkflow\b/i, /alur\s+kerja/i, /step/i] },
+  { relationship: 'evidence_for', patterns: [/evidence\s+for/i, /bukti\s+untuk/i, /membuktikan/i, /validasi/i] },
+  { relationship: 'derived_from', patterns: [/berasal\s+dari/i, /derived\s+from/i, /berdasarkan/i, /diambil\s+dari/i] },
+  { relationship: 'solution_for', patterns: [/solusi\s+untuk/i, /solution\s+for/i, /mengatasi/i] },
+  { relationship: 'causes', patterns: [/menyebabkan/i, /\bcauses\b/i, /akibatnya/i] },
+  { relationship: 'evolves_into', patterns: [/berkembang\s+menjadi/i, /evolves\s+into/i, /menjadi/i] }
 ];
 
+function conceptLabel(concept) {
+  return graphUtils.normalizeConcept(concept?.label || concept || '');
+}
+
 function extractConcepts(text, max = 8) {
-  const clean = guards.sanitizeText(text, 1600);
-  const words = guards.tokenize(clean)
-    .filter((word) => !['yang', 'dan', 'atau', 'untuk', 'dengan', 'dari', 'this', 'that', 'the', 'and'].includes(word))
-    .slice(0, 80);
-
-  const freq = new Map();
-  for (const word of words) freq.set(word, (freq.get(word) || 0) + 1);
-
-  return [...freq.entries()]
-    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
-    .slice(0, max)
-    .map(([word]) => word);
-}
-
-function detectRelationship(text, fromLabel = '', toLabel = '') {
-  const lower = guards.sanitizeText(`${text} ${fromLabel} ${toLabel}`, 1600).toLowerCase();
-  for (const item of RELATIONSHIP_PATTERNS) {
-    if (item.patterns.some((pattern) => lower.includes(pattern))) {
-      return item.relationship;
-    }
-  }
-  return 'related_to';
-}
-
-function buildRelationships(text, concepts = []) {
-  const selected = guards.safeArray(concepts).slice(0, 6);
-  const edges = [];
-  for (let i = 0; i < selected.length; i += 1) {
-    for (let j = i + 1; j < Math.min(selected.length, i + 3); j += 1) {
-      edges.push({
-        fromLabel: selected[i],
-        toLabel: selected[j],
-        relationship: detectRelationship(text, selected[i], selected[j]),
-        weight: Number((0.45 + guards.textRelevance(text, `${selected[i]} ${selected[j]}`) * 0.4).toFixed(3)),
-        confidence: 0.62
-      });
-    }
-  }
-  return edges;
+  return conceptExtractor.extractConcepts(text, { maxConcepts: max }).map(item => item.label);
 }
 
 function classifyConceptType(label, sourceText = '') {
   const text = `${label} ${sourceText}`.toLowerCase();
+  if (/(postgres|redis|node\.?js|express|telegram|render|github|docker|next\.?js|react|tailwind|prisma|supabase|neon|groq|mistral|tavily|cloudflare|termux)/i.test(text)) return 'technology';
   if (/(project|proyek|repo|bot|app|sistem|architecture|arsitektur)/i.test(text)) return 'project';
   if (/(goal|tujuan|target|roadmap|milestone)/i.test(text)) return 'goal';
-  if (/(workflow|step|langkah|progress|blocker|decision)/i.test(text)) return 'workflow';
-  if (/(orang|user|admin|mentor|person|nama)/i.test(text)) return 'person';
+  if (/(workflow|step|langkah|progress|blocker)/i.test(text)) return 'workflow';
   if (/(insight|pelajaran|lesson|catatan)/i.test(text)) return 'insight';
   if (/(evidence|sumber|source|referensi|bukti)/i.test(text)) return 'evidence';
   if (/(keputusan|decision|opsi|rekomendasi)/i.test(text)) return 'decision';
   if (/(asumsi|assumption)/i.test(text)) return 'assumption';
-  if (/(error|bug|risk|risiko|crash|gagal)/i.test(text)) return 'risk';
-  if (/(file|pdf|dokumen|gambar|spreadsheet|data)/i.test(text)) return 'source';
+  if (/(error|bug|risk|risiko|crash|gagal|berat|lambat)/i.test(text)) return 'risk';
+  if (/(belajar|learning|mentor|roadmap belajar)/i.test(text)) return 'learning_topic';
+  if (/(solusi|solution|fix|perbaikan)/i.test(text)) return 'solution';
   return 'concept';
 }
 
+function detectRelationship(text, fromLabel = '', toLabel = '') {
+  const lower = `${text || ''} ${fromLabel || ''} ${toLabel || ''}`.toLowerCase();
+
+  if (/(postgres|postgresql).{0,60}(memory|memori|persistent|database)/i.test(lower)) return 'supports';
+  if (/(redis).{0,60}(cache|caching|temporary|sementara)/i.test(lower)) return 'supports';
+  if (/(memory|memori).{0,40}(butuh|membutuhkan|depends|bergantung).{0,40}(postgres|postgresql|database)/i.test(lower)) return 'depends_on';
+  if (/(render\s+free\s+tier).{0,60}(limit|risiko|batas|scalability|skala)/i.test(lower)) return 'risk_for';
+  if (/(terlalu\s+banyak\s+fitur|scope\s+creep).{0,80}(berat|lambat|debug|stabil)/i.test(lower)) return 'risk_for';
+
+  for (const item of RELATIONSHIP_PATTERNS) {
+    if (item.patterns.some(pattern => pattern.test(lower))) return item.relationship;
+  }
+  return 'related_to';
+}
+
+function inferRelationship(conceptA, conceptB, text = '', context = {}) {
+  const from = conceptLabel(conceptA);
+  const to = conceptLabel(conceptB);
+  const evidence = graphUtils.compactText(text || context.summaryText || `${from} dan ${to} muncul dalam konteks yang sama.`, 420);
+  const relationship = detectRelationship(text, from, to);
+  return {
+    fromLabel: from,
+    toLabel: to,
+    relationship,
+    evidence,
+    confidence: scoreRelationshipConfidence(relationship, evidence),
+    weight: scoreRelationshipStrength(text || evidence, from, to)
+  };
+}
+
+function scoreRelationshipConfidence(relationship = 'related_to', evidence = '') {
+  const text = String(evidence || '').toLowerCase();
+  let score = relationship === 'related_to' ? 0.48 : 0.62;
+  if (/(untuk|butuh|membutuhkan|bergantung|mendukung|risiko|bertentangan|solusi|menggunakan|dipakai)/i.test(text)) score += 0.16;
+  if (/(mungkin|bisa jadi|kemungkinan|asumsi)/i.test(text)) score -= 0.12;
+  if (String(evidence || '').length > 80) score += 0.05;
+  return graphUtils.clamp01(score, 0.55);
+}
+
+function explainRelationship(from, to, relationship, evidence = '') {
+  const cleanEvidence = graphUtils.compactText(evidence, 220);
+  const label = `${conceptLabel(from)} ${relationship} ${conceptLabel(to)}`;
+  return cleanEvidence ? `${label}. Evidence: ${cleanEvidence}` : `${label}. Evidence masih terbatas.`;
+}
+
 function scoreRelationshipStrength(text, fromLabel, toLabel) {
-  const relevance = guards.textRelevance(text, `${fromLabel} ${toLabel}`);
-  return guards.clamp01(0.45 + relevance * 0.45, 0.5);
+  const relevance = graphUtils.textScore(text, `${fromLabel} ${toLabel}`);
+  return graphUtils.clamp01(0.45 + relevance * 0.45, 0.5);
+}
+
+function detectRelationships(text = '', concepts = [], context = {}, services = {}) {
+  const selected = (Array.isArray(concepts) ? concepts : [])
+    .map(item => (typeof item === 'string' ? { label: item, type: classifyConceptType(item, text) } : item))
+    .filter(item => item?.label)
+    .slice(0, context.maxConcepts || 8);
+  const relationships = [];
+
+  for (let i = 0; i < selected.length; i += 1) {
+    for (let j = i + 1; j < selected.length && relationships.length < 18; j += 1) {
+      const rel = inferRelationship(selected[i], selected[j], text, context);
+      if (!rel.fromLabel || !rel.toLabel || rel.fromLabel === rel.toLabel) continue;
+      relationships.push(rel);
+    }
+  }
+
+  if (services.log && relationships.length > 14) {
+    services.log.debug?.('graph_relationships_limited', { count: relationships.length });
+  }
+
+  return relationships;
+}
+
+function buildRelationships(text, concepts = []) {
+  return detectRelationships(text, concepts, { maxConcepts: 6 });
+}
+
+function detectContradictions(userId, concepts = [], services = {}) {
+  const graph = services.aiOS?.knowledgeGraph || require('./knowledge-graph');
+  const query = concepts.map(conceptLabel).join(' ');
+  const snapshot = graph.searchGraph(userId, query, services, 16);
+  const edges = (snapshot.edges || []).filter(edge => edge.relationship === 'contradicts');
+  return {
+    contradictions: edges,
+    count: edges.length
+  };
+}
+
+function detectDependencies(userId, concepts = [], services = {}) {
+  const graph = services.aiOS?.knowledgeGraph || require('./knowledge-graph');
+  const query = concepts.map(conceptLabel).join(' ');
+  const snapshot = graph.searchGraph(userId, query, services, 16);
+  const edges = (snapshot.edges || []).filter(edge => ['depends_on', 'requires', 'blocks'].includes(edge.relationship));
+  return {
+    dependencies: edges,
+    count: edges.length
+  };
 }
 
 module.exports = {
   RELATIONSHIP_PATTERNS,
-  extractConcepts,
-  detectRelationship,
   buildRelationships,
   classifyConceptType,
+  detectContradictions,
+  detectDependencies,
+  detectRelationship,
+  detectRelationships,
+  explainRelationship,
+  extractConcepts,
+  inferRelationship,
+  scoreRelationshipConfidence,
   scoreRelationshipStrength
 };

@@ -3206,6 +3206,49 @@ function formatInsightLine(insight, index) {
   return `${index + 1}. ${insight.id} - ${text} (${Number(insight.confidence || 0).toFixed(2)})`;
 }
 
+function updateGraphFromEntitySafe(userId, entity = {}, text = '', source = 'aios-command', services = getAiosServices()) {
+  try {
+    const label = entity.label || entity.title || entity.content || entity.text;
+    if (!label || !text) return null;
+    const node = aiOS.knowledgeGraph.upsertConcept(userId, {
+      label: aiOS.utils?.compactText ? aiOS.utils.compactText(label, 120) : String(label).slice(0, 120),
+      type: entity.type || 'concept',
+      summary: text,
+      source,
+      sourceId: entity.id,
+      confidence: entity.confidence || 0.72,
+      importance: entity.importance || 0.68
+    }, services);
+    const evolved = aiOS.knowledgeGraph.evolveGraphFromText(userId, text, services, {
+      source,
+      confidence: entity.confidence || 0.72,
+      maxConcepts: 6
+    });
+    if (node?.ok && evolved?.nodes?.length) {
+      for (const concept of evolved.nodes.slice(0, 5)) {
+        aiOS.knowledgeGraph.linkConcepts(userId, node.node.label, concept.label, entity.relationship || 'related_to', text, services);
+      }
+    }
+    return { node, evolved };
+  } catch (err) {
+    log.warn('Graph entity update skipped:', err.message);
+    return null;
+  }
+}
+
+function formatGraphCommandSnapshot(snapshot = {}) {
+  const nodes = snapshot.nodes || [];
+  const edges = snapshot.edges || [];
+  const labelById = new Map(nodes.map(node => [node.id, node.label]));
+  return [
+    'Konsep:',
+    ...(nodes.length ? nodes.map((node, index) => `${index + 1}. ${node.label} (${node.type}, confidence ${Number(node.confidence || 0).toFixed(2)})`) : ['- belum ada data']),
+    '',
+    'Relasi:',
+    ...(edges.length ? edges.map((edge, index) => `${index + 1}. ${labelById.get(edge.from) || edge.from} ${edge.relationship} ${labelById.get(edge.to) || edge.to} (${Number(edge.confidence || 0).toFixed(2)})`) : ['- belum ada relasi'])
+  ].join('\n');
+}
+
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
@@ -3318,11 +3361,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           confidence: 0.72
         });
       }
-      aiOS.knowledgeGraph.evolveGraphFromText(userId, content, services, {
-        source: 'remember-command',
+      updateGraphFromEntitySafe(userId, {
+        id: result.memory.id,
+        label: content,
+        type: 'memory',
         confidence: 0.72,
-        maxConcepts: 5
-      });
+        importance: 0.72,
+        relationship: 'derived_from'
+      }, content, 'remember-command', services);
     }
     await safeSendMessage(
       chatId,
@@ -3391,11 +3437,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           confidence: 0.78
         });
       }
-      aiOS.knowledgeGraph.evolveGraphFromText(userId, `Goal ${result.goal.title}. ${result.goal.description}`, services, {
-        source: 'goal-command',
+      updateGraphFromEntitySafe(userId, {
+        id: result.goal.id,
+        label: result.goal.title,
+        type: 'goal',
         confidence: 0.78,
-        maxConcepts: 5
-      });
+        importance: result.goal.priority === 'high' ? 0.82 : 0.68,
+        relationship: 'linked_to_goal'
+      }, `Goal ${result.goal.title}. ${result.goal.description}`, 'goal-command', services);
     }
     await safeSendMessage(
       chatId,
@@ -3475,11 +3524,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           confidence: 0.76
         });
       }
-      aiOS.knowledgeGraph.evolveGraphFromText(userId, `Workflow ${result.workflow.title}. ${result.workflow.description}`, services, {
-        source: 'workflow-command',
+      updateGraphFromEntitySafe(userId, {
+        id: result.workflow.id,
+        label: result.workflow.title,
+        type: 'workflow',
         confidence: 0.76,
-        maxConcepts: 5
-      });
+        importance: 0.7,
+        relationship: 'linked_to_workflow'
+      }, `Workflow ${result.workflow.title}. ${result.workflow.description}`, 'workflow-command', services);
     }
     await safeSendMessage(
       chatId,
@@ -3587,41 +3639,109 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
   }
 
   if (cmd === '/graph') {
-    const repositories = getStorageRepositoriesSafe();
-    let text;
-    if (isRelationalStorageActive() && repositories?.graph) {
-      const snapshot = await repositories.graph.getGraphSnapshot(userId, { nodeLimit: 10, edgeLimit: 10 });
-      const typeCounts = snapshot.nodes.reduce((acc, node) => {
-        acc[node.type] = (acc[node.type] || 0) + 1;
-        return acc;
-      }, {});
-      const typeSummary = Object.entries(typeCounts).map(([type, count]) => `${type}:${count}`).join(', ') || '-';
-      text =
-`Knowledge Graph
-Node: ${snapshot.nodes.length}
-Edge: ${snapshot.edges.length}
-Types: ${typeSummary}
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    const query = String(args || '').trim();
+    const text = query
+      ? aiOS.graphSummarizer.summarizeConcept(userId, query, {}, services).summaryText
+      : aiOS.graphSummarizer.summarizeGraph(userId, {}, services).summaryText;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
 
-Konsep:
-${snapshot.nodes.length ? snapshot.nodes.map((node, index) => `${index + 1}. ${node.id} - ${node.label} (${node.type})`).join('\n') : '-'}
+  if (cmd === '/concepts') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    const nodes = aiOS.knowledgeGraph.listNodes(userId, { limit: 12 }, services);
+    const text = [
+      'Konsep terpenting:',
+      '',
+      ...(nodes.length
+        ? nodes.map((node, index) => `${index + 1}. ${node.label} (${node.type}, muncul ${node.occurrenceCount || 1}x, confidence ${Number(node.confidence || 0).toFixed(2)})`)
+        : ['Belum ada konsep. Isi dengan /remember, /goaladd, /workflowadd, atau /relate.'])
+    ].join('\n');
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
 
-Relasi:
-${snapshot.edges.length ? snapshot.edges.map((edge, index) => `${index + 1}. ${edge.fromNodeId} ${edge.relationship} ${edge.toNodeId}`).join('\n') : '-'}`;
-    } else {
-      await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
-      const graph = aiOS.knowledgeGraph.summarizeGraph(userId, services, args);
-      text =
-`Knowledge Graph
-Node: ${graph.nodeCount}
-Edge: ${graph.edgeCount}
-Types: ${graph.typeSummary}
-
-Konsep:
-${graph.nodesText}
-
-Relasi:
-${graph.edgesText}`;
+  if (cmd === '/relate') {
+    const [from, to, relationship = 'related_to', evidence = 'Relasi ditambahkan manual oleh user.'] = splitPipeArgs(args);
+    if (!from || !to) {
+      await safeSendMessage(chatId, 'Format: /relate <konsep A> | <konsep B> | <relationship> | <evidence optional>', replyOpt);
+      return true;
     }
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    const result = aiOS.knowledgeGraph.linkConcepts(userId, from, to, relationship || 'related_to', evidence, services);
+    const text = result.ok
+      ? [
+        'Relasi graph disimpan:',
+        '',
+        `${result.from.label} ${result.edge.relationship} ${result.to.label}`,
+        `Confidence: ${Number(result.edge.confidence || 0).toFixed(2)}`,
+        `Occurrence: ${result.edge.occurrenceCount || 1}`
+      ].join('\n')
+      : `Gagal menyimpan relasi graph: ${result.reason}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/graphsearch') {
+    const query = String(args || '').trim();
+    if (!query) {
+      await safeSendMessage(chatId, 'Format: /graphsearch <query>', replyOpt);
+      return true;
+    }
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    const snapshot = aiOS.graphRetriever.getRelevantGraph(userId, query, { nodeLimit: 8, edgeLimit: 12 }, services);
+    const text = [
+      `Hasil graph search: ${query}`,
+      '',
+      formatGraphCommandSnapshot(snapshot)
+    ].join('\n');
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/graphrisks') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    await sendChunkedMessage(chatId, aiOS.graphSummarizer.summarizeRisks(userId, {}, services).summaryText, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/graphdeps') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    await sendChunkedMessage(chatId, aiOS.graphSummarizer.summarizeDependencies(userId, {}, services).summaryText, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/graphprune') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    const result = aiOS.knowledgeGraph.cleanupStaleGraph(userId, services, 150);
+    const limited = aiOS.knowledgeGraph.pruneGraph(userId, services);
+    const text =
+`Graph prune selesai
+Removed stale nodes: ${result.removedNodes}
+Removed stale edges: ${result.removedEdges}
+Current nodes: ${limited.nodes}
+Current edges: ${limited.edges}`;
+    await sendChunkedMessage(chatId, text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/graphstats') {
+    await aiOS.knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
+    const stats = aiOS.knowledgeGraph.getGraphStats(userId, services);
+    const topTypes = Object.entries(stats.nodeTypes || {}).map(([type, count]) => `${type}:${count}`).join(', ') || '-';
+    const topRels = Object.entries(stats.relationships || {}).map(([rel, count]) => `${rel}:${count}`).join(', ') || '-';
+    const text =
+`Graph Stats
+Nodes: ${stats.nodes}
+Edges: ${stats.edges}
+Top node types: ${topTypes}
+Top relationships: ${topRels}
+Low confidence edges: ${stats.lowConfidenceEdges}
+Stale nodes: ${stats.staleNodes}
+
+Top nodes:
+${stats.topNodes?.length ? stats.topNodes.map((node, index) => `${index + 1}. ${node.label} (${node.type})`).join('\n') : '-'}`;
     await sendChunkedMessage(chatId, text, replyOpt);
     return true;
   }
@@ -3764,7 +3884,7 @@ function shouldHydrateAIOSForMessage(userText = '', adaptiveDecision = {}) {
   if (['strategic', 'decision', 'learning', 'reflection', 'research', 'personal-intelligence', 'cognitive-workspace'].includes(adaptiveDecision?.mode)) {
     return true;
   }
-  return /(goal|tujuan|workflow|alur kerja|memory|memori|ingat|project|proyek|roadmap|strategi|lanjut|langkah berikut|next action|keputusan|insight|graph|workspace)/i.test(text);
+  return /(goal|tujuan|workflow|alur kerja|memory|memori|ingat|project|proyek|roadmap|strategi|lanjut|langkah berikut|next action|keputusan|insight|graph|workspace|hubungan|relasi|konsep|dependency|ketergantungan|bertentangan)/i.test(text);
 }
 
 async function hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision) {
@@ -4080,6 +4200,15 @@ async function handleCollaborationCommands(chatId, userId, cmd, args, msg) {
   }
   try {
     const response = await collaborationSystem.respond(cmd, args, userId, u, getAiosServices());
+    if (cmd === '/insight' && String(args || '').trim()) {
+      updateGraphFromEntitySafe(userId, {
+        label: args,
+        type: 'insight',
+        confidence: 0.72,
+        importance: 0.68,
+        relationship: 'derived_from'
+      }, `${args}\n${response}`, 'insight-command', getAiosServices());
+    }
     await persist();
     await sendChunkedMessage(chatId, response, replyOpt);
   } catch (err) {
@@ -5384,7 +5513,14 @@ async function handleHelp(chatId, msg) {
 /workflowdecision workflowId | decision
 /workflowblocker workflowId | blocker
 /workflownext workflowId | next action
-/graph - knowledge graph
+/graph [konsep] - knowledge graph / relasi konsep
+/concepts - konsep terpenting
+/relate konsep A | konsep B | relationship | evidence
+/graphsearch query - cari graph
+/graphrisks - relasi risiko
+/graphdeps - dependency utama
+/graphprune - bersihkan graph stale
+/graphstats - statistik graph
 /insights - insight penting
 /workspace - cognitive workspace
 /workspaceadd judul | deskripsi
@@ -5521,6 +5657,13 @@ function isUnknownCommand(cmd) {
     '/workflowblocker',
     '/workflownext',
     '/graph',
+    '/concepts',
+    '/relate',
+    '/graphsearch',
+    '/graphrisks',
+    '/graphdeps',
+    '/graphprune',
+    '/graphstats',
     '/insights',
     '/workspace',
     '/workspaceadd',
@@ -6384,7 +6527,7 @@ app.get('/api/dashboard', (req, res) => {
     commands: {
       adaptive: ['/adaptive status', '/adaptive on', '/adaptive off', '/adaptive reset'],
       collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],
-      aiOS: ['/aios', '/goals', '/goaladd', '/workflows', '/workflowadd', '/graph', '/insights', '/workspace'],
+      aiOS: ['/aios', '/goals', '/goaladd', '/workflows', '/workflowadd', '/graph', '/concepts', '/relate', '/graphsearch', '/graphstats', '/insights', '/workspace'],
       ops: ['/ops', '/health', '/diag', '/benchmark', '/reliability', '/perf', '/cost', '/tokens', '/regression'],
       interaction: ['/menu', '/actions', '/help']
     },
@@ -6719,6 +6862,39 @@ await withUserActionLock(userId, async () => {
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg, conversationState);
   await hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision);
+  const graphNaturalResult = await aiOS.graphNaturalIntegration.answerWithGraphContext(userId, chatId, userText, msg, {
+    ...getAiosServices(),
+    adaptiveDecision,
+    log,
+    safeSendMessage,
+    sendChunkedMessage
+  });
+  if (graphNaturalResult?.handled) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_graph',
+      processed: true,
+      answerPreview: graphNaturalResult.answer
+    });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: graphNaturalResult.answer,
+      intent: `natural_graph:${graphNaturalResult.type || adaptiveDecision?.mode || 'context'}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: graphNaturalResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, graphNaturalResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+    return;
+  }
   const naturalAIOSResult = await aiOS.naturalIntegration.answerWithAIOSContext(userId, chatId, userText, msg, {
     ...getAiosServices(),
     adaptiveDecision,

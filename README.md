@@ -113,6 +113,13 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /goals
 /workflows
 /graph
+/graph PostgreSQL
+/concepts
+/relate PostgreSQL | persistent memory | supports | PostgreSQL menyimpan memory jangka panjang
+/graphsearch memory
+/graphrisks
+/graphdeps
+/graphstats
 /ops
 /health
 /stats

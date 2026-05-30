@@ -45,6 +45,14 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | `/workflowdone <workflowId> | <stepNumber>` | Tandai step selesai. |
 | `/insights` | Lihat insight terbaru. |
 | `/graph` | Ringkasan knowledge graph. |
+| `/graph <konsep>` | Ringkasan konsep dan relasinya. |
+| `/concepts` | Konsep terpenting user. |
+| `/relate <A> | <B> | <relationship> | <evidence>` | Tambah relasi graph manual. |
+| `/graphsearch <query>` | Cari node/edge relevan. |
+| `/graphrisks` | Lihat risk node dan relasi risiko. |
+| `/graphdeps` | Lihat dependency utama. |
+| `/graphprune` | Prune graph stale/low-value. |
+| `/graphstats` | Statistik node, edge, relationship, confidence. |
 
 ## Collaboration
 
@@ -87,5 +95,8 @@ Bot dapat memakai AI OS context secara natural untuk pesan seperti:
 - `Apa risiko terbesar dari roadmap AI saya?`
 - `Apa insight penting dari project ini?`
 - `Cek apakah bot saya sehat`
+- `Apa hubungan antara PostgreSQL, Redis, dan memory bot saya?`
+- `Apa konsep penting dari project ini?`
+- `Apa dependency terbesar dari roadmap bot saya?`
 
 Sapaan sederhana, kalkulator sederhana, unit conversion, dan health-advice ringan tetap melewati router ringan agar tidak berat.
