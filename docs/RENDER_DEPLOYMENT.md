@@ -20,6 +20,8 @@ PGSSL=false
 RUN_MIGRATIONS=true
 TAVILY_API_KEY=
 OPENWEATHER_API_KEY=
+DASHBOARD_ENABLED=false
+DASHBOARD_ADMIN_TOKEN=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=
@@ -42,19 +44,24 @@ GOOGLE_REDIRECT_URI=
 - `DATABASE_URL` optional; jika kosong, JSON fallback aktif.
 - `REDIS_URL` optional; jika kosong, memory cache fallback aktif.
 - `RUN_MIGRATIONS=true` untuk membuat schema PostgreSQL saat database tersedia.
+- `DASHBOARD_ENABLED=true` jika ingin membuka endpoint protected dashboard.
+- `DASHBOARD_ADMIN_TOKEN` wajib diisi token panjang acak sebelum memakai endpoint data dashboard.
 - Tidak ada secret ditulis di log.
 
 ## Smoke Test Setelah Deploy
 
 1. Buka `/health`.
-2. Cek Render logs untuk:
+2. Buka `/api/dashboard/health`.
+3. Cek Render logs untuk:
    - storage driver aktif;
    - Redis tersedia atau fallback;
    - webhook terpasang;
    - tidak ada crash startup.
-3. Di Telegram jalankan:
+4. Di Telegram jalankan:
    - `/ping`
    - `/help`
+   - `/dashboard`
+   - `/dashboardstatus`
    - `/stats`
    - `/adaptive status`
    - `/aios`
@@ -90,4 +97,6 @@ Jika deploy gagal:
 - Render free tier bisa cold start; webhook mungkin lambat beberapa detik pertama.
 - File JSON fallback di free tier tidak cocok untuk data jangka sangat panjang.
 - Jika memakai PostgreSQL hosted, aktifkan SSL via `PGSSL=true` jika provider butuh.
-- Jangan expose `/api/dashboard` untuk data sensitif; endpoint hanya metadata publik.
+- `/api/dashboard/health` public-safe.
+- Endpoint seperti `/api/dashboard/summary`, `/api/dashboard/env-check`, dan `/api/dashboard/user/:userId/*` membutuhkan `Authorization: Bearer <DASHBOARD_ADMIN_TOKEN>`.
+- `/api/dashboard/env-check` hanya menampilkan `set`/`missing`, bukan value secret.

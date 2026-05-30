@@ -8,6 +8,8 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | --- | --- |
 | `/start` | Sapaan awal bot. |
 | `/help` | Daftar command. |
+| `/dashboard` | Info dashboard/API dan endpoint health. |
+| `/dashboardstatus` | Status dashboard tanpa menampilkan token. |
 | `/ping` | Cek respons bot. |
 | `/reset` | Reset state user dengan guard/konfirmasi jika tersedia. |
 | `/stats` | Status runtime ringkas, storage, Redis, memory, plugin. |
@@ -95,6 +97,8 @@ Bot dapat memakai AI OS context secara natural untuk pesan seperti:
 - `Apa risiko terbesar dari roadmap AI saya?`
 - `Apa insight penting dari project ini?`
 - `Cek apakah bot saya sehat`
+- `dashboard nya dimana?`
+- `cara cek health bot?`
 - `Apa hubungan antara PostgreSQL, Redis, dan memory bot saya?`
 - `Apa konsep penting dari project ini?`
 - `Apa dependency terbesar dari roadmap bot saya?`

@@ -26,6 +26,8 @@ const humanAISafety = require('../ux/human-ai-safety');
 const conversationManager = require('../conversation');
 const interactions = require('../interactions');
 const naturalLanguage = require('../natural-language/natural-router');
+const naturalToolRouter = require('../natural-language/natural-tool-router');
+const dashboard = require('../dashboard');
 const {
   sendTelegramMessage,
   sendTelegramWithKeyboard
@@ -65,6 +67,8 @@ const {
   DATABASE_URL,
   STORAGE_DRIVER,
   REDIS_URL,
+  DASHBOARD_ENABLED,
+  DASHBOARD_ADMIN_TOKEN,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
@@ -979,6 +983,11 @@ ${multiDeviceUX.getPromptRules()}
 ${humanAISafety.getPromptRules()}
 
 Kalau tidak tahu, bilang tidak tahu.
+
+Catatan kemampuan internet:
+- Model AI tidak browsing langsung.
+- Server bot dapat memakai tool/API seperti OpenWeather untuk cuaca dan Tavily untuk pencarian jika env tersedia.
+- Untuk data real-time, arahkan ke tool/API atau jelaskan env yang dibutuhkan; jangan berkata mutlak bahwa bot tidak punya akses internet jika tool tersedia.
 
 Jangan mengaku manusia.
 `.trim();
@@ -3085,6 +3094,44 @@ function getAiosServices() {
     persist,
     storageManager
   };
+}
+
+function getUsersSnapshot() {
+  return userMemory && typeof userMemory === 'object' ? userMemory : {};
+}
+
+function getDashboardBaseUrl() {
+  return WEBHOOK_BASE_URL || WEBHOOK_URL || TELEGRAM_WEBHOOK_URL || (RENDER_EXTERNAL_HOSTNAME ? `https://${RENDER_EXTERNAL_HOSTNAME}` : '');
+}
+
+function getDashboardStatusText() {
+  const enabled = String(DASHBOARD_ENABLED || '').toLowerCase() === 'true';
+  const tokenSet = Boolean(DASHBOARD_ADMIN_TOKEN);
+  return {
+    enabled,
+    tokenSet,
+    protectedStatus: enabled && tokenSet ? 'active' : 'disabled'
+  };
+}
+
+function buildDashboardInfoText() {
+  const base = getDashboardBaseUrl();
+  const status = getDashboardStatusText();
+  return [
+    'Dashboard/API Foundation',
+    '',
+    `Dashboard: ${status.enabled ? 'enabled' : 'disabled'}`,
+    `Admin token: ${status.tokenSet ? 'set' : 'missing'}`,
+    `Protected endpoints: ${status.protectedStatus}`,
+    '',
+    `Dashboard URL: ${base ? `${base}/dashboard` : 'WEBHOOK_URL belum diset'}`,
+    `API health: ${base ? `${base}/api/dashboard/health` : '/api/dashboard/health'}`,
+    '',
+    'Endpoint data user membutuhkan header:',
+    'Authorization: Bearer <DASHBOARD_ADMIN_TOKEN>',
+    '',
+    'Token tidak akan pernah ditampilkan oleh bot.'
+  ].join('\n');
 }
 
 function isRelationalStorageActive() {
@@ -5457,6 +5504,8 @@ async function handleHelp(chatId, msg) {
 /reset - reset memory pribadi
 /help - bantuan
 /menu atau /actions - menu interaktif
+/dashboard - info dashboard/API
+/dashboardstatus - status dashboard tanpa token
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
 /system - status agent production [admin]
@@ -5604,6 +5653,8 @@ function isUnknownCommand(cmd) {
     '/help',
     '/menu',
     '/actions',
+    '/dashboard',
+    '/dashboardstatus',
     '/belajar',
     '/stats',
     '/system',
@@ -6476,6 +6527,142 @@ async function handleTools(msgText, userId = '0') {
 
   return null;
 }
+
+function buildInternetCapabilityAnswer() {
+  return [
+    'Bot bisa online lewat tool/API yang dipanggil oleh server bot.',
+    '',
+    'Cara kerjanya:',
+    '- Model AI tidak browsing langsung.',
+    '- Untuk cuaca, bot memanggil OpenWeather lewat OPENWEATHER_API_KEY.',
+    '- Untuk search/berita terbaru, bot memanggil Tavily lewat TAVILY_API_KEY.',
+    '- Hasil tool itu lalu dirapikan dan dikirim ke Telegram.',
+    '',
+    'Agar aktif di Render:',
+    '1. Set OPENWEATHER_API_KEY untuk cuaca real-time.',
+    '2. Set TAVILY_API_KEY untuk pencarian internet.',
+    '3. Redeploy service.',
+    '4. Test dengan "Cuaca di Tokyo" dan "Cari berita AI terbaru".',
+    '',
+    `Status sekarang: OpenWeather ${OPENWEATHER_API_KEY ? 'set' : 'missing'}, Tavily ${TAVILY_API_KEY ? 'set' : 'missing'}.`
+  ].join('\n');
+}
+
+function buildDashboardNaturalAnswer() {
+  return [
+    'Dashboard bisa dicek dari command dan endpoint berikut:',
+    '',
+    buildDashboardInfoText(),
+    '',
+    'Untuk cek cepat:',
+    '- Telegram: /dashboard',
+    '- Browser: /api/dashboard/health',
+    '- Data protected: pakai Authorization Bearer token.'
+  ].join('\n');
+}
+
+async function handleNaturalToolRoute(chatId, userId, userText, msg) {
+  const detection = naturalToolRouter.detectNaturalToolIntent(userText);
+  logMessageFlow('natural_tool_detected', {
+    userId,
+    chatId,
+    intent: detection.intent,
+    confidence: detection.confidence,
+    reason: detection.reason,
+    text: userText
+  });
+
+  try {
+    switch (detection.intent) {
+      case 'WEATHER': {
+        if (!detection.city) {
+          await safeSendMessage(chatId, 'Contoh: Cuaca di Tokyo', { reply_to_message_id: msg.message_id });
+          return { handled: true, answer: 'Contoh: Cuaca di Tokyo', intent: detection.intent };
+        }
+        if (!OPENWEATHER_API_KEY) {
+          const answer = 'Fitur cuaca real-time belum aktif karena OPENWEATHER_API_KEY belum diset di environment.';
+          await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+          return { handled: true, answer, intent: detection.intent };
+        }
+        const answer = await getWeather(detection.city);
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'WEB_SEARCH': {
+        if (!detection.query) {
+          await safeSendMessage(chatId, 'Apa yang ingin dicari?', { reply_to_message_id: msg.message_id });
+          return { handled: true, answer: 'Apa yang ingin dicari?', intent: detection.intent };
+        }
+        if (!TAVILY_API_KEY) {
+          const answer = 'Fitur pencarian internet belum aktif karena TAVILY_API_KEY belum diset.';
+          await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+          return { handled: true, answer, intent: detection.intent };
+        }
+        const answer = await summarizeSearchWithRefs(detection.query, userId, getSystemPrompt(userId));
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'INTERNET_CAPABILITY_EXPLANATION': {
+        const answer = buildInternetCapabilityAnswer();
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'DASHBOARD_HELP': {
+        const answer = buildDashboardNaturalAnswer();
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'CALCULATE': {
+        const answer = calculate(detection.expression || userText);
+        await safeSendMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'UNIT_CONVERSION': {
+        const answer = detection.conversion?.answer || 'Saya belum bisa mengonversi satuan itu.';
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'TIME': {
+        const answer = getCurrentTime(detection.location || 'jakarta');
+        await safeSendMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'DATE': {
+        const answer = getCurrentDate();
+        await safeSendMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      case 'LOCATION': {
+        if (!detection.query) {
+          await safeSendMessage(chatId, 'Sebutkan tempatnya.', { reply_to_message_id: msg.message_id });
+          return { handled: true, answer: 'Sebutkan tempatnya.', intent: detection.intent };
+        }
+        const answer = await searchLocation(detection.query);
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, intent: detection.intent };
+      }
+
+      default:
+        return { handled: false, intent: detection.intent, reason: detection.reason };
+    }
+  } catch (err) {
+    log.warn('Natural tool route fallback:', {
+      intent: detection.intent,
+      error: err.message
+    });
+    const answer = 'Maaf, tool yang dibutuhkan sedang gagal dipakai. Coba ulangi sebentar lagi.';
+    await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+    return { handled: true, answer, intent: `${detection.intent}_ERROR` };
+  }
+}
 // =====================================================
 // WEBHOOK
 // =====================================================
@@ -6545,6 +6732,17 @@ app.get('/api/dashboard', (req, res) => {
     ],
     futureStack: ['Next.js', 'Tailwind CSS', 'shadcn/ui', 'PostgreSQL', 'Redis', 'Auth.js/Clerk/Supabase Auth']
   });
+});
+
+dashboard.registerDashboardRoutes(app, {
+  env: config,
+  storageManager,
+  aiOS,
+  opsSystem,
+  getOpsServices,
+  ensureUser,
+  getUsersSnapshot,
+  logger: log
 });
 
 app.get('/oauth2callback', async (req, res) => {
@@ -6740,6 +6938,20 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/cuaca') { await safeSendMessage(chatId, args ? await getWeather(args) : 'Contoh: /cuaca Bandung', { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/lokasi') { await safeSendMessage(chatId, args ? await searchLocation(args) : 'Contoh: /lokasi Monas', { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/cari') { await sendChunkedMessage(chatId, args ? await summarizeSearchWithRefs(args, userId, getSystemPrompt(userId)) : 'Contoh: /cari sejarah Jakarta', { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/dashboard') { await sendChunkedMessage(chatId, buildDashboardInfoText(), { reply_to_message_id: msg.message_id }); return; }
+  if (resolvedCmd === '/dashboardstatus') {
+    const status = getDashboardStatusText();
+    const text =
+`Dashboard Status
+DASHBOARD_ENABLED: ${status.enabled ? 'true' : 'false'}
+DASHBOARD_ADMIN_TOKEN: ${status.tokenSet ? 'set' : 'missing'}
+Protected endpoints: ${status.protectedStatus}
+
+Health public: /api/dashboard/health
+Data endpoint membutuhkan Authorization Bearer token.`;
+    await sendChunkedMessage(chatId, text, { reply_to_message_id: msg.message_id });
+    return;
+  }
 
   if (await handleSettings(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleCalibration(chatId, userId, resolvedCmd, args, msg)) return;
@@ -6814,6 +7026,34 @@ await withUserActionLock(userId, async () => {
         intent: 'plugin_hook'
       });
     }
+    return;
+  }
+
+  const naturalToolResult = await handleNaturalToolRoute(chatId, userId, userText, msg);
+  if (naturalToolResult?.handled) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_tool_route',
+      processed: true,
+      answerPreview: naturalToolResult.answer
+    });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: naturalToolResult.answer,
+      intent: `natural_tool:${naturalToolResult.intent}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: naturalToolResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, naturalToolResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
     return;
   }
 

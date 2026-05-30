@@ -97,6 +97,8 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /help
 /menu
 /actions
+/dashboard
+/dashboardstatus
 /mode
 /adaptive status
 /think masalah
