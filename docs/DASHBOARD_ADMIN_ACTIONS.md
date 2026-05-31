@@ -2,6 +2,8 @@
 
 Phase 13 menambahkan kontrol admin aman untuk memory, goal, dan workflow dari dashboard/API tanpa memberi bot kemampuan menjalankan aksi berbahaya di server.
 
+Phase 14 menambahkan workspace guard: bearer token tetap diperlukan, lalu setiap action dicek lagi terhadap role actor pada `workspaceId` target.
+
 ## Permission
 
 Endpoint protected membutuhkan bearer token:
@@ -27,6 +29,26 @@ DASHBOARD_DANGER_TOKEN=
 ```
 
 Jika tidak diisi, cukup gunakan `DASHBOARD_ADMIN_TOKEN`.
+
+## Workspace Guard
+
+Payload action dapat membawa:
+
+```json
+{
+  "actorId": "123456",
+  "userId": "123456",
+  "workspaceId": "ws_personal_123456"
+}
+```
+
+Aturan:
+
+- Jika `workspaceId` kosong, data dianggap berada di personal workspace target user.
+- Update memory/goal/workflow step butuh workspace permission `write`.
+- Archive/restore butuh workspace permission `danger`.
+- Actor yang tidak menjadi member workspace akan mendapat `WORKSPACE_PERMISSION_DENIED`.
+- Denial dicatat ke audit log dengan `decision=denied`.
 
 ## Safe Actions
 
@@ -62,6 +84,7 @@ Action archive/restore membutuhkan confirmation word:
 - Payload berbau secret/token/password/API key ditolak.
 - Output action disanitasi dan dipotong.
 - Action sukses dicatat ke audit log.
+- Action ditolak karena workspace permission juga dicatat ke audit log.
 - Jika action gagal, Telegram bot dan dashboard tetap berjalan.
 
 ## UI
@@ -71,7 +94,8 @@ Dashboard menampilkan kontrol sederhana:
 - Memory: copy ID, edit, archive.
 - Goal: update progress, update status, archive.
 - Workflow: tambah step, tandai step selesai, archive.
-- Audit Log: filter action/status/target/user/limit.
+- Workspaces: create workspace, pilih active workspace, kelola member, archive.
+- Permissions: cek role dan permission actor pada workspace aktif.
+- Audit Log: filter action/status/target/user/workspace/decision/limit.
 
 UI masih memakai vanilla HTML/JS agar ringan untuk Render free tier.
-

@@ -110,13 +110,19 @@ const Api = {
     if (filters.status) params.set('status', filters.status);
     if (filters.targetType) params.set('targetType', filters.targetType);
     if (filters.userId) params.set('userId', filters.userId);
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    if (filters.decision) params.set('decision', filters.decision);
     const query = params.toString();
     return this.apiGet(`/audit${query ? `?${query}` : ''}`);
   },
 
-  async getUserOverview(userId) {
+  workspaceQuery(workspaceId) {
+    return workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+  },
+
+  async getUserOverview(userId, workspaceId = '') {
     const encoded = encodeURIComponent(userId);
-    return this.apiGet(`/user/${encoded}/overview`);
+    return this.apiGet(`/user/${encoded}/overview${this.workspaceQuery(workspaceId)}`);
   },
 
   async getUserMemories(userId, filters = {}) {
@@ -124,33 +130,90 @@ const Api = {
     let query = `?limit=${filters.limit || 20}`;
     if (filters.q) query += `&q=${encodeURIComponent(filters.q)}`;
     if (filters.type) query += `&type=${encodeURIComponent(filters.type)}`;
+    if (filters.workspaceId) query += `&workspaceId=${encodeURIComponent(filters.workspaceId)}`;
     return this.apiGet(`/user/${encoded}/memories${query}`);
   },
 
-  async getUserGoals(userId) {
+  async getUserGoals(userId, workspaceId = '') {
     const encoded = encodeURIComponent(userId);
-    return this.apiGet(`/user/${encoded}/goals`);
+    return this.apiGet(`/user/${encoded}/goals${this.workspaceQuery(workspaceId)}`);
   },
 
-  async getUserWorkflows(userId) {
+  async getUserWorkflows(userId, workspaceId = '') {
     const encoded = encodeURIComponent(userId);
-    return this.apiGet(`/user/${encoded}/workflows`);
+    return this.apiGet(`/user/${encoded}/workflows${this.workspaceQuery(workspaceId)}`);
   },
 
-  async getUserInsights(userId) {
+  async getUserInsights(userId, workspaceId = '') {
     const encoded = encodeURIComponent(userId);
-    return this.apiGet(`/user/${encoded}/insights`);
+    return this.apiGet(`/user/${encoded}/insights${this.workspaceQuery(workspaceId)}`);
   },
 
-  async getUserGraph(userId) {
+  async getUserGraph(userId, workspaceId = '') {
     const encoded = encodeURIComponent(userId);
-    return this.apiGet(`/user/${encoded}/graph`);
+    return this.apiGet(`/user/${encoded}/graph${this.workspaceQuery(workspaceId)}`);
   },
 
-  async searchUserGraph(userId, q) {
+  async searchUserGraph(userId, q, workspaceId = '') {
     const encodedUser = encodeURIComponent(userId);
     const encodedQ = encodeURIComponent(q);
-    return this.apiGet(`/user/${encodedUser}/graph/search?q=${encodedQ}`);
+    const workspaceQuery = workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : '';
+    return this.apiGet(`/user/${encodedUser}/graph/search?q=${encodedQ}${workspaceQuery}`);
+  },
+
+  async getWorkspaces(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.actorId) params.set('actorId', filters.actorId);
+    if (filters.all) params.set('all', 'true');
+    if (filters.includeArchived) params.set('includeArchived', 'true');
+    const query = params.toString();
+    return this.apiGet(`/workspaces${query ? `?${query}` : ''}`);
+  },
+
+  async createWorkspace(payload) {
+    return this.apiPost('/workspaces/create', payload);
+  },
+
+  async getWorkspace(workspaceId, actorId = '') {
+    const query = actorId ? `?actorId=${encodeURIComponent(actorId)}` : '';
+    return this.apiGet(`/workspaces/${encodeURIComponent(workspaceId)}${query}`);
+  },
+
+  async getWorkspaceMembers(workspaceId, actorId = '') {
+    const query = actorId ? `?actorId=${encodeURIComponent(actorId)}` : '';
+    return this.apiGet(`/workspaces/${encodeURIComponent(workspaceId)}/members${query}`);
+  },
+
+  async addWorkspaceMember(workspaceId, payload) {
+    return this.apiPost(`/workspaces/${encodeURIComponent(workspaceId)}/members/add`, payload);
+  },
+
+  async updateWorkspaceMemberRole(workspaceId, payload) {
+    return this.apiPost(`/workspaces/${encodeURIComponent(workspaceId)}/members/role`, payload);
+  },
+
+  async removeWorkspaceMember(workspaceId, payload) {
+    return this.apiPost(`/workspaces/${encodeURIComponent(workspaceId)}/members/remove`, payload);
+  },
+
+  async archiveWorkspace(workspaceId, payload) {
+    return this.apiPost(`/workspaces/${encodeURIComponent(workspaceId)}/archive`, payload);
+  },
+
+  async getMyPermissions(workspaceId = '', actorId = '') {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set('workspaceId', workspaceId);
+    if (actorId) params.set('actorId', actorId);
+    const query = params.toString();
+    return this.apiGet(`/permissions/me${query ? `?${query}` : ''}`);
+  },
+
+  async getUsers() {
+    return this.apiGet('/users');
+  },
+
+  async getUserWorkspaceOverview(userId, workspaceId = '') {
+    return this.apiGet(`/users/${encodeURIComponent(userId)}/overview${this.workspaceQuery(workspaceId)}`);
   },
 
   async runDiagnostics() {

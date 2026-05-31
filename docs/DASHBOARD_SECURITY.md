@@ -87,9 +87,10 @@ Action dashboard dibatasi:
 - Semua action sukses masuk audit log.
 - Phase 12 menambahkan export report yang hanya mengembalikan data sanitized.
 - Phase 13 menambahkan kontrol aman untuk memory, goal, workflow, dan audit log.
+- Phase 14 menambahkan workspace role guard untuk memisahkan akses user/project/team.
 
 ## Known Limitations
 
-- Belum ada multi-user dashboard auth.
+- Auth dashboard masih bearer token stateless; workspace role memakai `actorId`, bukan login user interaktif penuh.
 - Belum ada session expiry server-side.
 - Token masih bearer stateless, bukan OAuth.

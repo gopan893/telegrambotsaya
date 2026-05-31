@@ -28,6 +28,7 @@ const interactions = require('../interactions');
 const naturalLanguage = require('../natural-language/natural-router');
 const naturalToolRouter = require('../natural-language/natural-tool-router');
 const dashboard = require('../dashboard');
+const workspaceSystem = require('../workspace');
 const {
   formatDashboardStorageStatus,
   formatDbStatus,
@@ -3318,6 +3319,95 @@ function formatGraphCommandSnapshot(snapshot = {}) {
   ].join('\n');
 }
 
+function getWorkspaceServices() {
+  return {
+    storageManager,
+    env: {
+      OWNER_CHAT_ID
+    },
+    getUsersSnapshot
+  };
+}
+
+function formatPermissionFlags(summary = {}) {
+  const flags = [
+    summary.canRead ? 'read' : '',
+    summary.canWrite ? 'write' : '',
+    summary.canDanger ? 'danger' : '',
+    summary.canOps ? 'ops' : '',
+    summary.canManageMembers ? 'manage_members' : ''
+  ].filter(Boolean);
+  return flags.length ? flags.join(', ') : 'limited/none';
+}
+
+async function buildWhoAmIText(userId) {
+  const services = getWorkspaceServices();
+  const defaultWorkspace = await workspaceSystem.store.getDefaultWorkspaceForUser(userId, services);
+  const summary = await workspaceSystem.permissions.getPermissionSummary(userId, defaultWorkspace?.id, services);
+  return [
+    'Who Am I',
+    '',
+    `User ID: ${userId}`,
+    `Role bot: ${isAdmin(userId) ? 'admin/owner' : 'user'}`,
+    `Default workspace: ${defaultWorkspace?.id || '-'}`,
+    `Workspace role: ${summary.role || 'none'}`,
+    `Permissions: ${formatPermissionFlags(summary)}`,
+    '',
+    'Catatan: token, API key, dan connection string tidak pernah ditampilkan.'
+  ].join('\n');
+}
+
+async function getDefaultWorkspaceIdForUser(userId) {
+  const workspace = await workspaceSystem.store.getDefaultWorkspaceForUser(userId, getWorkspaceServices());
+  return workspace?.id || workspaceSystem.utils.getPersonalWorkspaceId(userId);
+}
+
+async function buildWorkspaceText(userId) {
+  const services = getWorkspaceServices();
+  const defaultWorkspace = await workspaceSystem.store.getDefaultWorkspaceForUser(userId, services);
+  const summary = await workspaceSystem.permissions.getPermissionSummary(userId, defaultWorkspace?.id, services);
+  const cognitiveWorkspaces = aiOS.cognitiveWorkspace.listWorkspaces(userId, getAiosServices(), 10);
+  const activeCognitive = aiOS.cognitiveWorkspace.getActiveWorkspace(userId, getAiosServices());
+  const cognitiveText = cognitiveWorkspaces.length
+    ? [
+      `Aktif: ${activeCognitive ? `${activeCognitive.id} - ${activeCognitive.title}` : '-'}`,
+      ...cognitiveWorkspaces.map((item, index) => `${index + 1}. ${item.id} - ${item.title} (${(item.notes || []).length} catatan)`)
+    ].join('\n')
+    : 'Belum ada cognitive workspace. Buat dengan /workspaceadd judul | deskripsi';
+
+  return [
+    'Workspace Saat Ini',
+    '',
+    `Workspace ID: ${defaultWorkspace?.id || '-'}`,
+    `Nama: ${defaultWorkspace?.name || '-'}`,
+    `Tipe: ${defaultWorkspace?.type || '-'}`,
+    `Role: ${summary.role || 'none'}`,
+    `Permissions: ${formatPermissionFlags(summary)}`,
+    `Member aktif: ${(defaultWorkspace?.members || []).filter(member => member.status === 'active').length}`,
+    '',
+    'Cognitive Workspace Lama',
+    cognitiveText
+  ].join('\n');
+}
+
+async function buildWorkspacesText(userId) {
+  const services = getWorkspaceServices();
+  const workspaces = await workspaceSystem.store.listWorkspacesForUser(userId, services, { includeArchived: false });
+  if (!workspaces.length) return 'Belum ada workspace. Workspace personal akan dibuat otomatis saat dibutuhkan.';
+  const lines = [];
+  for (const item of workspaces.slice(0, 20)) {
+    const summary = await workspaceSystem.permissions.getPermissionSummary(userId, item.id, services);
+    lines.push(`- ${item.id} | ${item.name} | role=${summary.role} | type=${item.type}`);
+  }
+  return [
+    'Workspace yang Bisa Diakses',
+    '',
+    ...lines,
+    '',
+    'Dashboard workspace tersedia di /dashboard jika DASHBOARD_ENABLED aktif.'
+  ].join('\n');
+}
+
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
@@ -3376,6 +3466,7 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /remember <teks yang ingin disimpan>', replyOpt);
       return true;
     }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
     const repositories = getStorageRepositoriesSafe();
     const relationalMemory = isRelationalStorageActive() && repositories?.memories
       ? await repositories.memories.createMemory({
@@ -3385,7 +3476,8 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
         source: 'user',
         tags: ['manual'],
         confidence: 0.85,
-        importance: 0.72
+        importance: 0.72,
+        metadata: { workspaceId }
       })
       : null;
     const result = relationalMemory
@@ -3396,7 +3488,9 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
         source: 'user',
         tags: ['manual'],
         confidence: 0.85,
-        importance: 0.72
+        importance: 0.72,
+        workspaceId,
+        metadata: { workspaceId }
       }, services);
     if (result.ok) {
       if (isRelationalStorageActive() && repositories?.insights) {
@@ -3407,7 +3501,8 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           source: 'remember-command',
           relatedConcepts: ['manual-memory'],
           confidence: 0.75,
-          importance: 0.62
+          importance: 0.62,
+          metadata: { workspaceId }
         });
       } else {
         await aiOS.insightStore.createInsight(userId, {
@@ -3416,7 +3511,9 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
         source: 'remember-command',
         relatedConcepts: ['manual-memory'],
         confidence: 0.75,
-        importance: 0.62
+        importance: 0.62,
+        workspaceId,
+        metadata: { workspaceId }
         }, services);
       }
       if (isRelationalStorageActive() && repositories?.graph) {
@@ -3427,7 +3524,8 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           summary: content,
           source: 'remember-command',
           importance: 0.62,
-          confidence: 0.72
+          confidence: 0.72,
+          metadata: { workspaceId }
         });
       }
       updateGraphFromEntitySafe(userId, {
@@ -3487,13 +3585,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /goaladd <judul> | <deskripsi> | <prioritas> | <targetDate optional>', replyOpt);
       return true;
     }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
     const repositories = getStorageRepositoriesSafe();
     const goal = isRelationalStorageActive() && repositories?.goals
-      ? await repositories.goals.createGoal({ userId, title, description, priority, targetDate })
+      ? await repositories.goals.createGoal({ userId, title, description, priority, targetDate, metadata: { workspaceId } })
       : null;
     const result = goal
       ? { ok: true, goal }
-      : aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate }, services);
+      : aiOS.goalManager.createGoal(userId, { title, description, priority, targetDate, workspaceId, metadata: { workspaceId } }, services);
     if (result.ok) {
       if (isRelationalStorageActive() && repositories?.graph) {
         await repositories.graph.upsertNode({
@@ -3503,7 +3602,8 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           summary: result.goal.description,
           source: 'goal-command',
           importance: result.goal.priority === 'high' ? 0.82 : 0.68,
-          confidence: 0.78
+          confidence: 0.78,
+          metadata: { workspaceId }
         });
       }
       updateGraphFromEntitySafe(userId, {
@@ -3574,13 +3674,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       await safeSendMessage(chatId, 'Format: /workflowadd <judul> | <deskripsi> | <goalId optional>', replyOpt);
       return true;
     }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
     const repositories = getStorageRepositoriesSafe();
     const workflow = isRelationalStorageActive() && repositories?.workflows
-      ? await repositories.workflows.createWorkflow({ userId, title, description, goalId })
+      ? await repositories.workflows.createWorkflow({ userId, title, description, goalId, metadata: { workspaceId } })
       : null;
     const result = workflow
       ? { ok: true, workflow: { ...workflow, steps: [] } }
-      : aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId }, services);
+      : aiOS.workflowEngine.createWorkflow(userId, { title, description, goalId, workspaceId, metadata: { workspaceId } }, services);
     if (result.ok) {
       if (isRelationalStorageActive() && repositories?.graph) {
         await repositories.graph.upsertNode({
@@ -3590,7 +3691,8 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
           summary: result.workflow.description,
           source: 'workflow-command',
           importance: 0.7,
-          confidence: 0.76
+          confidence: 0.76,
+          metadata: { workspaceId }
         });
       }
       updateGraphFromEntitySafe(userId, {
@@ -3619,13 +3721,14 @@ Workflow completion: ${Math.round((workflowStats.completionRatio || 0) * 100)}%`
       return true;
     }
     const repositories = getStorageRepositoriesSafe();
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
     let result;
     if (isRelationalStorageActive() && repositories?.workflows) {
-      const createdStep = await repositories.workflows.addWorkflowStep({ userId, workflowId, title: step });
+      const createdStep = await repositories.workflows.addWorkflowStep({ userId, workflowId, title: step, metadata: { workspaceId } });
       result = createdStep ? { ok: true, stepNumber: createdStep.stepNumber || createdStep.step_number } : { ok: false, reason: 'WORKFLOW_NOT_FOUND' };
     } else {
       await aiOS.workflowEngine.hydrateWorkflowsFromStorage?.(userId, services);
-      result = aiOS.workflowEngine.addStep(userId, workflowId, step, services);
+      result = aiOS.workflowEngine.addStep(userId, workflowId, { title: step, workspaceId, metadata: { workspaceId } }, services);
     }
     await safeSendMessage(
       chatId,
@@ -3827,17 +3930,18 @@ ${stats.topNodes?.length ? stats.topNodes.map((node, index) => `${index + 1}. ${
     return true;
   }
 
+  if (cmd === '/whoami') {
+    await sendChunkedMessage(chatId, await buildWhoAmIText(userId), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/workspaces') {
+    await sendChunkedMessage(chatId, await buildWorkspacesText(userId), replyOpt);
+    return true;
+  }
+
   if (cmd === '/workspace') {
-    const workspaces = aiOS.cognitiveWorkspace.listWorkspaces(userId, services, 10);
-    const active = aiOS.cognitiveWorkspace.getActiveWorkspace(userId, services);
-    const text = workspaces.length
-      ? [
-        `Aktif: ${active ? `${active.id} - ${active.title}` : '-'}`,
-        '',
-        ...workspaces.map((workspace, index) => `${index + 1}. ${workspace.id} - ${workspace.title} (${(workspace.notes || []).length} catatan)`)
-      ].join('\n')
-      : 'Belum ada cognitive workspace. Buat dengan /workspaceadd judul | deskripsi';
-    await sendChunkedMessage(chatId, `Cognitive Workspace:\n${text}`, replyOpt);
+    await sendChunkedMessage(chatId, await buildWorkspaceText(userId), replyOpt);
     return true;
   }
 
@@ -5531,6 +5635,9 @@ async function handleHelp(chatId, msg) {
 /dbstatus - status PostgreSQL/storage
 /redisstatus - status Redis/cache
 /audit [recent] - ringkasan audit dashboard [admin]
+/whoami - identitas user dan role workspace
+/workspace - workspace aktif dan permission
+/workspaces - daftar workspace yang bisa diakses
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
 /system - status agent production [admin]
@@ -5596,7 +5703,7 @@ async function handleHelp(chatId, msg) {
 /graphprune - bersihkan graph stale
 /graphstats - statistik graph
 /insights - insight penting
-/workspace - cognitive workspace
+/workspace - workspace aktif + cognitive workspace
 /workspaceadd judul | deskripsi
 /reflect <teks/topik>
 /strategy <goal/masalah>
@@ -5683,6 +5790,8 @@ function isUnknownCommand(cmd) {
     '/dbstatus',
     '/redisstatus',
     '/audit',
+    '/whoami',
+    '/workspaces',
     '/belajar',
     '/stats',
     '/system',

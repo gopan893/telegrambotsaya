@@ -13,6 +13,9 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | `/dbstatus` | Status PostgreSQL, readiness tabel, fallback, dan rekomendasi perbaikan. |
 | `/redisstatus` | Status Redis/cache, fallback memory cache, dan rekomendasi perbaikan. |
 | `/audit [recent]` | Ringkasan audit dashboard/admin terbaru, admin-only. |
+| `/whoami` | Identitas Telegram user, role bot, default workspace, dan permission. |
+| `/workspace` | Workspace aktif, role, permission, dan cognitive workspace lama. |
+| `/workspaces` | Daftar workspace yang bisa diakses user. |
 | `/ping` | Cek respons bot. |
 | `/reset` | Reset state user dengan guard/konfirmasi jika tersedia. |
 | `/stats` | Status runtime ringkas, storage, Redis, memory, plugin. |
@@ -58,6 +61,14 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | `/graphdeps` | Lihat dependency utama. |
 | `/graphprune` | Prune graph stale/low-value. |
 | `/graphstats` | Statistik node, edge, relationship, confidence. |
+
+## Workspace & Permission
+
+| Command | Fungsi |
+| --- | --- |
+| `/whoami` | Cek user ID, role admin/user, default workspace, dan permission workspace. |
+| `/workspace` | Cek workspace aktif dan cognitive workspace lama tanpa menghapus behavior lama. |
+| `/workspaces` | Lihat personal/project/team/admin workspace yang bisa diakses. |
 
 ## Collaboration
 

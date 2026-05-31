@@ -25,6 +25,7 @@ function buildCommandCatalog() {
     core: ['/start', '/help', '/ping', '/reset', '/stats'],
     adaptive: ['/mode', '/adaptive status', '/adaptive on', '/adaptive off', '/adaptive reset'],
     'ai-os': ['/aios', '/insights', '/workspace'],
+    workspace: ['/whoami', '/workspace', '/workspaces'],
     memory: ['/remember', '/memory', '/forget'],
     goals: ['/goals', '/goaladd', '/goalupdate'],
     workflows: ['/workflows', '/workflowadd', '/workflowstep', '/workflowdone', '/workflowdecision', '/workflowblocker', '/workflownext'],

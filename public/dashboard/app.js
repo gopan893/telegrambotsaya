@@ -79,6 +79,15 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'ops':
         await UI.renderOps(tabContent);
         break;
+      case 'workspaces':
+        await UI.renderWorkspacesAdmin(tabContent);
+        break;
+      case 'users':
+        await UI.renderUsers(tabContent);
+        break;
+      case 'permissions':
+        await UI.renderPermissions(tabContent);
+        break;
       case 'memory':
         await UI.renderMemory(tabContent);
         break;

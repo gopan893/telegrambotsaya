@@ -45,6 +45,17 @@ GET /api/dashboard/user/:userId/workflows
 GET /api/dashboard/user/:userId/insights
 GET /api/dashboard/user/:userId/graph
 GET /api/dashboard/user/:userId/graph/search?q=<query>
+GET /api/dashboard/workspaces
+POST /api/dashboard/workspaces/create
+GET /api/dashboard/workspaces/:workspaceId
+GET /api/dashboard/workspaces/:workspaceId/members
+POST /api/dashboard/workspaces/:workspaceId/members/add
+POST /api/dashboard/workspaces/:workspaceId/members/role
+POST /api/dashboard/workspaces/:workspaceId/members/remove
+POST /api/dashboard/workspaces/:workspaceId/archive
+GET /api/dashboard/permissions/me
+GET /api/dashboard/users
+GET /api/dashboard/users/:userId/overview
 GET /api/dashboard/ops
 GET /api/dashboard/commands
 GET /api/dashboard/env-check
@@ -157,6 +168,7 @@ curl -X POST \
 - Serializer memotong text panjang dan meredaksi token, API key, password, secret, dan connection string.
 - Dashboard tidak menampilkan `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_TOKEN`, atau API key.
 - Safe admin actions memakai permission, confirmation word untuk archive/restore, soft delete, dan audit log.
+- Workspace guard mengecek `actorId`, `workspaceId`, role, dan permission sebelum membuka/mengubah data workspace.
 
 ## Render Deployment
 

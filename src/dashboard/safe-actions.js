@@ -3,6 +3,7 @@
 const guards = require('./dashboard-guards');
 const auditLog = require('./audit-log');
 const softDelete = require('./soft-delete');
+const workspace = require('../workspace');
 
 const ACTION_CONFIRM_WORDS = {
   'memory/archive': 'ARCHIVE',
@@ -56,6 +57,29 @@ function validateSafeAction(action, payload = {}) {
   const confirm = requireDoubleConfirm(payload, expectedWord);
   if (!confirm.ok) return confirm;
   return { ok: true, userId };
+}
+
+function actionPermission(action) {
+  if (/archive|restore/.test(String(action))) return 'danger';
+  return 'write';
+}
+
+async function prepareWorkspaceAction(action, payload, context, services) {
+  const base = validateSafeAction(action, payload);
+  if (!base.ok) return base;
+  const targetWorkspace = payload.workspaceId
+    ? await workspace.store.getWorkspace(payload.workspaceId, services)
+    : await workspace.store.getDefaultWorkspaceForUser(base.userId, services);
+  if (!targetWorkspace) return { ok: false, error: 'WORKSPACE_NOT_FOUND' };
+  const actorId = String(context.actorId || base.userId || '').trim();
+  const permission = actionPermission(action);
+  const allowed = await workspace.permissions.hasWorkspacePermission(actorId, targetWorkspace.id, permission, services);
+  const actorRole = await workspace.permissions.getUserRole(targetWorkspace.id, actorId, services);
+  if (!allowed) {
+    await record(action, { ...payload, userId: base.userId, workspaceId: targetWorkspace.id }, null, null, 'denied', { ...context, actorRole, permission, decision: 'denied' }, services);
+    return { ok: false, error: 'WORKSPACE_PERMISSION_DENIED', userId: base.userId, workspaceId: targetWorkspace.id, actorRole, permission };
+  }
+  return { ok: true, userId: base.userId, workspaceId: targetWorkspace.id, actorRole, permission };
 }
 
 function getRepos(services = {}) {
@@ -114,6 +138,10 @@ async function record(action, payload, before, after, status, context, services)
     targetType: action.split('/')[0],
     targetId: payload.memoryId || payload.goalId || payload.workflowId || payload.stepId || '',
     userId: payload.userId,
+    workspaceId: payload.workspaceId || context.workspaceId || '',
+    actorRole: context.actorRole || '',
+    permission: context.permission || '',
+    decision: context.decision || (status === 'denied' ? 'denied' : 'allowed'),
     status,
     beforeSummary: summarize(before),
     afterSummary: summarize(after),
@@ -185,7 +213,7 @@ async function updateJsonItem(services, key, userId, id, patch, idField = 'id') 
 }
 
 async function updateMemory(payload, context, services) {
-  const base = validateSafeAction('memory/update', payload);
+  const base = await prepareWorkspaceAction('memory/update', payload, context, services);
   if (!base.ok) return buildActionResult('memory/update', 'rejected', null, [base.error]);
   const memoryId = guards.validateId(payload.memoryId);
   if (!memoryId) return buildActionResult('memory/update', 'rejected', null, ['INVALID_MEMORY_ID']);
@@ -193,6 +221,10 @@ async function updateMemory(payload, context, services) {
   if (!valid.ok) return buildActionResult('memory/update', 'rejected', null, [valid.error]);
   const repos = getRepos(services);
   const before = await repos?.memories?.getMemoryById?.(base.userId, memoryId);
+  if (before && workspace.utils.getWorkspaceIdFromData(before, workspace.utils.getPersonalWorkspaceId(base.userId)) !== base.workspaceId) {
+    return buildActionResult('memory/update', 'not_found', null, ['MEMORY_NOT_FOUND']);
+  }
+  valid.patch.metadata = { ...(before?.metadata || {}), ...(valid.patch.metadata || {}), workspaceId: base.workspaceId };
   let after = repos?.memories?.updateMemory
     ? await repos.memories.updateMemory(base.userId, memoryId, valid.patch)
     : null;
@@ -201,24 +233,27 @@ async function updateMemory(payload, context, services) {
     after = json?.after || null;
   }
   if (!after) return buildActionResult('memory/update', 'not_found', null, ['MEMORY_NOT_FOUND']);
-  await record('memory/update', payload, before, after, 'ok', context, services);
+  await record('memory/update', { ...payload, workspaceId: base.workspaceId }, before, after, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('memory/update', 'ok', { memory: after });
 }
 
 async function archiveMemory(payload, context, services) {
-  const base = validateSafeAction('memory/archive', payload);
+  const base = await prepareWorkspaceAction('memory/archive', payload, context, services);
   if (!base.ok) return buildActionResult('memory/archive', 'rejected', null, [base.error]);
   const memoryId = guards.validateId(payload.memoryId);
   if (!memoryId) return buildActionResult('memory/archive', 'rejected', null, ['INVALID_MEMORY_ID']);
   const repos = getRepos(services);
   const before = await repos?.memories?.getMemoryById?.(base.userId, memoryId);
+  if (before && workspace.utils.getWorkspaceIdFromData(before, workspace.utils.getPersonalWorkspaceId(base.userId)) !== base.workspaceId) {
+    return buildActionResult('memory/archive', 'not_found', null, ['MEMORY_NOT_FOUND']);
+  }
   let after = null;
   const pool = getPool(services);
   if (pool) {
     const result = await pool.query(
       `UPDATE memories SET deleted_at = NOW(), updated_at = NOW(), metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
        WHERE user_id = $1 AND id = $2 RETURNING *`,
-      [base.userId, memoryId, JSON.stringify({ archivedBy: context.actorId || 'dashboard-admin', archiveReason: payload.reason || '' })]
+      [base.userId, memoryId, JSON.stringify({ archivedBy: context.actorId || 'dashboard-admin', archiveReason: payload.reason || '', workspaceId: base.workspaceId })]
     );
     after = result.rows?.[0] || null;
   } else if (repos?.memories?.softDeleteMemory) {
@@ -231,12 +266,12 @@ async function archiveMemory(payload, context, services) {
     after = json?.after || null;
   }
   if (!after) return buildActionResult('memory/archive', 'not_found', null, ['MEMORY_NOT_FOUND']);
-  await record('memory/archive', payload, before, after, 'ok', context, services);
+  await record('memory/archive', { ...payload, workspaceId: base.workspaceId }, before, after, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('memory/archive', 'ok', { memory: after });
 }
 
 async function restoreMemory(payload, context, services) {
-  const base = validateSafeAction('memory/restore', payload);
+  const base = await prepareWorkspaceAction('memory/restore', payload, context, services);
   if (!base.ok) return buildActionResult('memory/restore', 'rejected', null, [base.error]);
   const memoryId = guards.validateId(payload.memoryId);
   if (!memoryId) return buildActionResult('memory/restore', 'rejected', null, ['INVALID_MEMORY_ID']);
@@ -246,20 +281,20 @@ async function restoreMemory(payload, context, services) {
     const result = await pool.query(
       `UPDATE memories SET deleted_at = NULL, updated_at = NOW(), metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
        WHERE user_id = $1 AND id = $2 RETURNING *`,
-      [base.userId, memoryId, JSON.stringify({ restoredBy: context.actorId || 'dashboard-admin' })]
+      [base.userId, memoryId, JSON.stringify({ restoredBy: context.actorId || 'dashboard-admin', workspaceId: base.workspaceId })]
     );
     after = result.rows?.[0] || null;
   } else {
-    const json = await updateJsonItem(services, 'rel_memories', base.userId, memoryId, { deletedAt: null, restoredAt: new Date().toISOString(), restoredBy: context.actorId || 'dashboard-admin' });
+    const json = await updateJsonItem(services, 'rel_memories', base.userId, memoryId, { deletedAt: null, restoredAt: new Date().toISOString(), restoredBy: context.actorId || 'dashboard-admin', metadata: { workspaceId: base.workspaceId } });
     after = json?.after || null;
   }
   if (!after) return buildActionResult('memory/restore', 'not_found', null, ['MEMORY_NOT_FOUND']);
-  await record('memory/restore', payload, { id: memoryId }, after, 'ok', context, services);
+  await record('memory/restore', { ...payload, workspaceId: base.workspaceId }, { id: memoryId }, after, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('memory/restore', 'ok', { memory: after });
 }
 
 async function updateGoal(payload, context, services) {
-  const base = validateSafeAction('goal/update', payload);
+  const base = await prepareWorkspaceAction('goal/update', payload, context, services);
   if (!base.ok) return buildActionResult('goal/update', 'rejected', null, [base.error]);
   const goalId = guards.validateId(payload.goalId);
   if (!goalId) return buildActionResult('goal/update', 'rejected', null, ['INVALID_GOAL_ID']);
@@ -267,13 +302,17 @@ async function updateGoal(payload, context, services) {
   if (!valid.ok) return buildActionResult('goal/update', 'rejected', null, [valid.error]);
   const repos = getRepos(services);
   const before = await repos?.goals?.getGoalById?.(base.userId, goalId);
+  if (before && workspace.utils.getWorkspaceIdFromData(before, workspace.utils.getPersonalWorkspaceId(base.userId)) !== base.workspaceId) {
+    return buildActionResult('goal/update', 'not_found', null, ['GOAL_NOT_FOUND']);
+  }
+  valid.patch.metadata = { ...(before?.metadata || {}), ...(valid.patch.metadata || {}), workspaceId: base.workspaceId };
   let after = repos?.goals?.updateGoal ? await repos.goals.updateGoal(base.userId, goalId, valid.patch) : null;
   if (!after) {
     const json = await updateJsonItem(services, 'rel_goals', base.userId, goalId, valid.patch);
     after = json?.after || null;
   }
   if (!after) return buildActionResult('goal/update', 'not_found', null, ['GOAL_NOT_FOUND']);
-  await record('goal/update', payload, before, after, 'ok', context, services);
+  await record('goal/update', { ...payload, workspaceId: base.workspaceId }, before, after, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('goal/update', 'ok', { goal: after });
 }
 
@@ -294,7 +333,7 @@ async function restoreWorkflow(payload, context, services) {
 }
 
 async function archiveEntity(action, repoName, jsonKey, idKey, payload, context, services) {
-  const base = validateSafeAction(action, payload);
+  const base = await prepareWorkspaceAction(action, payload, context, services);
   if (!base.ok) return buildActionResult(action, 'rejected', null, [base.error]);
   const id = guards.validateId(payload[idKey]);
   if (!id) return buildActionResult(action, 'rejected', null, [`INVALID_${idKey.toUpperCase()}`]);
@@ -305,7 +344,7 @@ async function archiveEntity(action, repoName, jsonKey, idKey, payload, context,
     const result = await pool.query(
       `UPDATE ${table} SET deleted_at = NOW(), status = 'archived', updated_at = NOW(), metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
        WHERE user_id = $1 AND id = $2 RETURNING *`,
-      [base.userId, id, JSON.stringify({ archivedBy: context.actorId || 'dashboard-admin', archiveReason: payload.reason || '' })]
+      [base.userId, id, JSON.stringify({ archivedBy: context.actorId || 'dashboard-admin', archiveReason: payload.reason || '', workspaceId: base.workspaceId })]
     );
     after = result.rows?.[0] || null;
   } else {
@@ -313,12 +352,12 @@ async function archiveEntity(action, repoName, jsonKey, idKey, payload, context,
     after = json?.after || null;
   }
   if (!after) return buildActionResult(action, 'not_found', null, ['TARGET_NOT_FOUND']);
-  await record(action, { ...payload, [idKey]: id }, { id }, after, 'ok', context, services);
+  await record(action, { ...payload, [idKey]: id, workspaceId: base.workspaceId }, { id }, after, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult(action, 'ok', { [repoName.slice(0, -1)]: after });
 }
 
 async function restoreEntity(action, repoName, jsonKey, idKey, payload, context, services) {
-  const base = validateSafeAction(action, payload);
+  const base = await prepareWorkspaceAction(action, payload, context, services);
   if (!base.ok) return buildActionResult(action, 'rejected', null, [base.error]);
   const id = guards.validateId(payload[idKey]);
   if (!id) return buildActionResult(action, 'rejected', null, [`INVALID_${idKey.toUpperCase()}`]);
@@ -329,20 +368,20 @@ async function restoreEntity(action, repoName, jsonKey, idKey, payload, context,
     const result = await pool.query(
       `UPDATE ${table} SET deleted_at = NULL, status = CASE WHEN status = 'archived' THEN 'active' ELSE status END, updated_at = NOW(), metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
        WHERE user_id = $1 AND id = $2 RETURNING *`,
-      [base.userId, id, JSON.stringify({ restoredBy: context.actorId || 'dashboard-admin' })]
+      [base.userId, id, JSON.stringify({ restoredBy: context.actorId || 'dashboard-admin', workspaceId: base.workspaceId })]
     );
     after = result.rows?.[0] || null;
   } else {
-    const json = await updateJsonItem(services, jsonKey, base.userId, id, { deletedAt: null, archivedAt: null, status: 'active', restoredAt: new Date().toISOString(), restoredBy: context.actorId || 'dashboard-admin' });
+    const json = await updateJsonItem(services, jsonKey, base.userId, id, { deletedAt: null, archivedAt: null, status: 'active', restoredAt: new Date().toISOString(), restoredBy: context.actorId || 'dashboard-admin', metadata: { workspaceId: base.workspaceId } });
     after = json?.after || null;
   }
   if (!after) return buildActionResult(action, 'not_found', null, ['TARGET_NOT_FOUND']);
-  await record(action, { ...payload, [idKey]: id }, { id }, after, 'ok', context, services);
+  await record(action, { ...payload, [idKey]: id, workspaceId: base.workspaceId }, { id }, after, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult(action, 'ok', { [repoName.slice(0, -1)]: after });
 }
 
 async function addWorkflowStep(payload, context, services) {
-  const base = validateSafeAction('workflow/step/add', payload);
+  const base = await prepareWorkspaceAction('workflow/step/add', payload, context, services);
   if (!base.ok) return buildActionResult('workflow/step/add', 'rejected', null, [base.error]);
   const workflowId = guards.validateId(payload.workflowId);
   const validText = guards.validateTextLength(payload.title || payload.step || payload.text, 500, 'step');
@@ -353,15 +392,16 @@ async function addWorkflowStep(payload, context, services) {
     workflowId,
     title: validText.value,
     description: payload.description || '',
-    stepNumber: payload.stepNumber
+    stepNumber: payload.stepNumber,
+    metadata: { workspaceId: base.workspaceId }
   });
   if (!step) return buildActionResult('workflow/step/add', 'not_found', null, ['WORKFLOW_NOT_FOUND']);
-  await record('workflow/step/add', payload, null, step, 'ok', context, services);
+  await record('workflow/step/add', { ...payload, workspaceId: base.workspaceId }, null, step, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('workflow/step/add', 'ok', { step });
 }
 
 async function markWorkflowStepDone(payload, context, services) {
-  const base = validateSafeAction('workflow/step/done', payload);
+  const base = await prepareWorkspaceAction('workflow/step/done', payload, context, services);
   if (!base.ok) return buildActionResult('workflow/step/done', 'rejected', null, [base.error]);
   const workflowId = guards.validateId(payload.workflowId);
   if (!workflowId) return buildActionResult('workflow/step/done', 'rejected', null, ['INVALID_WORKFLOW_ID']);
@@ -380,12 +420,12 @@ async function markWorkflowStepDone(payload, context, services) {
     step = await repos?.workflows?.completeWorkflowStep?.(base.userId, workflowId, stepNumber);
   }
   if (!step) return buildActionResult('workflow/step/done', 'not_found', null, ['STEP_NOT_FOUND']);
-  await record('workflow/step/done', payload, null, step, 'ok', context, services);
+  await record('workflow/step/done', { ...payload, workspaceId: base.workspaceId }, null, step, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('workflow/step/done', 'ok', { step });
 }
 
 async function reorderWorkflowStep(payload, context, services) {
-  const base = validateSafeAction('workflow/step/reorder', payload);
+  const base = await prepareWorkspaceAction('workflow/step/reorder', payload, context, services);
   if (!base.ok) return buildActionResult('workflow/step/reorder', 'rejected', null, [base.error]);
   const workflowId = guards.validateId(payload.workflowId);
   const stepId = guards.validateId(payload.stepId);
@@ -405,7 +445,7 @@ async function reorderWorkflowStep(payload, context, services) {
     step = json?.after || null;
   }
   if (!step) return buildActionResult('workflow/step/reorder', 'not_found', null, ['STEP_NOT_FOUND']);
-  await record('workflow/step/reorder', payload, null, step, 'ok', context, services);
+  await record('workflow/step/reorder', { ...payload, workspaceId: base.workspaceId }, null, step, 'ok', { ...context, actorRole: base.actorRole, permission: base.permission }, services);
   return buildActionResult('workflow/step/reorder', 'ok', { step });
 }
 

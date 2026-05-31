@@ -31,6 +31,10 @@ Setiap entry disanitasi dan berisi:
   "targetType": "memory",
   "targetId": "mem_123",
   "userId": "123",
+  "workspaceId": "ws_personal_123",
+  "actorRole": "owner",
+  "permission": "write",
+  "decision": "allowed",
   "status": "ok",
   "beforeSummary": {},
   "afterSummary": {},
@@ -53,6 +57,8 @@ action=<action>
 status=<ok|rejected|not_found|error>
 targetType=<memory|goal|workflow>
 userId=<telegramUserId>
+workspaceId=<workspaceId>
+decision=<allowed|denied>
 limit=20
 ```
 
@@ -72,4 +78,4 @@ Command ini admin-only. Output tidak menampilkan secret.
 - Belum ada export audit terpisah.
 - Belum ada tamper-proof log chain.
 - Belum ada retention policy berbasis umur, baru limit jumlah entry.
-
+- Belum ada export audit terpisah per workspace.

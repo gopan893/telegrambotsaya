@@ -10,6 +10,8 @@ const actions = require('./dashboard-actions');
 const auditLog = require('./audit-log');
 const permissions = require('./dashboard-permissions');
 const safeActions = require('./safe-actions');
+const workspace = require('../workspace');
+const workspaceRoutes = require('./workspace-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -79,6 +81,44 @@ async function safeCall(fn, fallback) {
   }
 }
 
+async function resolveWorkspaceForUser(userId, workspaceId, services) {
+  const cleanWorkspaceId = workspace.guards.validateWorkspaceId(workspaceId || '');
+  if (cleanWorkspaceId) return workspace.store.getWorkspace(cleanWorkspaceId, services);
+  return workspace.store.getDefaultWorkspaceForUser(userId, services);
+}
+
+async function ensureDashboardUserAccess(req, res, services, userId, permission = 'read') {
+  const actorId = workspaceRoutes.getActorId(req, services);
+  const selectedWorkspace = await resolveWorkspaceForUser(userId, req.query.workspaceId || req.body?.workspaceId || '', services);
+  if (!selectedWorkspace) return { ok: false, response: guards.safeDashboardResponse(res, { ok: false, error: 'WORKSPACE_NOT_FOUND' }, 404) };
+  const allowed = await workspace.permissions.canAccessUserData(actorId, userId, selectedWorkspace.id, permission, services);
+  if (!allowed) {
+    await auditLog.recordAuditLog({
+      actorType: 'dashboard',
+      actorId,
+      action: `workspace/data_${permission}_denied`,
+      targetType: 'user',
+      targetId: userId,
+      userId,
+      workspaceId: selectedWorkspace.id,
+      permission,
+      decision: 'denied',
+      status: 'denied',
+      reason: 'workspace data access denied',
+      ip: req.ip || req.headers['x-forwarded-for'] || '',
+      userAgent: req.headers['user-agent'] || ''
+    }, services);
+    return { ok: false, response: guards.safeDashboardResponse(res, { ok: false, error: 'WORKSPACE_PERMISSION_DENIED' }, 403) };
+  }
+  const summary = await workspace.permissions.getPermissionSummary(actorId, selectedWorkspace.id, services);
+  return { ok: true, actorId, workspace: selectedWorkspace, workspaceId: selectedWorkspace.id, role: summary.role, permissionSummary: summary };
+}
+
+function filterByWorkspace(items, userId, workspaceId) {
+  const defaultWorkspaceId = workspace.utils.getPersonalWorkspaceId(userId);
+  return workspace.guards.filterDataByWorkspace(items, workspaceId, defaultWorkspaceId);
+}
+
 function getRepositories(services) {
   try {
     return services.storageManager?.getRepositories?.() || null;
@@ -121,26 +161,36 @@ function countAiosUserData(services) {
 
 async function listMemories(userId, query, options, services) {
   const repos = getRepositories(services);
+  let items = [];
   if (isRelational(services) && repos?.memories) {
-    return query
+    items = query
       ? repos.memories.searchMemories(userId, query, options)
       : repos.memories.listMemories(userId, options);
+    items = await items;
+    return filterByWorkspace(items, userId, options.workspaceId);
   }
-  return services.aiOS.unifiedMemory?.listMemories
+  items = services.aiOS.unifiedMemory?.listMemories
     ? services.aiOS.unifiedMemory.listMemories(userId, options, getAiosServices(services))
     : [];
+  return filterByWorkspace(await items, userId, options.workspaceId);
 }
 
-async function listGoals(userId, services) {
+async function listGoals(userId, services, options = {}) {
   const repos = getRepositories(services);
-  if (isRelational(services) && repos?.goals) return repos.goals.listGoals(userId, { limit: 100 });
-  return services.aiOS.goalManager?.listGoals
+  let items = [];
+  if (isRelational(services) && repos?.goals) {
+    items = await repos.goals.listGoals(userId, { limit: 100 });
+    return filterByWorkspace(items, userId, options.workspaceId);
+  }
+  items = services.aiOS.goalManager?.listGoals
     ? services.aiOS.goalManager.listGoals(userId, {}, getAiosServices(services))
     : [];
+  return filterByWorkspace(await items, userId, options.workspaceId);
 }
 
-async function listWorkflows(userId, services) {
+async function listWorkflows(userId, services, options = {}) {
   const repos = getRepositories(services);
+  let items = [];
   if (isRelational(services) && repos?.workflows) {
     const workflows = await repos.workflows.listWorkflows(userId, { limit: 100 });
     const enriched = [];
@@ -150,11 +200,12 @@ async function listWorkflows(userId, services) {
         : [];
       enriched.push({ ...workflow, steps });
     }
-    return enriched;
+    return filterByWorkspace(enriched, userId, options.workspaceId);
   }
-  return services.aiOS.workflowEngine?.listActiveWorkflows
+  items = services.aiOS.workflowEngine?.listActiveWorkflows
     ? services.aiOS.workflowEngine.listActiveWorkflows(userId, getAiosServices(services), 100)
     : [];
+  return filterByWorkspace(await items, userId, options.workspaceId);
 }
 
 async function listInsights(userId, services, limit = 20) {
@@ -170,8 +221,8 @@ async function getGraphSnapshot(userId, services, options = {}) {
   if (isRelational(services) && repos?.graph) {
     const snapshot = await repos.graph.getGraphSnapshot(userId, { nodeLimit: options.nodeLimit || 20, edgeLimit: options.edgeLimit || 40 });
     return {
-      nodes: snapshot.nodes || [],
-      edges: snapshot.edges || [],
+      nodes: filterByWorkspace(snapshot.nodes || [], userId, options.workspaceId),
+      edges: filterByWorkspace(snapshot.edges || [], userId, options.workspaceId),
       stats: {
         nodes: snapshot.nodes?.length || 0,
         edges: snapshot.edges?.length || 0
@@ -185,7 +236,7 @@ async function getGraphSnapshot(userId, services, options = {}) {
     nodeLimit: options.nodeLimit || 20,
     edgeLimit: options.edgeLimit || 40
   }, aiosServices) || { nodes: [], edges: [] };
-  return { ...snapshot, stats };
+  return { ...snapshot, nodes: filterByWorkspace(snapshot.nodes || [], userId, options.workspaceId), edges: filterByWorkspace(snapshot.edges || [], userId, options.workspaceId), stats };
 }
 
 function ensureUserState(userId, services) {
@@ -205,9 +256,9 @@ function setDashboardSecurityHeaders(res) {
   });
 }
 
-function buildActionContext(req) {
+function buildActionContext(req, services = {}) {
   return {
-    actorId: 'dashboard-admin',
+    actorId: req.body?.actorId || req.query?.actorId || services.env?.OWNER_CHAT_ID || process.env.OWNER_CHAT_ID || 'dashboard-admin',
     ip: req.ip || req.headers['x-forwarded-for'] || '',
     userAgent: req.headers['user-agent'] || '',
     permission: req.dashboardPermission || permissions.getDashboardPermissionLevel(req)
@@ -215,7 +266,7 @@ function buildActionContext(req) {
 }
 
 async function runSafeAction(actionName, req, res, services) {
-  const result = await safeActions.handleSafeAction(actionName, req.body || {}, buildActionContext(req), services);
+  const result = await safeActions.handleSafeAction(actionName, req.body || {}, buildActionContext(req, services), services);
   return guards.safeDashboardResponse(res, result, result.ok ? 200 : (result.status === 'rejected' ? 400 : 404));
 }
 
@@ -251,6 +302,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
 
   // Authenticate other API routes
   router.use(dashboardAuth);
+  workspaceRoutes.registerWorkspaceRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
@@ -279,16 +331,20 @@ function registerDashboardRoutes(app, rawServices = {}) {
   router.get('/user/:userId/overview', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
     const user = ensureUserState(userId, services);
     const aiosServices = getAiosServices(services);
-    const memories = await safeCall(() => listMemories(userId, '', { limit: 20 }, services), []);
-    const goals = await safeCall(() => listGoals(userId, services), []);
-    const workflows = await safeCall(() => listWorkflows(userId, services), []);
+    const memories = await safeCall(() => listMemories(userId, '', { limit: 20, workspaceId: access.workspaceId }, services), []);
+    const goals = await safeCall(() => listGoals(userId, services, { workspaceId: access.workspaceId }), []);
+    const workflows = await safeCall(() => listWorkflows(userId, services, { workspaceId: access.workspaceId }), []);
     const insights = await safeCall(() => listInsights(userId, services, 10), []);
-    const graph = await safeCall(() => getGraphSnapshot(userId, services, { nodeLimit: 12, edgeLimit: 20 }), { nodes: [], edges: [], stats: {} });
+    const graph = await safeCall(() => getGraphSnapshot(userId, services, { nodeLimit: 12, edgeLimit: 20, workspaceId: access.workspaceId }), { nodes: [], edges: [], stats: {} });
     const memoryStats = services.aiOS.unifiedMemory?.getMemoryStats?.(userId, aiosServices) || { total: memories.length };
     
     return guards.safeDashboardResponse(res, serializers.sanitizeUserOverview({
+      workspaceId: access.workspaceId,
+      actorRole: access.role,
       memoryStats,
       activeGoals: goals.filter(goal => !goal.status || goal.status === 'active'),
       activeWorkflows: workflows.filter(workflow => !workflow.status || workflow.status === 'active'),
@@ -306,39 +362,49 @@ function registerDashboardRoutes(app, rawServices = {}) {
   router.get('/user/:userId/memories', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
     const limit = guards.validateLimit(req.query.limit, 20, 100);
     const q = String(req.query.q || '');
     const type = req.query.type ? String(req.query.type) : undefined;
-    const memories = await safeCall(() => listMemories(userId, q, { limit, type }, services), []);
-    return guards.safeDashboardResponse(res, { items: memories.map(serializers.sanitizeMemory), limit });
+    const memories = await safeCall(() => listMemories(userId, q, { limit, type, workspaceId: access.workspaceId }, services), []);
+    return guards.safeDashboardResponse(res, { workspaceId: access.workspaceId, items: memories.map(serializers.sanitizeMemory), limit });
   });
 
   router.get('/user/:userId/goals', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
-    const goals = await safeCall(() => listGoals(userId, services), []);
-    return guards.safeDashboardResponse(res, { items: goals.map(serializers.sanitizeGoal) });
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
+    const goals = await safeCall(() => listGoals(userId, services, { workspaceId: access.workspaceId }), []);
+    return guards.safeDashboardResponse(res, { workspaceId: access.workspaceId, items: goals.map(serializers.sanitizeGoal) });
   });
 
   router.get('/user/:userId/workflows', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
-    const workflows = await safeCall(() => listWorkflows(userId, services), []);
-    return guards.safeDashboardResponse(res, { items: workflows.map(serializers.sanitizeWorkflow) });
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
+    const workflows = await safeCall(() => listWorkflows(userId, services, { workspaceId: access.workspaceId }), []);
+    return guards.safeDashboardResponse(res, { workspaceId: access.workspaceId, items: workflows.map(serializers.sanitizeWorkflow) });
   });
 
   router.get('/user/:userId/insights', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
     const limit = guards.validateLimit(req.query.limit, 20, 100);
     const insights = await safeCall(() => listInsights(userId, services, limit), []);
-    return guards.safeDashboardResponse(res, { items: insights.map(serializers.sanitizeInsight), limit });
+    return guards.safeDashboardResponse(res, { workspaceId: access.workspaceId, items: filterByWorkspace(insights, userId, access.workspaceId).map(serializers.sanitizeInsight), limit });
   });
 
   router.get('/user/:userId/graph', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
-    const graph = await safeCall(() => getGraphSnapshot(userId, services, { nodeLimit: 20, edgeLimit: 40 }), { nodes: [], edges: [], stats: {} });
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
+    const graph = await safeCall(() => getGraphSnapshot(userId, services, { nodeLimit: 20, edgeLimit: 40, workspaceId: access.workspaceId }), { nodes: [], edges: [], stats: {} });
     return guards.safeDashboardResponse(res, serializers.sanitizeGraph({
       stats: graph.stats || {},
       summaryText: graph.summaryText || '',
@@ -350,13 +416,16 @@ function registerDashboardRoutes(app, rawServices = {}) {
   router.get('/user/:userId/graph/search', async (req, res) => {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
+    const access = await ensureDashboardUserAccess(req, res, services, userId, 'read');
+    if (!access.ok) return access.response;
     const q = String(req.query.q || '').trim();
     const aiosServices = getAiosServices(services);
     const result = services.aiOS.graphRetriever?.getRelevantGraph?.(userId, q, { nodeLimit: 8, edgeLimit: 12 }, aiosServices) || { nodes: [], edges: [], summaryText: '' };
     return guards.safeDashboardResponse(res, {
       query: q,
-      nodes: (result.nodes || []).map(serializers.sanitizeGraphNode),
-      edges: (result.edges || []).map(serializers.sanitizeGraphEdge),
+      workspaceId: access.workspaceId,
+      nodes: filterByWorkspace(result.nodes || [], userId, access.workspaceId).map(serializers.sanitizeGraphNode),
+      edges: filterByWorkspace(result.edges || [], userId, access.workspaceId).map(serializers.sanitizeGraphEdge),
       summaryText: serializers.truncateText(result.summaryText || '', 1200)
     });
   });
@@ -434,7 +503,9 @@ function registerDashboardRoutes(app, rawServices = {}) {
       action: req.query.action,
       status: req.query.status,
       targetType: req.query.targetType,
-      userId: req.query.userId
+      userId: req.query.userId,
+      workspaceId: req.query.workspaceId,
+      decision: req.query.decision
     };
     const items = await auditLog.listAuditLogs(options, services);
     const summary = await auditLog.getAuditSummary({ limit: 5 }, services);

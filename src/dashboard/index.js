@@ -9,6 +9,7 @@ const auditLog = require('./audit-log');
 const permissions = require('./dashboard-permissions');
 const safeActions = require('./safe-actions');
 const softDelete = require('./soft-delete');
+const workspaceRoutes = require('./workspace-routes');
 
 module.exports = {
   registerDashboardRoutes,
@@ -19,6 +20,7 @@ module.exports = {
   safeActions,
   serializers,
   softDelete,
+  workspaceRoutes,
   utils,
   actions: require('./dashboard-actions')
 };

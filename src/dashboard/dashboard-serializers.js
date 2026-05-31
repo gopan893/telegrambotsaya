@@ -14,6 +14,7 @@ function pickBase(record = {}) {
     id: record.id,
     type: record.type,
     status: record.status,
+    workspaceId: record.workspaceId || record.workspace_id || record.metadata?.workspaceId || record.metadata?.workspace_id || null,
     createdAt: record.createdAt || record.created_at,
     updatedAt: record.updatedAt || record.updated_at
   });
@@ -53,6 +54,7 @@ function sanitizeWorkflow(workflow = {}) {
     steps: steps.slice(0, 30).map(step => ({
       id: step.id,
       stepNumber: step.stepNumber || step.step_number,
+      workspaceId: step.workspaceId || step.workspace_id || step.metadata?.workspaceId || null,
       title: truncateText(step.title || step.text || '', 180),
       status: step.status || (step.done ? 'done' : 'pending'),
       result: truncateText(step.result || '', 260),
@@ -85,6 +87,7 @@ function sanitizeGraphNode(node = {}) {
     importance: Number(node.importance ?? 0.5),
     confidence: Number(node.confidence ?? 0.5),
     occurrenceCount: Number(node.occurrenceCount || node.occurrence_count || node.seenCount || 1),
+    workspaceId: node.workspaceId || node.workspace_id || node.metadata?.workspaceId || node.metadata?.workspace_id || null,
     source: truncateText(node.source || '', 80),
     createdAt: node.createdAt || node.created_at,
     updatedAt: node.updatedAt || node.updated_at,
@@ -103,6 +106,7 @@ function sanitizeGraphEdge(edge = {}) {
     evidence: truncateText(edge.evidence || '', 360),
     source: truncateText(edge.source || '', 80),
     occurrenceCount: Number(edge.occurrenceCount || edge.occurrence_count || 1),
+    workspaceId: edge.workspaceId || edge.workspace_id || edge.metadata?.workspaceId || edge.metadata?.workspace_id || null,
     createdAt: edge.createdAt || edge.created_at,
     updatedAt: edge.updatedAt || edge.updated_at
   };
@@ -317,6 +321,8 @@ function sanitizeCommandList(cmds = {}) {
 
 function sanitizeUserOverview(data = {}) {
   return guards.preventSecretLeak({
+    workspaceId: data.workspaceId || null,
+    actorRole: data.actorRole || null,
     memoryStats: data.memoryStats || null,
     activeGoals: Array.isArray(data.activeGoals) ? data.activeGoals.map(sanitizeGoal) : [],
     activeWorkflows: Array.isArray(data.activeWorkflows) ? data.activeWorkflows.map(sanitizeWorkflow) : [],
@@ -344,6 +350,10 @@ function sanitizeAuditEntry(entry = {}) {
     targetType: truncateText(entry.targetType || '', 40),
     targetId: truncateText(entry.targetId || '', 120),
     userId: truncateText(entry.userId || '', 80),
+    workspaceId: truncateText(entry.workspaceId || '', 120),
+    actorRole: truncateText(entry.actorRole || '', 40),
+    permission: truncateText(entry.permission || '', 40),
+    decision: entry.decision || null,
     status: entry.status || 'ok',
     beforeSummary: guards.sanitizeBeforeAfterSummary(entry.beforeSummary || ''),
     afterSummary: guards.sanitizeBeforeAfterSummary(entry.afterSummary || ''),
@@ -351,6 +361,44 @@ function sanitizeAuditEntry(entry = {}) {
     ipHash: entry.ipHash || '',
     userAgentSummary: truncateText(entry.userAgentSummary || '', 160),
     createdAt: entry.createdAt
+  });
+}
+
+function sanitizeMember(member = {}) {
+  return guards.preventSecretLeak({
+    userId: truncateText(member.userId || member.user_id || '', 80),
+    role: truncateText(member.role || 'viewer', 40),
+    status: member.status || 'active',
+    addedAt: member.addedAt || member.added_at || null,
+    updatedAt: member.updatedAt || member.updated_at || null
+  });
+}
+
+function sanitizeWorkspace(workspace = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(workspace.id || '', 120),
+    name: truncateText(workspace.name || '', 120),
+    description: truncateText(workspace.description || '', 500),
+    type: workspace.type || 'project',
+    ownerId: truncateText(workspace.ownerId || workspace.owner_id || '', 80),
+    members: Array.isArray(workspace.members) ? workspace.members.slice(0, 100).map(sanitizeMember) : [],
+    createdAt: workspace.createdAt || workspace.created_at || null,
+    updatedAt: workspace.updatedAt || workspace.updated_at || null,
+    archivedAt: workspace.archivedAt || workspace.archived_at || null
+  });
+}
+
+function sanitizePermissionSummary(summary = {}) {
+  return guards.preventSecretLeak({
+    userId: truncateText(summary.userId || '', 80),
+    workspaceId: truncateText(summary.workspaceId || '', 120),
+    role: summary.role || 'none',
+    permissions: Array.isArray(summary.permissions) ? summary.permissions.slice(0, 12).map(item => truncateText(item, 40)) : [],
+    canRead: Boolean(summary.canRead),
+    canWrite: Boolean(summary.canWrite),
+    canDanger: Boolean(summary.canDanger),
+    canOps: Boolean(summary.canOps),
+    canManageMembers: Boolean(summary.canManageMembers)
   });
 }
 
@@ -387,5 +435,8 @@ module.exports = {
   sanitizeUserOverview,
   sanitizeGraph,
   sanitizeAuditEntry,
-  sanitizeActionResult
+  sanitizeActionResult,
+  sanitizeMember,
+  sanitizePermissionSummary,
+  sanitizeWorkspace
 };

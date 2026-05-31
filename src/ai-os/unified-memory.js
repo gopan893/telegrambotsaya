@@ -10,11 +10,16 @@ function normalizeMemoryInput(userId, input = {}) {
   const type = guards.MEMORY_TYPES.has(input.type) ? input.type : 'semantic';
   const content = guards.sanitizeText(input.content || input.text || '', 1800);
   const ts = guards.nowIso();
+  const metadata = input.metadata && typeof input.metadata === 'object' ? { ...input.metadata } : {};
+  const workspaceId = guards.sanitizeText(input.workspaceId || input.workspace_id || metadata.workspaceId || metadata.workspace_id || '', 160);
+  if (workspaceId) metadata.workspaceId = workspaceId;
   return {
     id: input.id || guards.stableId('mem', `${userId}:${type}:${content}`),
     userId: guards.normalizeUserId(userId),
     type,
     content,
+    workspaceId: workspaceId || null,
+    metadata,
     tags: guards.uniqueList(input.tags || [], 12),
     source: guards.compactText(input.source || 'ai-os', 80),
     confidence: guards.clamp01(input.confidence, 0.65),

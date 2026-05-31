@@ -33,6 +33,23 @@ const UI = {
     return labels[String(status || 'unavailable')] || String(status || 'unavailable');
   },
 
+  getActiveWorkspaceId() {
+    return localStorage.getItem('active_workspace_id') || '';
+  },
+
+  setActiveWorkspaceId(workspaceId = '') {
+    localStorage.setItem('active_workspace_id', workspaceId);
+  },
+
+  renderWorkspaceInput(idPrefix = 'workspace') {
+    return `
+      <div class="filter-group">
+        <label for="${idPrefix}-workspace-id">Workspace ID</label>
+        <input type="text" id="${idPrefix}-workspace-id" value="${Utils.escapeHtml(UI.getActiveWorkspaceId())}" placeholder="kosong = personal default">
+      </div>
+    `;
+  },
+
   renderStorageCards(storage = {}) {
     const warning = storage.postgresAvailable && storage.postgresTableReady && (storage.activeDriver || storage.storageDriver) === 'json'
       ? `<div class="alert alert-warning" style="margin-top:12px;">PostgreSQL connected, but storage is using JSON fallback. Reason: ${Utils.escapeHtml(storage.fallbackReason || 'unknown')}</div>`
@@ -458,6 +475,200 @@ const UI = {
     });
   },
 
+  async renderWorkspacesAdmin(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat workspaces...');
+    const actorId = localStorage.getItem('workspace_actor_id') || '';
+
+    const loadData = async () => {
+      const actor = document.getElementById('workspace-actor-id')?.value.trim() || '';
+      localStorage.setItem('workspace_actor_id', actor);
+      const res = await Api.getWorkspaces({ actorId: actor, all: true, includeArchived: true });
+      const container = document.getElementById('workspace-list-container');
+      if (!res.ok) {
+        container.innerHTML = UI.renderError('Gagal Memuat Workspaces', 'Pastikan token dashboard valid.');
+        return;
+      }
+      const items = res.data.items || [];
+      if (!items.length) {
+        container.innerHTML = UI.renderEmptyState('🏢', 'Belum Ada Workspace', 'Buat workspace project pertama dari dashboard.');
+        return;
+      }
+      container.innerHTML = `
+        <div class="card-grid-wide">
+          ${items.map(item => `
+            <div class="card">
+              <div style="display:flex; justify-content:space-between; gap:12px;">
+                <div>
+                  <h3 style="font-size:16px;">${Utils.escapeHtml(item.name)}</h3>
+                  <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">${Utils.escapeHtml(item.id)}</span>
+                </div>
+                <div>${UI.renderBadge(item.type)} ${item.archivedAt ? UI.renderBadge('archived') : ''}</div>
+              </div>
+              <p style="font-size:13px; color:var(--text-secondary); margin-top:10px;">${Utils.escapeHtml(item.description || '-')}</p>
+              <div style="font-size:12px; margin-top:10px; color:var(--text-secondary);">Owner: <code>${Utils.escapeHtml(item.ownerId || '-')}</code> · Members: ${(item.members || []).filter(m => m.status === 'active').length}</div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;">
+                ${(item.members || []).filter(m => m.status === 'active').slice(0, 8).map(member => `<span class="badge">${Utils.escapeHtml(member.userId)}:${Utils.escapeHtml(member.role)}</span>`).join('') || '<span class="badge">no members</span>'}
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+                <button class="btn btn-outline" data-ws-action="select" data-id="${Utils.escapeHtml(item.id)}">Select</button>
+                <button class="btn btn-outline" data-ws-action="members" data-id="${Utils.escapeHtml(item.id)}">Members</button>
+                <button class="btn btn-outline" data-ws-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="color:var(--color-danger);">Archive</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>`;
+      container.querySelectorAll('[data-ws-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-ws-action');
+          const workspaceId = btn.getAttribute('data-id');
+          if (action === 'select') {
+            UI.setActiveWorkspaceId(workspaceId);
+            Utils.showToast('Workspace aktif disimpan.', 'success');
+            return;
+          }
+          if (action === 'members') {
+            const members = await Api.getWorkspaceMembers(workspaceId, actor);
+            const activeMembers = members.data?.items || [];
+            const command = prompt(`Members aktif:\\n${activeMembers.map(m => `${m.userId} (${m.role})`).join('\\n')}\\n\\nKetik: add <userId> <role>, role <userId> <role>, atau remove <userId>`);
+            if (!command) return;
+            const [verb, userId, role] = command.trim().split(/\s+/);
+            let res;
+            if (verb === 'add') res = await Api.addWorkspaceMember(workspaceId, { actorId: actor, userId, role: role || 'viewer' });
+            if (verb === 'role') res = await Api.updateWorkspaceMemberRole(workspaceId, { actorId: actor, userId, role: role || 'viewer' });
+            if (verb === 'remove') res = await Api.removeWorkspaceMember(workspaceId, { actorId: actor, userId });
+            Utils.showToast(res?.ok && res.data?.ok ? 'Member action sukses.' : 'Member action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
+            await loadData();
+            return;
+          }
+          if (action === 'archive') {
+            const confirmationText = prompt('Ketik ARCHIVE untuk archive workspace ini:');
+            if (confirmationText !== 'ARCHIVE') return;
+            const res = await Api.archiveWorkspace(workspaceId, { actorId: actor, confirmationText, reason: prompt('Alasan archive (opsional):') || '' });
+            Utils.showToast(res.ok && res.data?.ok ? 'Workspace archived.' : 'Gagal archive workspace.', res.ok && res.data?.ok ? 'success' : 'danger');
+            await loadData();
+          }
+        });
+      });
+    };
+
+    targetEl.innerHTML = `
+      ${UI.renderSectionHeader('Workspaces', '<button class="btn btn-primary" id="btn-create-workspace">Create Workspace</button>')}
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label for="workspace-actor-id">Actor ID</label>
+          <input type="text" id="workspace-actor-id" value="${Utils.escapeHtml(actorId)}" placeholder="default OWNER_CHAT_ID">
+        </div>
+        <button class="btn btn-outline" id="btn-load-workspaces">Load</button>
+      </div>
+      <div id="workspace-list-container">${UI.renderLoading('Memuat workspaces...')}</div>
+    `;
+    document.getElementById('btn-load-workspaces').addEventListener('click', loadData);
+    document.getElementById('btn-create-workspace').addEventListener('click', async () => {
+      const actor = document.getElementById('workspace-actor-id').value.trim();
+      const name = prompt('Nama workspace:');
+      if (!name) return;
+      const res = await Api.createWorkspace({ actorId: actor, name, type: prompt('Type personal/project/team/admin:', 'project') || 'project', description: prompt('Deskripsi:', '') || '' });
+      Utils.showToast(res.ok && res.data?.ok ? 'Workspace dibuat.' : 'Gagal membuat workspace.', res.ok && res.data?.ok ? 'success' : 'danger');
+      await loadData();
+    });
+    await loadData();
+  },
+
+  async renderUsers(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat users...');
+    const res = await Api.getUsers();
+    if (!res.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Users');
+      return;
+    }
+    const items = res.data.items || [];
+    const workspaceId = UI.getActiveWorkspaceId();
+    targetEl.innerHTML = `
+      ${UI.renderSectionHeader('Users')}
+      <div class="filter-bar">
+        ${UI.renderWorkspaceInput('users')}
+        <button class="btn btn-primary" id="btn-load-users-overview" style="height:40px;">Load Selected Workspace</button>
+      </div>
+      ${items.length ? UI.renderTable(
+        ['User ID', 'Workspace', 'Owner WS', 'Active Mode', 'Last Seen', 'Action'],
+        items.map(item => [
+          `<code>${Utils.escapeHtml(item.userId)}</code>`,
+          String(item.workspaceCount || 0),
+          String(item.ownerWorkspaceCount || 0),
+          Utils.escapeHtml(item.activeMode || '-'),
+          Utils.escapeHtml(item.lastSeenAt ? Utils.formatDate(item.lastSeenAt) : '-'),
+          `<button class="btn btn-outline btn-sm" data-user-overview="${Utils.escapeHtml(item.userId)}">Overview</button>`
+        ])
+      ) : UI.renderEmptyState('👥', 'Belum Ada Users', 'User akan muncul setelah punya state atau membership.')}
+      <div id="user-overview-container" style="margin-top:16px;"></div>
+    `;
+    document.getElementById('users-workspace-id').value = workspaceId;
+    document.getElementById('btn-load-users-overview').addEventListener('click', () => {
+      UI.setActiveWorkspaceId(document.getElementById('users-workspace-id').value.trim());
+      UI.renderUsers(targetEl);
+    });
+    document.querySelectorAll('[data-user-overview]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.getAttribute('data-user-overview');
+        const selectedWorkspaceId = document.getElementById('users-workspace-id').value.trim();
+        UI.setActiveWorkspaceId(selectedWorkspaceId);
+        const overview = await Api.getUserWorkspaceOverview(userId, selectedWorkspaceId);
+        const container = document.getElementById('user-overview-container');
+        if (!overview.ok) {
+          container.innerHTML = UI.renderError('Overview Ditolak', overview.data?.error || overview.error || 'Permission tidak cukup.');
+          return;
+        }
+        const data = overview.data || {};
+        container.innerHTML = `
+          <div class="card">
+            <h3>Overview User</h3>
+            <div class="kv-list">
+              <div class="kv-item"><span class="kv-key">User</span><span>${Utils.escapeHtml(data.userId || userId)}</span></div>
+              <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(data.workspaceId || '-')}</span></div>
+              <div class="kv-item"><span class="kv-key">Accessible WS</span><span>${String((data.workspaces || []).length)}</span></div>
+            </div>
+          </div>
+        `;
+      });
+    });
+  },
+
+  async renderPermissions(targetEl) {
+    const actorId = localStorage.getItem('workspace_actor_id') || '';
+    const workspaceId = UI.getActiveWorkspaceId();
+    const res = await Api.getMyPermissions(workspaceId, actorId);
+    const summary = res.data || {};
+    targetEl.innerHTML = `
+      ${UI.renderSectionHeader('Permissions')}
+      <div class="filter-bar">
+        <div class="filter-group"><label>Actor ID</label><input id="perm-actor-id" value="${Utils.escapeHtml(actorId)}"></div>
+        ${UI.renderWorkspaceInput('perm')}
+        <button class="btn btn-primary" id="btn-load-permissions">Load</button>
+      </div>
+      <div class="card">
+        <h3>Current Permission</h3>
+        <div class="kv-list">
+          <div class="kv-item"><span class="kv-key">User</span><span>${Utils.escapeHtml(summary.userId || '-')}</span></div>
+          <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(summary.workspaceId || '-')}</span></div>
+          <div class="kv-item"><span class="kv-key">Role</span><span>${UI.renderBadge(summary.role || 'none')}</span></div>
+          <div class="kv-item"><span class="kv-key">Permissions</span><span>${Utils.escapeHtml((summary.permissions || []).join(', ') || '-')}</span></div>
+        </div>
+      </div>
+      ${UI.renderTable(['Role', 'Allowed'], [
+        ['owner', 'read, write, danger, ops, manage_members'],
+        ['admin', 'read, write, ops, manage_members limited'],
+        ['editor', 'read, write'],
+        ['viewer', 'read'],
+        ['guest', 'limited_read']
+      ])}
+    `;
+    document.getElementById('btn-load-permissions').addEventListener('click', () => {
+      localStorage.setItem('workspace_actor_id', document.getElementById('perm-actor-id').value.trim());
+      UI.setActiveWorkspaceId(document.getElementById('perm-workspace-id').value.trim());
+      UI.renderPermissions(targetEl);
+    });
+  },
+
   async renderMemory(targetEl) {
     let currentUserId = localStorage.getItem('last_user_id') || '123456789';
 
@@ -466,6 +677,7 @@ const UI = {
       const type = document.getElementById('filter-memory-type').value;
       const limit = document.getElementById('filter-memory-limit').value;
       const userId = document.getElementById('memory-user-id').value.trim();
+      const workspaceId = document.getElementById('memory-workspace-id').value.trim();
 
       if (!userId) {
         Utils.showToast('Masukkan User ID terlebih dahulu', 'warning');
@@ -473,10 +685,11 @@ const UI = {
       }
 
       localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
       const contentListEl = document.getElementById('memory-list-container');
       contentListEl.innerHTML = UI.renderLoading('Memuat memory user...');
 
-      const res = await Api.getUserMemories(userId, { q, type, limit });
+      const res = await Api.getUserMemories(userId, { q, type, limit, workspaceId });
       if (!res.ok) {
         contentListEl.innerHTML = UI.renderError('Gagal Memuat Memory', 'Terjadi kesalahan saat memproses data memory user.');
         return;
@@ -534,7 +747,7 @@ const UI = {
           if (action === 'edit') {
             const content = prompt('Update content memory:', btn.getAttribute('data-content') || '');
             if (!content) return;
-            const res = await Api.updateMemory({ userId, memoryId, content });
+            const res = await Api.updateMemory({ userId, memoryId, content, workspaceId });
             Utils.showToast(res.ok && res.data?.ok ? 'Memory updated.' : 'Gagal update memory.', res.ok && res.data?.ok ? 'success' : 'danger');
             await loadData();
             return;
@@ -543,7 +756,7 @@ const UI = {
             const confirmationText = prompt('Ketik ARCHIVE untuk archive memory ini:');
             if (confirmationText !== 'ARCHIVE') return;
             const reason = prompt('Alasan archive (opsional):') || '';
-            const res = await Api.archiveMemory({ userId, memoryId, confirm: true, confirmationText, reason });
+            const res = await Api.archiveMemory({ userId, memoryId, confirm: true, confirmationText, reason, workspaceId });
             Utils.showToast(res.ok && res.data?.ok ? 'Memory archived.' : 'Gagal archive memory.', res.ok && res.data?.ok ? 'success' : 'danger');
             await loadData();
           }
@@ -560,6 +773,7 @@ const UI = {
           <label for="memory-user-id">User ID Telegram</label>
           <input type="text" id="memory-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
+        ${UI.renderWorkspaceInput('memory')}
         <div class="filter-group">
           <label for="search-memory-q">Pencarian Kata Kunci</label>
           <input type="text" id="search-memory-q" placeholder="Cari isi memory...">
@@ -599,13 +813,15 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('goals-user-id').value.trim();
+      const workspaceId = document.getElementById('goals-workspace-id').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('goals-list-container');
       container.innerHTML = UI.renderLoading('Memuat Goals...');
 
-      const res = await Api.getUserGoals(userId);
+      const res = await Api.getUserGoals(userId, workspaceId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Goals');
         return;
@@ -666,15 +882,15 @@ const UI = {
           if (action === 'progress') {
             const progress = prompt('Progress 0-100:');
             if (progress === null) return;
-            res = await Api.updateGoal({ userId, goalId, progress: Number(progress) });
+            res = await Api.updateGoal({ userId, goalId, progress: Number(progress), workspaceId });
           } else if (action === 'status') {
             const status = prompt('Status: active, paused, completed, archived, cancelled');
             if (!status) return;
-            res = await Api.updateGoal({ userId, goalId, status });
+            res = await Api.updateGoal({ userId, goalId, status, workspaceId });
           } else if (action === 'archive') {
             const confirmationText = prompt('Ketik ARCHIVE untuk archive goal ini:');
             if (confirmationText !== 'ARCHIVE') return;
-            res = await Api.archiveGoal({ userId, goalId, confirm: true, confirmationText, reason: prompt('Alasan archive (opsional):') || '' });
+            res = await Api.archiveGoal({ userId, goalId, confirm: true, confirmationText, workspaceId, reason: prompt('Alasan archive (opsional):') || '' });
           }
           Utils.showToast(res?.ok && res.data?.ok ? 'Goal action sukses.' : 'Goal action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
           await loadData();
@@ -689,6 +905,7 @@ const UI = {
           <label for="goals-user-id">User ID Telegram</label>
           <input type="text" id="goals-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
+        ${UI.renderWorkspaceInput('goals')}
         <button class="btn btn-primary" id="btn-load-goals" style="height:40px;">Load Goals</button>
       </div>
       <div id="goals-list-container">
@@ -705,13 +922,15 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('workflows-user-id').value.trim();
+      const workspaceId = document.getElementById('workflows-workspace-id').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('workflows-list-container');
       container.innerHTML = UI.renderLoading('Memuat Workflows...');
 
-      const res = await Api.getUserWorkflows(userId);
+      const res = await Api.getUserWorkflows(userId, workspaceId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Workflows');
         return;
@@ -795,15 +1014,15 @@ const UI = {
           if (action === 'add-step') {
             const title = prompt('Step baru:');
             if (!title) return;
-            res = await Api.addWorkflowStep({ userId, workflowId, title });
+            res = await Api.addWorkflowStep({ userId, workflowId, title, workspaceId });
           } else if (action === 'done-step') {
             const stepNumber = prompt('Step number yang selesai:');
             if (!stepNumber) return;
-            res = await Api.markWorkflowStepDone({ userId, workflowId, stepNumber: Number(stepNumber) });
+            res = await Api.markWorkflowStepDone({ userId, workflowId, stepNumber: Number(stepNumber), workspaceId });
           } else if (action === 'archive') {
             const confirmationText = prompt('Ketik ARCHIVE untuk archive workflow ini:');
             if (confirmationText !== 'ARCHIVE') return;
-            res = await Api.archiveWorkflow({ userId, workflowId, confirm: true, confirmationText, reason: prompt('Alasan archive (opsional):') || '' });
+            res = await Api.archiveWorkflow({ userId, workflowId, confirm: true, confirmationText, workspaceId, reason: prompt('Alasan archive (opsional):') || '' });
           }
           Utils.showToast(res?.ok && res.data?.ok ? 'Workflow action sukses.' : 'Workflow action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
           await loadData();
@@ -818,6 +1037,7 @@ const UI = {
           <label for="workflows-user-id">User ID Telegram</label>
           <input type="text" id="workflows-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
+        ${UI.renderWorkspaceInput('workflows')}
         <button class="btn btn-primary" id="btn-load-workflows" style="height:40px;">Load Workflows</button>
       </div>
       <div id="workflows-list-container">
@@ -834,13 +1054,15 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('insights-user-id').value.trim();
+      const workspaceId = document.getElementById('insights-workspace-id').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('insights-list-container');
       container.innerHTML = UI.renderLoading('Memuat Insights...');
 
-      const res = await Api.getUserInsights(userId);
+      const res = await Api.getUserInsights(userId, workspaceId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Insights');
         return;
@@ -888,6 +1110,7 @@ const UI = {
           <label for="insights-user-id">User ID Telegram</label>
           <input type="text" id="insights-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
+        ${UI.renderWorkspaceInput('insights')}
         <button class="btn btn-primary" id="btn-load-insights" style="height:40px;">Load Insights</button>
       </div>
       <div id="insights-list-container">
@@ -904,14 +1127,16 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('graph-user-id').value.trim();
+      const workspaceId = document.getElementById('graph-workspace-id').value.trim();
       const q = document.getElementById('search-graph-concept').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('graph-content-container');
       container.innerHTML = UI.renderLoading('Memuat Knowledge Graph...');
 
-      const res = q ? await Api.searchUserGraph(userId, q) : await Api.getUserGraph(userId);
+      const res = q ? await Api.searchUserGraph(userId, q, workspaceId) : await Api.getUserGraph(userId, workspaceId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Knowledge Graph');
         return;
@@ -970,6 +1195,7 @@ const UI = {
           <label for="graph-user-id">User ID Telegram</label>
           <input type="text" id="graph-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
+        ${UI.renderWorkspaceInput('graph')}
         <div class="filter-group">
           <label for="search-graph-concept">Cari Konsep Spesifik (Opsional)</label>
           <input type="text" id="search-graph-concept" placeholder="E.g., memory, study">
@@ -1144,7 +1370,9 @@ const UI = {
         action: document.getElementById('audit-action')?.value || '',
         status: document.getElementById('audit-status')?.value || '',
         targetType: document.getElementById('audit-target-type')?.value || '',
-        userId: document.getElementById('audit-user-id')?.value || ''
+        userId: document.getElementById('audit-user-id')?.value || '',
+        workspaceId: document.getElementById('audit-workspace-id')?.value || '',
+        decision: document.getElementById('audit-decision')?.value || ''
       };
       const res = await Api.getAuditLogs(filters);
       const container = document.getElementById('audit-list-container');
@@ -1158,10 +1386,12 @@ const UI = {
         return;
       }
       container.innerHTML = UI.renderTable(
-        ['Waktu', 'Action', 'Target', 'Status', 'User', 'Reason'],
+        ['Waktu', 'Action', 'Workspace', 'Decision', 'Target', 'Status', 'User', 'Reason'],
         items.map(item => [
           Utils.escapeHtml(Utils.formatDate(item.createdAt)),
           `<code>${Utils.escapeHtml(item.action)}</code>`,
+          `<code>${Utils.escapeHtml(item.workspaceId || '-')}</code>`,
+          UI.renderBadge(item.decision || 'allowed'),
           `${Utils.escapeHtml(item.targetType || '-')}:${Utils.escapeHtml(item.targetId || '-')}`,
           UI.renderBadge(item.status || 'ok'),
           Utils.escapeHtml(item.userId || '-'),
@@ -1180,6 +1410,10 @@ const UI = {
           <input type="text" id="audit-user-id" placeholder="optional">
         </div>
         <div class="filter-group">
+          <label for="audit-workspace-id">Workspace ID</label>
+          <input type="text" id="audit-workspace-id" placeholder="optional">
+        </div>
+        <div class="filter-group">
           <label for="audit-action">Action</label>
           <input type="text" id="audit-action" placeholder="memory/update">
         </div>
@@ -1190,6 +1424,10 @@ const UI = {
         <div class="filter-group">
           <label for="audit-target-type">Target Type</label>
           <input type="text" id="audit-target-type" placeholder="memory/goal/workflow">
+        </div>
+        <div class="filter-group">
+          <label for="audit-decision">Decision</label>
+          <input type="text" id="audit-decision" placeholder="allowed/denied">
         </div>
         <div class="filter-group" style="max-width:100px;">
           <label for="audit-limit">Limit</label>

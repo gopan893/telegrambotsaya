@@ -30,6 +30,10 @@ function buildAuditEntry(entry = {}) {
     targetType: entry.targetType || 'unknown',
     targetId: entry.targetId || '',
     userId: entry.userId || '',
+    workspaceId: entry.workspaceId || '',
+    actorRole: entry.actorRole || '',
+    permission: entry.permission || '',
+    decision: entry.decision || (entry.status === 'denied' ? 'denied' : 'allowed'),
     status: entry.status || 'ok',
     beforeSummary: guards.sanitizeBeforeAfterSummary(entry.beforeSummary || entry.before || ''),
     afterSummary: guards.sanitizeBeforeAfterSummary(entry.afterSummary || entry.after || ''),
@@ -74,11 +78,15 @@ async function listAuditLogs(options = {}, services = {}) {
   const status = options.status ? String(options.status) : '';
   const targetType = options.targetType ? String(options.targetType) : '';
   const userId = options.userId ? String(options.userId) : '';
+  const workspaceId = options.workspaceId ? String(options.workspaceId) : '';
+  const decision = options.decision ? String(options.decision) : '';
   return logs
     .filter(entry => !action || entry.action === action)
     .filter(entry => !status || entry.status === status)
     .filter(entry => !targetType || entry.targetType === targetType)
     .filter(entry => !userId || String(entry.userId) === userId)
+    .filter(entry => !workspaceId || String(entry.workspaceId) === workspaceId)
+    .filter(entry => !decision || String(entry.decision) === decision)
     .slice()
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, limit)
@@ -113,6 +121,10 @@ function sanitizeAuditEntry(entry = {}) {
     targetType: entry.targetType,
     targetId: String(entry.targetId || '').slice(0, 120),
     userId: String(entry.userId || '').slice(0, 80),
+    workspaceId: String(entry.workspaceId || '').slice(0, 120),
+    actorRole: String(entry.actorRole || '').slice(0, 40),
+    permission: String(entry.permission || '').slice(0, 40),
+    decision: entry.decision === 'denied' ? 'denied' : 'allowed',
     status: entry.status || 'ok',
     beforeSummary: guards.sanitizeBeforeAfterSummary(entry.beforeSummary || ''),
     afterSummary: guards.sanitizeBeforeAfterSummary(entry.afterSummary || ''),

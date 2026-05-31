@@ -16,11 +16,16 @@ function createWorkflow(userId, input = {}, botServices) {
   if (!title) return { ok: false, reason: 'TITLE_REQUIRED' };
 
   const ts = guards.nowIso();
+  const metadata = input.metadata && typeof input.metadata === 'object' ? { ...input.metadata } : {};
+  const workspaceId = guards.sanitizeText(input.workspaceId || input.workspace_id || metadata.workspaceId || metadata.workspace_id || '', 160);
+  if (workspaceId) metadata.workspaceId = workspaceId;
   const workflow = {
     id: input.id || guards.stableId('wf', `${userId}:${title}`),
     userId: guards.normalizeUserId(userId),
     title,
     description: guards.sanitizeText(input.description || '', 900),
+    workspaceId: workspaceId || null,
+    metadata,
     status: WORKFLOW_STATUSES.has(input.status) ? input.status : 'active',
     goalId: guards.sanitizeText(input.goalId || '', 80),
     steps: guards.safeArray(input.steps).slice(0, guards.DEFAULT_LIMITS.workflowSteps).map(normalizeStep),
@@ -102,9 +107,10 @@ function addStep(userId, workflowId, stepText, botServices) {
   const state = guards.ensureAIOSState(userId, botServices);
   const workflow = state.workflows.find((item) => item.id === workflowId);
   if (!workflow) return { ok: false, reason: 'WORKFLOW_NOT_FOUND' };
-  const title = guards.sanitizeText(stepText, 220);
+  const stepInput = typeof stepText === 'object' && stepText ? stepText : { title: stepText };
+  const title = guards.sanitizeText(stepInput.title || stepInput.text || '', 220);
   if (!title) return { ok: false, reason: 'STEP_REQUIRED' };
-  workflow.steps.push(normalizeStep({ title }));
+  workflow.steps.push(normalizeStep({ ...stepInput, title }));
   guards.preventRunawayWorkflow(workflow);
   workflow.updatedAt = guards.nowIso();
   workflow.lastActivityAt = guards.nowIso();
@@ -291,10 +297,15 @@ function getWorkflowReview(userId, workflowId, botServices) {
 
 function normalizeStep(step) {
   const title = typeof step === 'string' ? step : step.title;
+  const metadata = step.metadata && typeof step.metadata === 'object' ? { ...step.metadata } : {};
+  const workspaceId = guards.sanitizeText(step.workspaceId || step.workspace_id || metadata.workspaceId || metadata.workspace_id || '', 160);
+  if (workspaceId) metadata.workspaceId = workspaceId;
   return {
     id: step.id || guards.stableId('step', title),
     text: guards.sanitizeText(title, 220),
     title: guards.sanitizeText(title, 220),
+    workspaceId: workspaceId || null,
+    metadata,
     done: !!step.done,
     createdAt: step.createdAt || guards.nowIso(),
     completedAt: step.completedAt || null

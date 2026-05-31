@@ -23,11 +23,16 @@ function createGoal(userId, input = {}, botServices) {
   if (!title) return { ok: false, reason: 'TITLE_REQUIRED' };
 
   const ts = guards.nowIso();
+  const metadata = input.metadata && typeof input.metadata === 'object' ? { ...input.metadata } : {};
+  const workspaceId = guards.sanitizeText(input.workspaceId || input.workspace_id || metadata.workspaceId || metadata.workspace_id || '', 160);
+  if (workspaceId) metadata.workspaceId = workspaceId;
   const goal = {
     id: input.id || guards.stableId('goal', `${userId}:${title}`),
     userId: guards.normalizeUserId(userId),
     title,
     description: guards.sanitizeText(input.description || '', 900),
+    workspaceId: workspaceId || null,
+    metadata,
     status: GOAL_STATUSES.has(input.status) ? input.status : 'active',
     priority: normalizePriority(input.priority),
     progress: guards.clamp01(input.progress || 0, 0),
