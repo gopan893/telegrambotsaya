@@ -75,6 +75,8 @@ const {
   REDIS_URL,
   DASHBOARD_ENABLED,
   DASHBOARD_ADMIN_TOKEN,
+  DASHBOARD_WRITE_TOKEN,
+  DASHBOARD_DANGER_TOKEN,
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
@@ -3118,7 +3120,7 @@ function getDashboardBaseUrl() {
 
 function getDashboardStatusText() {
   const enabled = String(DASHBOARD_ENABLED || '').toLowerCase() === 'true';
-  const tokenSet = Boolean(DASHBOARD_ADMIN_TOKEN);
+  const tokenSet = Boolean(DASHBOARD_ADMIN_TOKEN || DASHBOARD_WRITE_TOKEN || DASHBOARD_DANGER_TOKEN);
   return {
     enabled,
     tokenSet,
@@ -5528,6 +5530,7 @@ async function handleHelp(chatId, msg) {
 /dashboardstatus - status dashboard tanpa token
 /dbstatus - status PostgreSQL/storage
 /redisstatus - status Redis/cache
+/audit [recent] - ringkasan audit dashboard [admin]
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
 /system - status agent production [admin]
@@ -5679,6 +5682,7 @@ function isUnknownCommand(cmd) {
     '/dashboardstatus',
     '/dbstatus',
     '/redisstatus',
+    '/audit',
     '/belajar',
     '/stats',
     '/system',
@@ -7018,7 +7022,8 @@ await withUserActionLock(userId, async () => {
     const text =
 `Dashboard Status
 DASHBOARD_ENABLED: ${status.enabled ? 'true' : 'false'}
-DASHBOARD_ADMIN_TOKEN: ${status.tokenSet ? 'set' : 'missing'}
+Dashboard auth token: ${status.tokenSet ? 'set' : 'missing'}
+Dashboard split tokens: write=${DASHBOARD_WRITE_TOKEN ? 'set' : 'missing'}, danger=${DASHBOARD_DANGER_TOKEN ? 'set' : 'missing'}
 Protected endpoints: ${status.protectedStatus}
 Static UI: ${status.staticAssets}
 
@@ -7043,6 +7048,33 @@ Data endpoint membutuhkan Authorization Bearer token.`;
       await storageManager.refreshStorageHealth({ force: true }).catch(() => null);
     }
     await sendChunkedMessage(chatId, formatRedisStatus(storageManager.getStorageStatus?.() || {}), { reply_to_message_id: msg.message_id });
+    return;
+  }
+  if (resolvedCmd === '/audit') {
+    if (!isAdmin(userId)) {
+      await safeSendMessage(chatId, 'Command audit hanya untuk admin.', { reply_to_message_id: msg.message_id });
+      return;
+    }
+    const services = { storageManager };
+    if (safeLower(args).trim() === 'recent') {
+      const entries = await dashboard.auditLog.listAuditLogs({ limit: 5 }, services);
+      const text = entries.length
+        ? entries.map(entry => `${entry.createdAt} | ${entry.action} | ${entry.targetType}:${entry.targetId || '-'} | ${entry.status}`).join('\n')
+        : 'Belum ada audit log.';
+      await sendChunkedMessage(chatId, `Audit recent:\n${text}`, { reply_to_message_id: msg.message_id });
+      return;
+    }
+    const summary = await dashboard.auditLog.getAuditSummary({ limit: 5 }, services);
+    const text = [
+      'Audit Summary',
+      '',
+      `Total: ${summary.total || 0}`,
+      `Status: ${Object.entries(summary.byStatus || {}).map(([k, v]) => `${k}=${v}`).join(', ') || '-'}`,
+      `Top actions: ${Object.entries(summary.byAction || {}).slice(0, 5).map(([k, v]) => `${k}=${v}`).join(', ') || '-'}`,
+      '',
+      'Gunakan /audit recent untuk 5 entry terakhir.'
+    ].join('\n');
+    await sendChunkedMessage(chatId, text, { reply_to_message_id: msg.message_id });
     return;
   }
 

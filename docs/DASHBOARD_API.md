@@ -7,6 +7,8 @@ Phase 9 menambahkan fondasi Dashboard/API read-only untuk melihat status AI OS, 
 ```env
 DASHBOARD_ENABLED=false
 DASHBOARD_ADMIN_TOKEN=
+DASHBOARD_WRITE_TOKEN=
+DASHBOARD_DANGER_TOKEN=
 ```
 
 Endpoint publik:
@@ -46,9 +48,30 @@ GET /api/dashboard/user/:userId/graph/search?q=<query>
 GET /api/dashboard/ops
 GET /api/dashboard/commands
 GET /api/dashboard/env-check
+GET /api/dashboard/audit
 POST /api/dashboard/actions/report/export-health
 POST /api/dashboard/actions/report/export-user-summary
+POST /api/dashboard/actions/memory/update
+POST /api/dashboard/actions/memory/archive
+POST /api/dashboard/actions/memory/restore
+POST /api/dashboard/actions/goal/update
+POST /api/dashboard/actions/goal/archive
+POST /api/dashboard/actions/goal/restore
+POST /api/dashboard/actions/workflow/step/add
+POST /api/dashboard/actions/workflow/step/done
+POST /api/dashboard/actions/workflow/step/reorder
+POST /api/dashboard/actions/workflow/archive
+POST /api/dashboard/actions/workflow/restore
 ```
+
+## Permission Phase 13
+
+`DASHBOARD_ADMIN_TOKEN` memberi akses penuh (`ops`). Token split opsional disiapkan untuk deployment yang ingin membatasi akses:
+
+- `DASHBOARD_WRITE_TOKEN`: update non-destruktif.
+- `DASHBOARD_DANGER_TOKEN`: archive/restore.
+
+Jika token split kosong, cukup gunakan admin token.
 
 ## Health Shape Phase 12
 
@@ -63,8 +86,11 @@ POST /api/dashboard/actions/report/export-user-summary
   "dashboardEnabled": true,
   "tokenConfigured": true,
   "storageDriver": "postgres",
+  "activeDriver": "postgres",
   "configuredStorageDriver": "auto",
   "fallbackActive": false,
+  "fallbackReason": "",
+  "jsonFallbackAvailable": true,
   "databaseUrlConfigured": true,
   "postgresAvailable": true,
   "postgresTableReady": true,
@@ -130,6 +156,7 @@ curl -X POST \
 - Endpoint user data selalu protected.
 - Serializer memotong text panjang dan meredaksi token, API key, password, secret, dan connection string.
 - Dashboard tidak menampilkan `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_TOKEN`, atau API key.
+- Safe admin actions memakai permission, confirmation word untuk archive/restore, soft delete, dan audit log.
 
 ## Render Deployment
 

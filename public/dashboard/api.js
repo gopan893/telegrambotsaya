@@ -103,6 +103,17 @@ const Api = {
     return this.apiGet('/env-check');
   },
 
+  async getAuditLogs(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.limit) params.set('limit', filters.limit);
+    if (filters.action) params.set('action', filters.action);
+    if (filters.status) params.set('status', filters.status);
+    if (filters.targetType) params.set('targetType', filters.targetType);
+    if (filters.userId) params.set('userId', filters.userId);
+    const query = params.toString();
+    return this.apiGet(`/audit${query ? `?${query}` : ''}`);
+  },
+
   async getUserOverview(userId) {
     const encoded = encodeURIComponent(userId);
     return this.apiGet(`/user/${encoded}/overview`);
@@ -164,6 +175,50 @@ const Api = {
 
   async exportUserSummaryReport(userId) {
     return this.apiPost('/actions/report/export-user-summary', { userId });
+  },
+
+  async updateMemory(payload) {
+    return this.apiPost('/actions/memory/update', payload);
+  },
+
+  async archiveMemory(payload) {
+    return this.apiPost('/actions/memory/archive', payload);
+  },
+
+  async restoreMemory(payload) {
+    return this.apiPost('/actions/memory/restore', payload);
+  },
+
+  async updateGoal(payload) {
+    return this.apiPost('/actions/goal/update', payload);
+  },
+
+  async archiveGoal(payload) {
+    return this.apiPost('/actions/goal/archive', payload);
+  },
+
+  async restoreGoal(payload) {
+    return this.apiPost('/actions/goal/restore', payload);
+  },
+
+  async addWorkflowStep(payload) {
+    return this.apiPost('/actions/workflow/step/add', payload);
+  },
+
+  async markWorkflowStepDone(payload) {
+    return this.apiPost('/actions/workflow/step/done', payload);
+  },
+
+  async reorderWorkflowStep(payload) {
+    return this.apiPost('/actions/workflow/step/reorder', payload);
+  },
+
+  async archiveWorkflow(payload) {
+    return this.apiPost('/actions/workflow/archive', payload);
+  },
+
+  async restoreWorkflow(payload) {
+    return this.apiPost('/actions/workflow/restore', payload);
   }
 };
 

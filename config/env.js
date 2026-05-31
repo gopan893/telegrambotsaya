@@ -7,6 +7,8 @@ function readEnv(env = process.env) {
   const parsedPort = Number(env.PORT || 10000);
   const dashboardEnabled = String(env.DASHBOARD_ENABLED || '').toLowerCase() === 'true';
   const dashboardAdminToken = env.DASHBOARD_ADMIN_TOKEN || '';
+  const dashboardWriteToken = env.DASHBOARD_WRITE_TOKEN || '';
+  const dashboardDangerToken = env.DASHBOARD_DANGER_TOKEN || '';
   const webhookBaseUrl =
     env.WEBHOOK_URL ||
     env.TELEGRAM_WEBHOOK_URL ||
@@ -25,10 +27,14 @@ function readEnv(env = process.env) {
     RUN_MIGRATIONS: env.RUN_MIGRATIONS,
     DASHBOARD_ENABLED: dashboardEnabled,
     DASHBOARD_ADMIN_TOKEN: dashboardAdminToken,
+    DASHBOARD_WRITE_TOKEN: dashboardWriteToken,
+    DASHBOARD_DANGER_TOKEN: dashboardDangerToken,
     dashboard: {
       enabled: dashboardEnabled,
       adminToken: dashboardAdminToken,
-      tokenConfigured: Boolean(dashboardAdminToken)
+      writeToken: dashboardWriteToken,
+      dangerToken: dashboardDangerToken,
+      tokenConfigured: Boolean(dashboardAdminToken || dashboardWriteToken || dashboardDangerToken)
     },
     GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,

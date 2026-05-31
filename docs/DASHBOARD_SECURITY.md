@@ -23,6 +23,8 @@ Required untuk dashboard protected:
 
 - `DASHBOARD_ENABLED=true`
 - `DASHBOARD_ADMIN_TOKEN=<token-panjang>`
+- `DASHBOARD_WRITE_TOKEN=<opsional>`
+- `DASHBOARD_DANGER_TOKEN=<opsional>`
 
 Jika dashboard disabled, endpoint protected return `403`.
 Jika token belum diset, endpoint protected return `401`.
@@ -77,10 +79,14 @@ Action dashboard dibatasi:
 
 - Tidak menjalankan shell command.
 - Tidak mengubah environment.
-- Tidak menghapus memory user.
+- Tidak hard-delete memory/goal/workflow user.
+- Archive/restore memakai soft delete dan confirmation word.
+- Permission bertingkat: read, write, danger, ops.
+- `DASHBOARD_ADMIN_TOKEN` mendapat akses penuh.
 - Rate limit 10 request per menit per IP/token hash.
-- Action berat/destruktif tidak diaktifkan di Phase 11.
+- Semua action sukses masuk audit log.
 - Phase 12 menambahkan export report yang hanya mengembalikan data sanitized.
+- Phase 13 menambahkan kontrol aman untuk memory, goal, workflow, dan audit log.
 
 ## Known Limitations
 

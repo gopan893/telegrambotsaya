@@ -11,13 +11,21 @@ function getDashboardToken(env = process.env) {
   return env.dashboard?.adminToken || env.DASHBOARD_ADMIN_TOKEN || '';
 }
 
+function getDashboardTokens(env = process.env) {
+  return [
+    getDashboardToken(env),
+    env.dashboard?.writeToken || env.DASHBOARD_WRITE_TOKEN || '',
+    env.dashboard?.dangerToken || env.DASHBOARD_DANGER_TOKEN || ''
+  ].filter(Boolean);
+}
+
 function isDashboardEnabled(env = process.env) {
   if (typeof env.dashboard?.enabled === 'boolean') return env.dashboard.enabled;
   return isTruthy(env.DASHBOARD_ENABLED);
 }
 
 function isDashboardTokenConfigured(env = process.env) {
-  return Boolean(getDashboardToken(env));
+  return getDashboardTokens(env).length > 0;
 }
 
 function getDashboardStatus(env = process.env) {
@@ -49,7 +57,7 @@ function requireDashboardAuth(req, res, next) {
   }
 
   const token = extractBearerToken(req);
-  if (!token || token !== getDashboardToken(env)) {
+  if (!token || !getDashboardTokens(env).includes(token)) {
     return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
   }
   return next();
@@ -64,6 +72,8 @@ function createDashboardAuth(env = process.env) {
 
 module.exports = {
   createDashboardAuth,
+  getDashboardToken,
+  getDashboardTokens,
   getDashboardStatus,
   isDashboardEnabled,
   isDashboardTokenConfigured,

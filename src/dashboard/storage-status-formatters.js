@@ -33,12 +33,14 @@ function formatDbStatus(storageStatus = {}) {
     'PostgreSQL Status',
     '',
     `Configured: ${yesNo(storage.databaseUrlConfigured)}`,
+    `STORAGE_DRIVER: ${storage.configuredStorageDriver || 'auto'}`,
+    `Storage driver: ${storage.activeDriver || storage.storageDriver}`,
     `Available: ${yesNo(storage.postgresAvailable)}`,
     `Table ready: ${yesNo(storage.postgresTableReady)}`,
     `Status: ${statusLabel(storage.postgresStatus)}`,
     `Latency: ${formatLatency(storage.postgresLatencyMs)}`,
-    `Storage driver: ${storage.storageDriver}`,
     `Fallback active: ${yesNo(storage.fallbackActive)}`,
+    `Fallback reason: ${storage.fallbackReason || '-'}`,
     '',
     `Recommended fix: ${storage.postgresRecommendedFix || 'No action needed'}`
   ].join('\n');
@@ -62,9 +64,10 @@ function formatRedisStatus(storageStatus = {}) {
 function formatDashboardStorageStatus(storageStatus = {}) {
   const storage = serializers.sanitizeStorage(storageStatus);
   return [
-    `Storage driver: ${storage.storageDriver}`,
+    `Storage driver: ${storage.activeDriver || storage.storageDriver}`,
     `Configured driver: ${storage.configuredStorageDriver}`,
     `Fallback active: ${yesNo(storage.fallbackActive)}`,
+    `Fallback reason: ${storage.fallbackReason || '-'}`,
     `PostgreSQL: ${statusLabel(storage.postgresStatus)} (${storage.postgresAvailable ? 'available' : 'not available'})`,
     `Redis: ${statusLabel(storage.redisStatus)} (${storage.redisAvailable ? 'available' : 'not available'})`
   ].join('\n');

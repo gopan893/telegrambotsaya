@@ -155,8 +155,11 @@ function normalizeStorageHealth(storage = {}) {
   const redisHealth = redis.health || redis || {};
   return {
     storageDriver: storage.driver || storage.storageDriver || storage.persistentType || 'unknown',
+    activeDriver: storage.activeDriver || storage.driver || storage.storageDriver || storage.persistentType || 'unknown',
     configuredStorageDriver: storage.configuredDriver || storage.preferredDriver || 'auto',
     fallbackActive: Boolean(storage.fallbackActive || storage.fallback),
+    fallbackReason: truncateText(storage.fallbackReason || '', 180),
+    jsonFallbackAvailable: storage.jsonFallbackAvailable !== false,
     databaseUrlConfigured: Boolean(storage.postgresConfigured || postgresHealth.configured),
     postgresAvailable: Boolean(storage.postgresAvailable || postgresHealth.available),
     postgresTableReady: Boolean(storage.postgresTableReady || postgresHealth.tableReady),
@@ -180,7 +183,10 @@ function sanitizeStorage(storage = {}) {
   return guards.preventSecretLeak({
     ...normalized,
     initialized: Boolean(storage.initialized),
+    activeDriver: normalized.activeDriver,
     migrations: storage.migrations || postgres.migrations || 'skipped',
+    fallbackReason: normalized.fallbackReason,
+    jsonFallbackAvailable: normalized.jsonFallbackAvailable,
     lastError: truncateText(storage.lastError || '', 160),
     postgres: {
       configured: normalized.databaseUrlConfigured,
@@ -213,8 +219,11 @@ function sanitizeHealth(data = {}) {
     dashboardEnabled: Boolean(data.dashboardEnabled),
     tokenConfigured: Boolean(data.tokenConfigured ?? data.adminTokenSet),
     storageDriver: data.storageDriver || storage.storageDriver || 'unknown',
+    activeDriver: data.activeDriver || storage.activeDriver || data.storageDriver || storage.storageDriver || 'unknown',
     configuredStorageDriver: data.configuredStorageDriver || storage.configuredStorageDriver || 'auto',
     fallbackActive: Boolean(data.fallbackActive ?? storage.fallbackActive),
+    fallbackReason: truncateText(data.fallbackReason || storage.fallbackReason || '', 180),
+    jsonFallbackAvailable: Boolean(data.jsonFallbackAvailable ?? storage.jsonFallbackAvailable),
     databaseUrlConfigured: Boolean(data.databaseUrlConfigured ?? storage.databaseUrlConfigured),
     postgresAvailable: Boolean(data.postgresAvailable ?? storage.postgresAvailable),
     postgresTableReady: Boolean(data.postgresTableReady ?? storage.postgresTableReady),
@@ -326,6 +335,36 @@ function sanitizeGraph(graph = {}) {
   });
 }
 
+function sanitizeAuditEntry(entry = {}) {
+  return guards.preventSecretLeak({
+    id: entry.id,
+    actorType: entry.actorType || 'dashboard',
+    actorId: truncateText(entry.actorId || '', 80),
+    action: truncateText(entry.action || '', 80),
+    targetType: truncateText(entry.targetType || '', 40),
+    targetId: truncateText(entry.targetId || '', 120),
+    userId: truncateText(entry.userId || '', 80),
+    status: entry.status || 'ok',
+    beforeSummary: guards.sanitizeBeforeAfterSummary(entry.beforeSummary || ''),
+    afterSummary: guards.sanitizeBeforeAfterSummary(entry.afterSummary || ''),
+    reason: truncateText(entry.reason || '', 240),
+    ipHash: entry.ipHash || '',
+    userAgentSummary: truncateText(entry.userAgentSummary || '', 160),
+    createdAt: entry.createdAt
+  });
+}
+
+function sanitizeActionResult(result = {}) {
+  return guards.preventSecretLeak({
+    ok: Boolean(result.ok),
+    action: result.action,
+    status: result.status,
+    result: result.result || null,
+    warnings: Array.isArray(result.warnings) ? result.warnings.slice(0, 10).map(item => truncateText(item, 160)) : [],
+    timestamp: result.timestamp || null
+  });
+}
+
 module.exports = {
   sanitizeEnvStatus,
   sanitizeGoal,
@@ -346,5 +385,7 @@ module.exports = {
   sanitizePerformance,
   sanitizeCommandList,
   sanitizeUserOverview,
-  sanitizeGraph
+  sanitizeGraph,
+  sanitizeAuditEntry,
+  sanitizeActionResult
 };

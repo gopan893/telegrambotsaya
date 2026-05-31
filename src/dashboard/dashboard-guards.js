@@ -68,6 +68,60 @@ function validateUserId(userId) {
   return id;
 }
 
+function validateId(value, maxLength = 120) {
+  const id = String(value || '').trim();
+  if (!id || id.length > maxLength) return null;
+  if (!/^[a-zA-Z0-9_.:@-]+$/.test(id)) return null;
+  return id;
+}
+
+function validateTextLength(value, maxLength = 1000, field = 'text') {
+  const text = String(value || '').trim();
+  if (!text) return { ok: false, error: `${field}_required` };
+  if (text.length > maxLength) return { ok: false, error: `${field}_too_long`, maxLength };
+  return { ok: true, value: text };
+}
+
+function validateTags(tags, maxCount = 12, maxLength = 40) {
+  if (typeof tags === 'undefined' || tags === null) return { ok: true, value: [] };
+  const list = Array.isArray(tags) ? tags : String(tags).split(',');
+  const clean = list
+    .map(tag => String(tag || '').trim())
+    .filter(Boolean)
+    .slice(0, maxCount);
+  if (clean.some(tag => tag.length > maxLength)) {
+    return { ok: false, error: 'tag_too_long' };
+  }
+  return { ok: true, value: clean };
+}
+
+function validateNumberRange(value, min = 0, max = 1, field = 'number') {
+  if (typeof value === 'undefined' || value === null || value === '') return { ok: true, value: undefined };
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min || number > max) {
+    return { ok: false, error: `${field}_out_of_range`, min, max };
+  }
+  return { ok: true, value: number };
+}
+
+function sanitizeBeforeAfterSummary(value, maxLength = 360) {
+  if (value === null || typeof value === 'undefined') return '';
+  if (typeof value === 'string') return preventSecretLeak(value.slice(0, maxLength));
+  const summary = {};
+  for (const [key, item] of Object.entries(value || {}).slice(0, 12)) {
+    if (SECRET_PATTERNS.some(pattern => pattern.test(key))) {
+      summary[key] = item ? 'set' : 'missing';
+    } else if (typeof item === 'string') {
+      summary[key] = preventSecretLeak(item.slice(0, 160));
+    } else if (typeof item === 'number' || typeof item === 'boolean' || item === null) {
+      summary[key] = item;
+    } else if (Array.isArray(item)) {
+      summary[key] = item.slice(0, 8).map(v => preventSecretLeak(String(v).slice(0, 80)));
+    }
+  }
+  return preventSecretLeak(summary);
+}
+
 function validateActionName(actionName) {
   const VALID_ACTIONS = [
     'diagnostics/run',
@@ -129,7 +183,12 @@ module.exports = {
   preventSecretLeak,
   safeDashboardResponse,
   safeDashboardJson,
+  sanitizeBeforeAfterSummary,
   validateLimit,
+  validateId,
+  validateNumberRange,
+  validateTags,
+  validateTextLength,
   validateUserId,
   validateActionName,
   requireDashboardEnabled,

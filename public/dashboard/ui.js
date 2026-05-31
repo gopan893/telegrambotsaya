@@ -34,12 +34,16 @@ const UI = {
   },
 
   renderStorageCards(storage = {}) {
+    const warning = storage.postgresAvailable && storage.postgresTableReady && (storage.activeDriver || storage.storageDriver) === 'json'
+      ? '<div class="alert alert-warning" style="margin-top:12px;">PostgreSQL connected, but storage is using JSON fallback.</div>'
+      : '';
     return `
       <div class="card-grid">
-        ${UI.renderMetric('Storage Driver', storage.storageDriver || 'unknown', `Configured: ${storage.configuredStorageDriver || 'auto'}`)}
+        ${UI.renderMetric('Storage Driver', storage.activeDriver || storage.storageDriver || 'unknown', `Configured: ${storage.configuredStorageDriver || 'auto'} | Fallback: ${storage.fallbackActive ? 'yes' : 'no'}`)}
         ${UI.renderMetric('PostgreSQL', UI.storageStatusLabel(storage.postgresStatus), `Available: ${storage.postgresAvailable ? 'yes' : 'no'} | Table: ${storage.postgresTableReady ? 'ready' : 'not ready'} | ${storage.postgresLatencyMs ?? '-'}ms`)}
         ${UI.renderMetric('Redis', UI.storageStatusLabel(storage.redisStatus), `Available: ${storage.redisAvailable ? 'yes' : 'no'} | ${storage.redisLatencyMs ?? '-'}ms`)}
       </div>
+      ${warning}
     `;
   },
 
@@ -507,13 +511,44 @@ const UI = {
               ` : ''}
               <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:12px; margin-top:8px;">
                 <span style="font-size:11px; color:var(--text-muted)">Source: ${Utils.escapeHtml(item.source || 'telegram')}</span>
-                <button class="btn btn-outline btn-block" style="padding:4px 10px; font-size:11px; max-width:100px;" disabled>Hapus (Soon)</button>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn btn-outline" data-memory-action="copy" data-id="${Utils.escapeHtml(item.id)}" style="padding:4px 10px; font-size:11px;">Copy ID</button>
+                  <button class="btn btn-outline" data-memory-action="edit" data-id="${Utils.escapeHtml(item.id)}" data-content="${Utils.escapeHtml(item.content || '')}" style="padding:4px 10px; font-size:11px;">Edit</button>
+                  <button class="btn btn-outline" data-memory-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:4px 10px; font-size:11px; color:var(--color-danger);">Archive</button>
+                </div>
               </div>
             </div>
           `).join('')}
         </div>
       `;
       contentListEl.innerHTML = mHtml;
+      contentListEl.querySelectorAll('[data-memory-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-memory-action');
+          const memoryId = btn.getAttribute('data-id');
+          if (action === 'copy') {
+            await navigator.clipboard?.writeText(memoryId);
+            Utils.showToast('Memory ID disalin.', 'success');
+            return;
+          }
+          if (action === 'edit') {
+            const content = prompt('Update content memory:', btn.getAttribute('data-content') || '');
+            if (!content) return;
+            const res = await Api.updateMemory({ userId, memoryId, content });
+            Utils.showToast(res.ok && res.data?.ok ? 'Memory updated.' : 'Gagal update memory.', res.ok && res.data?.ok ? 'success' : 'danger');
+            await loadData();
+            return;
+          }
+          if (action === 'archive') {
+            const confirmationText = prompt('Ketik ARCHIVE untuk archive memory ini:');
+            if (confirmationText !== 'ARCHIVE') return;
+            const reason = prompt('Alasan archive (opsional):') || '';
+            const res = await Api.archiveMemory({ userId, memoryId, confirm: true, confirmationText, reason });
+            Utils.showToast(res.ok && res.data?.ok ? 'Memory archived.' : 'Gagal archive memory.', res.ok && res.data?.ok ? 'success' : 'danger');
+            await loadData();
+          }
+        });
+      });
     };
 
     let html = UI.renderSectionHeader('Memory Records');
@@ -613,11 +648,38 @@ const UI = {
                   <span class="text-primary">${Utils.formatDate(item.createdAt)}</span>
                 </div>
               </div>
+              <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+                <button class="btn btn-outline" data-goal-action="progress" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Update Progress</button>
+                <button class="btn btn-outline" data-goal-action="status" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Update Status</button>
+                <button class="btn btn-outline" data-goal-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
+              </div>
             </div>
           `).join('')}
         </div>
       `;
       container.innerHTML = gHtml;
+      container.querySelectorAll('[data-goal-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-goal-action');
+          const goalId = btn.getAttribute('data-id');
+          let res;
+          if (action === 'progress') {
+            const progress = prompt('Progress 0-100:');
+            if (progress === null) return;
+            res = await Api.updateGoal({ userId, goalId, progress: Number(progress) });
+          } else if (action === 'status') {
+            const status = prompt('Status: active, paused, completed, archived, cancelled');
+            if (!status) return;
+            res = await Api.updateGoal({ userId, goalId, status });
+          } else if (action === 'archive') {
+            const confirmationText = prompt('Ketik ARCHIVE untuk archive goal ini:');
+            if (confirmationText !== 'ARCHIVE') return;
+            res = await Api.archiveGoal({ userId, goalId, confirm: true, confirmationText, reason: prompt('Alasan archive (opsional):') || '' });
+          }
+          Utils.showToast(res?.ok && res.data?.ok ? 'Goal action sukses.' : 'Goal action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
+          await loadData();
+        });
+      });
     };
 
     let html = UI.renderSectionHeader('Goals (Sasaran Terencana)');
@@ -714,12 +776,39 @@ const UI = {
                     </tbody>
                   </table>
                 </div>
+                <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+                  <button class="btn btn-outline" data-workflow-action="add-step" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Add Step</button>
+                  <button class="btn btn-outline" data-workflow-action="done-step" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Mark Step Done</button>
+                  <button class="btn btn-outline" data-workflow-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
+                </div>
               </div>
             `;
           }).join('')}
         </div>
       `;
       container.innerHTML = wHtml;
+      container.querySelectorAll('[data-workflow-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-workflow-action');
+          const workflowId = btn.getAttribute('data-id');
+          let res;
+          if (action === 'add-step') {
+            const title = prompt('Step baru:');
+            if (!title) return;
+            res = await Api.addWorkflowStep({ userId, workflowId, title });
+          } else if (action === 'done-step') {
+            const stepNumber = prompt('Step number yang selesai:');
+            if (!stepNumber) return;
+            res = await Api.markWorkflowStepDone({ userId, workflowId, stepNumber: Number(stepNumber) });
+          } else if (action === 'archive') {
+            const confirmationText = prompt('Ketik ARCHIVE untuk archive workflow ini:');
+            if (confirmationText !== 'ARCHIVE') return;
+            res = await Api.archiveWorkflow({ userId, workflowId, confirm: true, confirmationText, reason: prompt('Alasan archive (opsional):') || '' });
+          }
+          Utils.showToast(res?.ok && res.data?.ok ? 'Workflow action sukses.' : 'Workflow action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
+          await loadData();
+        });
+      });
     };
 
     let html = UI.renderSectionHeader('Workflows (Alur Rencana)');
@@ -1044,6 +1133,80 @@ const UI = {
 
     targetEl.innerHTML = html;
     document.getElementById('btn-refresh-incidents').addEventListener('click', () => this.renderIncidents(targetEl));
+  },
+
+  async renderAudit(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat audit log...');
+
+    const loadData = async () => {
+      const filters = {
+        limit: document.getElementById('audit-limit')?.value || 20,
+        action: document.getElementById('audit-action')?.value || '',
+        status: document.getElementById('audit-status')?.value || '',
+        targetType: document.getElementById('audit-target-type')?.value || '',
+        userId: document.getElementById('audit-user-id')?.value || ''
+      };
+      const res = await Api.getAuditLogs(filters);
+      const container = document.getElementById('audit-list-container');
+      if (!res.ok) {
+        container.innerHTML = UI.renderError('Gagal Memuat Audit Log', 'Pastikan token admin benar.');
+        return;
+      }
+      const items = res.data.items || [];
+      if (!items.length) {
+        container.innerHTML = UI.renderEmptyState('🧾', 'Belum Ada Audit', 'Action dashboard belum menghasilkan audit log.');
+        return;
+      }
+      container.innerHTML = UI.renderTable(
+        ['Waktu', 'Action', 'Target', 'Status', 'User', 'Reason'],
+        items.map(item => [
+          Utils.escapeHtml(Utils.formatDate(item.createdAt)),
+          `<code>${Utils.escapeHtml(item.action)}</code>`,
+          `${Utils.escapeHtml(item.targetType || '-')}:${Utils.escapeHtml(item.targetId || '-')}`,
+          UI.renderBadge(item.status || 'ok'),
+          Utils.escapeHtml(item.userId || '-'),
+          Utils.escapeHtml(item.reason || '-')
+        ])
+      );
+    };
+
+    let html = UI.renderSectionHeader('Audit Log', `
+      <button class="btn btn-outline" id="btn-refresh-audit">Refresh</button>
+    `);
+    html += `
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label for="audit-user-id">User ID</label>
+          <input type="text" id="audit-user-id" placeholder="optional">
+        </div>
+        <div class="filter-group">
+          <label for="audit-action">Action</label>
+          <input type="text" id="audit-action" placeholder="memory/update">
+        </div>
+        <div class="filter-group">
+          <label for="audit-status">Status</label>
+          <input type="text" id="audit-status" placeholder="ok/rejected">
+        </div>
+        <div class="filter-group">
+          <label for="audit-target-type">Target Type</label>
+          <input type="text" id="audit-target-type" placeholder="memory/goal/workflow">
+        </div>
+        <div class="filter-group" style="max-width:100px;">
+          <label for="audit-limit">Limit</label>
+          <select id="audit-limit"><option>20</option><option>50</option><option>100</option></select>
+        </div>
+        <button class="btn btn-primary" id="btn-load-audit" style="height:40px;">Load Audit</button>
+      </div>
+      <div class="panel" style="border-color:rgba(240,60,60,0.35);">
+        <h3 class="panel-title">Danger Zone Rules</h3>
+        <p style="color:var(--text-secondary); font-size:13px;">Archive/restore action membutuhkan confirmation word. Tidak ada hard delete endpoint di dashboard Phase 13.</p>
+      </div>
+      <div id="audit-list-container">${UI.renderLoading('Memuat audit log...')}</div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-load-audit').addEventListener('click', loadData);
+    document.getElementById('btn-refresh-audit').addEventListener('click', loadData);
+    await loadData();
   },
 
   async renderCommands(targetEl) {

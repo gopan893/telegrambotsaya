@@ -32,7 +32,7 @@ function buildCommandCatalog() {
     graph: ['/graph', '/graph <konsep>', '/concepts', '/relate', '/graphsearch', '/graphrisks', '/graphdeps', '/graphprune', '/graphstats'],
     ops: ['/ops', '/health', '/diag', '/reliability', '/perf', '/tokens', '/benchmark'],
     tools: ['/hitung', '/jam', '/tanggal', '/cuaca', '/cari', '/lokasi', '/image'],
-    dashboard: ['/dashboard', '/dashboardstatus', '/dbstatus', '/redisstatus']
+    dashboard: ['/dashboard', '/dashboardstatus', '/dbstatus', '/redisstatus', '/audit', '/audit recent']
   };
 }
 

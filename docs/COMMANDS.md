@@ -12,6 +12,7 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | `/dashboardstatus` | Status dashboard tanpa menampilkan token. |
 | `/dbstatus` | Status PostgreSQL, readiness tabel, fallback, dan rekomendasi perbaikan. |
 | `/redisstatus` | Status Redis/cache, fallback memory cache, dan rekomendasi perbaikan. |
+| `/audit [recent]` | Ringkasan audit dashboard/admin terbaru, admin-only. |
 | `/ping` | Cek respons bot. |
 | `/reset` | Reset state user dengan guard/konfirmasi jika tersedia. |
 | `/stats` | Status runtime ringkas, storage, Redis, memory, plugin. |

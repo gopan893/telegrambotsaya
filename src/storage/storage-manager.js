@@ -19,12 +19,12 @@ function createStorageManager(options = {}) {
   const env = options.env || process.env;
   const jsonBaseDir = options.jsonBaseDir || process.cwd();
   const preferredDriver = normalizeDriver(env.STORAGE_DRIVER);
-  const postgres = createPostgresStore({
+  const postgres = options.postgresStore || createPostgresStore({
     databaseUrl: env.DATABASE_URL,
     env,
     runMigrations: String(env.RUN_MIGRATIONS || 'true').toLowerCase() !== 'false'
   });
-  let cache = createRedisStore({
+  let cache = options.cacheStore || createRedisStore({
     redisUrl: env.REDIS_URL,
     client: options.redisClient || null
   });
@@ -35,6 +35,7 @@ function createStorageManager(options = {}) {
   let migrationsStatus = 'skipped';
   let postgresHealth = null;
   let redisHealth = null;
+  let fallbackReason = null;
 
   function shouldTryPostgres() {
     if (preferredDriver === 'json') return false;
@@ -67,12 +68,26 @@ function createStorageManager(options = {}) {
       migrationsStatus = postgres.status().migrations || 'ok';
       postgresHealth = postgres.status().health || await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true });
       lastError = null;
+      fallbackReason = null;
     } else {
       persistentType = 'json';
       repositories = createJsonRepositories({ loadData, saveData });
       migrationsStatus = pgStatus.reason === 'postgres_not_requested' ? 'skipped' : 'error';
       lastError = pgStatus.reason;
-      postgresHealth = await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true });
+      postgresHealth = postgres.status().health || (shouldTryPostgres()
+        ? await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true })
+        : {
+            configured: Boolean(env.DATABASE_URL),
+            available: false,
+            tableReady: false,
+            status: preferredDriver === 'json' ? 'disabled' : 'missing_env',
+            latencyMs: null,
+            errorMessageSafe: preferredDriver === 'json' ? 'PostgreSQL disabled by STORAGE_DRIVER=json' : 'DATABASE_URL missing',
+            recommendedFix: preferredDriver === 'json' ? 'Set STORAGE_DRIVER=auto to use PostgreSQL' : 'Set DATABASE_URL or use JSON fallback'
+          });
+      fallbackReason = shouldTryPostgres()
+        ? (pgStatus.reason || postgresHealth.status || 'postgres_unavailable')
+        : (preferredDriver === 'json' ? 'storage_driver_json' : 'database_url_missing');
     }
 
     initialized = true;
@@ -82,7 +97,10 @@ function createStorageManager(options = {}) {
       cache: cacheStatus.ok ? 'redis' : 'memory-cache',
       postgres: pgStatus,
       migrations: migrationsStatus,
-      fallback: persistentType === 'json'
+      fallback: persistentType === 'json',
+      fallbackActive: persistentType === 'json',
+      fallbackReason,
+      activeDriver: persistentType
     };
   }
 
@@ -109,6 +127,7 @@ function createStorageManager(options = {}) {
         persistentType = 'json';
         repositories = createJsonRepositories({ loadData, saveData });
         lastError = postgresStatus.lastError || 'postgres_read_failed';
+        fallbackReason = lastError;
         value = await readJsonFile(jsonBaseDir, key, defaultValue);
       }
     } else {
@@ -133,6 +152,7 @@ function createStorageManager(options = {}) {
         persistentType = 'json';
         repositories = createJsonRepositories({ loadData, saveData });
         lastError = status.lastError || 'postgres_write_failed';
+        fallbackReason = lastError;
       }
     }
 
@@ -237,6 +257,9 @@ function createStorageManager(options = {}) {
       redis: cacheStatus.redisAvailable ? 'available' : (env.REDIS_URL ? 'error' : 'unavailable'),
       fallback: persistentType === 'json' ? 'json' : null,
       storageDriver: persistentType,
+      activeDriver: persistentType,
+      fallbackActive: persistentType === 'json',
+      fallbackReason,
       migrations: migrationsStatus || postgresStatus.migrations || 'skipped',
       postgresHealth: postgresStatus.health,
       redisHealth: cacheStatus.health,
@@ -321,6 +344,7 @@ function createStorageManager(options = {}) {
     return {
       initialized,
       driver: persistentType,
+      activeDriver: persistentType,
       storageDriver: persistentType,
       configuredDriver: preferredDriver,
       preferredDriver,
@@ -335,6 +359,8 @@ function createStorageManager(options = {}) {
       redisAvailable: Boolean(cacheStatus.redisAvailable),
       fallbackActive: persistentType === 'json',
       fallback: persistentType === 'json' ? 'json' : null,
+      fallbackReason,
+      jsonFallbackAvailable: true,
       lastError
     };
   }

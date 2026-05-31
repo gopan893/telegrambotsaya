@@ -7,6 +7,9 @@ const guards = require('./dashboard-guards');
 const serializers = require('./dashboard-serializers');
 const utils = require('./dashboard-utils');
 const actions = require('./dashboard-actions');
+const auditLog = require('./audit-log');
+const permissions = require('./dashboard-permissions');
+const safeActions = require('./safe-actions');
 
 function getDashboardServices(services = {}) {
   return {
@@ -39,8 +42,11 @@ function buildDashboardHealthPayload(storage, dashboardStatus) {
     dashboardEnabled: dashboardStatus.enabled,
     tokenConfigured: dashboardStatus.tokenConfigured,
     storageDriver: storageSafe.storageDriver,
+    activeDriver: storageSafe.activeDriver,
     configuredStorageDriver: storageSafe.configuredStorageDriver,
     fallbackActive: storageSafe.fallbackActive,
+    fallbackReason: storageSafe.fallbackReason,
+    jsonFallbackAvailable: storageSafe.jsonFallbackAvailable,
     databaseUrlConfigured: storageSafe.databaseUrlConfigured,
     postgresAvailable: storageSafe.postgresAvailable,
     postgresTableReady: storageSafe.postgresTableReady,
@@ -197,6 +203,20 @@ function setDashboardSecurityHeaders(res) {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer'
   });
+}
+
+function buildActionContext(req) {
+  return {
+    actorId: 'dashboard-admin',
+    ip: req.ip || req.headers['x-forwarded-for'] || '',
+    userAgent: req.headers['user-agent'] || '',
+    permission: req.dashboardPermission || permissions.getDashboardPermissionLevel(req)
+  };
+}
+
+async function runSafeAction(actionName, req, res, services) {
+  const result = await safeActions.handleSafeAction(actionName, req.body || {}, buildActionContext(req), services);
+  return guards.safeDashboardResponse(res, result, result.ok ? 200 : (result.status === 'rejected' ? 400 : 404));
 }
 
 function registerDashboardRoutes(app, rawServices = {}) {
@@ -408,35 +428,92 @@ function registerDashboardRoutes(app, rawServices = {}) {
     return guards.safeDashboardResponse(res, serializers.sanitizeEnvStatus(services.env));
   });
 
+  router.get('/audit', async (req, res) => {
+    const options = {
+      limit: req.query.limit,
+      action: req.query.action,
+      status: req.query.status,
+      targetType: req.query.targetType,
+      userId: req.query.userId
+    };
+    const items = await auditLog.listAuditLogs(options, services);
+    const summary = await auditLog.getAuditSummary({ limit: 5 }, services);
+    return guards.safeDashboardResponse(res, { items, summary });
+  });
+
   // Protected Safe Admin Actions API with Rate Limit
-  router.post('/actions/diagnostics/run', guards.rateLimitDashboardAction, async (req, res) => {
+  router.post('/actions/diagnostics/run', guards.rateLimitDashboardAction, permissions.requireActionPermission('diagnostics/run'), async (req, res) => {
     const result = await actions.handleAction('diagnostics/run', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
-  router.post('/actions/benchmark/run-light', guards.rateLimitDashboardAction, async (req, res) => {
+  router.post('/actions/benchmark/run-light', guards.rateLimitDashboardAction, permissions.requireActionPermission('benchmark/run-light'), async (req, res) => {
     const result = await actions.handleAction('benchmark/run-light', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
-  router.post('/actions/telemetry/prune', guards.rateLimitDashboardAction, async (req, res) => {
+  router.post('/actions/telemetry/prune', guards.rateLimitDashboardAction, permissions.requireActionPermission('telemetry/prune'), async (req, res) => {
     const result = await actions.handleAction('telemetry/prune', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
-  router.post('/actions/ops/refresh', guards.rateLimitDashboardAction, async (req, res) => {
+  router.post('/actions/ops/refresh', guards.rateLimitDashboardAction, permissions.requireActionPermission('ops/refresh'), async (req, res) => {
     const result = await actions.handleAction('ops/refresh', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
-  router.post('/actions/report/export-health', guards.rateLimitDashboardAction, async (req, res) => {
+  router.post('/actions/report/export-health', guards.rateLimitDashboardAction, permissions.requireActionPermission('report/export-health'), async (req, res) => {
     const result = await actions.handleAction('report/export-health', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
-  router.post('/actions/report/export-user-summary', guards.rateLimitDashboardAction, async (req, res) => {
+  router.post('/actions/report/export-user-summary', guards.rateLimitDashboardAction, permissions.requireActionPermission('report/export-user-summary'), async (req, res) => {
     const result = await actions.handleAction('report/export-user-summary', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
+  });
+
+  router.post('/actions/memory/update', guards.rateLimitDashboardAction, permissions.requireActionPermission('memory/update'), async (req, res) => {
+    return runSafeAction('memory/update', req, res, services);
+  });
+
+  router.post('/actions/memory/archive', guards.rateLimitDashboardAction, permissions.requireActionPermission('memory/archive'), async (req, res) => {
+    return runSafeAction('memory/archive', req, res, services);
+  });
+
+  router.post('/actions/memory/restore', guards.rateLimitDashboardAction, permissions.requireActionPermission('memory/restore'), async (req, res) => {
+    return runSafeAction('memory/restore', req, res, services);
+  });
+
+  router.post('/actions/goal/update', guards.rateLimitDashboardAction, permissions.requireActionPermission('goal/update'), async (req, res) => {
+    return runSafeAction('goal/update', req, res, services);
+  });
+
+  router.post('/actions/goal/archive', guards.rateLimitDashboardAction, permissions.requireActionPermission('goal/archive'), async (req, res) => {
+    return runSafeAction('goal/archive', req, res, services);
+  });
+
+  router.post('/actions/goal/restore', guards.rateLimitDashboardAction, permissions.requireActionPermission('goal/restore'), async (req, res) => {
+    return runSafeAction('goal/restore', req, res, services);
+  });
+
+  router.post('/actions/workflow/step/add', guards.rateLimitDashboardAction, permissions.requireActionPermission('workflow/step/add'), async (req, res) => {
+    return runSafeAction('workflow/step/add', req, res, services);
+  });
+
+  router.post('/actions/workflow/step/done', guards.rateLimitDashboardAction, permissions.requireActionPermission('workflow/step/done'), async (req, res) => {
+    return runSafeAction('workflow/step/done', req, res, services);
+  });
+
+  router.post('/actions/workflow/step/reorder', guards.rateLimitDashboardAction, permissions.requireActionPermission('workflow/step/reorder'), async (req, res) => {
+    return runSafeAction('workflow/step/reorder', req, res, services);
+  });
+
+  router.post('/actions/workflow/archive', guards.rateLimitDashboardAction, permissions.requireActionPermission('workflow/archive'), async (req, res) => {
+    return runSafeAction('workflow/archive', req, res, services);
+  });
+
+  router.post('/actions/workflow/restore', guards.rateLimitDashboardAction, permissions.requireActionPermission('workflow/restore'), async (req, res) => {
+    return runSafeAction('workflow/restore', req, res, services);
   });
 
   app.use('/api/dashboard', router);
