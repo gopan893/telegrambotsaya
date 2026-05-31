@@ -1,10 +1,12 @@
 'use strict';
 
 const express = require('express');
+const path = require('path');
 const auth = require('./dashboard-auth');
 const guards = require('./dashboard-guards');
 const serializers = require('./dashboard-serializers');
 const utils = require('./dashboard-utils');
+const actions = require('./dashboard-actions');
 
 function getDashboardServices(services = {}) {
   return {
@@ -165,22 +167,44 @@ function registerDashboardRoutes(app, rawServices = {}) {
 
   app.locals.dashboardEnv = services.env;
 
+  // Serve public/dashboard/index.html on GET /dashboard
   app.get('/dashboard', (req, res) => {
-    res.type('html').send(utils.buildDashboardHtml(auth.getDashboardStatus(services.env), services.env));
+    res.sendFile(path.join(__dirname, '../../public/dashboard/index.html'), {
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer'
+      }
+    });
   });
+
+  // Serve static assets from public/dashboard
+  app.use('/dashboard', express.static(path.join(__dirname, '../../public/dashboard'), {
+    setHeaders: (res) => {
+      res.set({
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer'
+      });
+    }
+  }));
 
   router.get('/health', (req, res) => {
     const storage = getStorageStatus(services.storageManager);
-    return guards.safeDashboardResponse(res, {
+    const dashboardStatus = auth.getDashboardStatus(services.env);
+    return res.json({
       ok: true,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       version: utils.getVersion(),
       storageDriver: storage.driver || storage.persistentType || 'unknown',
-      redisAvailable: Boolean(storage.redisAvailable || storage.cache?.redisAvailable)
+      redisAvailable: Boolean(storage.redisAvailable || storage.cache?.redisAvailable),
+      dashboardEnabled: dashboardStatus.enabled,
+      adminTokenSet: dashboardStatus.adminTokenSet
     });
   });
 
+  // Authenticate other API routes
   router.use(dashboardAuth);
 
   router.get('/summary', async (req, res) => {
@@ -192,11 +216,11 @@ function registerDashboardRoutes(app, rawServices = {}) {
     } catch (err) {
       opsStatus = { status: 'unavailable', error: err.message };
     }
-    return guards.safeDashboardResponse(res, {
+    return guards.safeDashboardResponse(res, serializers.sanitizeDashboardSummary({
       ...counts,
       storageStatus,
-      opsStatus: serializers.sanitizeOpsData(opsStatus)
-    });
+      opsStatus
+    }));
   });
 
   router.get('/user/:userId/overview', async (req, res) => {
@@ -210,19 +234,20 @@ function registerDashboardRoutes(app, rawServices = {}) {
     const insights = await safeCall(() => listInsights(userId, services, 10), []);
     const graph = await safeCall(() => getGraphSnapshot(userId, services, { nodeLimit: 12, edgeLimit: 20 }), { nodes: [], edges: [], stats: {} });
     const memoryStats = services.aiOS.unifiedMemory?.getMemoryStats?.(userId, aiosServices) || { total: memories.length };
-    return guards.safeDashboardResponse(res, {
+    
+    return guards.safeDashboardResponse(res, serializers.sanitizeUserOverview({
       memoryStats,
-      activeGoals: goals.filter(goal => !goal.status || goal.status === 'active').slice(0, 20).map(serializers.sanitizeGoal),
-      activeWorkflows: workflows.filter(workflow => !workflow.status || workflow.status === 'active').slice(0, 20).map(serializers.sanitizeWorkflow),
-      recentInsights: insights.map(serializers.sanitizeInsight),
+      activeGoals: goals.filter(goal => !goal.status || goal.status === 'active'),
+      activeWorkflows: workflows.filter(workflow => !workflow.status || workflow.status === 'active'),
+      recentInsights: insights,
       graphStats: graph.stats || {},
       adaptiveProfileSummary: {
         enabled: user.adaptive?.enabled !== false,
         activeMode: user.adaptive?.activeMode || null,
-        lastReason: serializers.truncateText(user.adaptive?.lastReason || '', 180),
+        lastReason: user.adaptive?.lastReason || '',
         lastConfidence: Number(user.adaptive?.lastConfidence || 0)
       }
-    });
+    }));
   });
 
   router.get('/user/:userId/memories', async (req, res) => {
@@ -261,12 +286,12 @@ function registerDashboardRoutes(app, rawServices = {}) {
     const userId = guards.validateUserId(req.params.userId);
     if (!userId) return guards.safeDashboardResponse(res, { ok: false, error: 'INVALID_USER_ID' }, 400);
     const graph = await safeCall(() => getGraphSnapshot(userId, services, { nodeLimit: 20, edgeLimit: 40 }), { nodes: [], edges: [], stats: {} });
-    return guards.safeDashboardResponse(res, {
+    return guards.safeDashboardResponse(res, serializers.sanitizeGraph({
       stats: graph.stats || {},
-      summaryText: serializers.truncateText(graph.summaryText || '', 1200),
-      topNodes: (graph.nodes || []).map(serializers.sanitizeGraphNode),
-      topEdges: (graph.edges || []).map(serializers.sanitizeGraphEdge)
-    });
+      summaryText: graph.summaryText || '',
+      topNodes: graph.nodes || [],
+      topEdges: graph.edges || []
+    }));
   });
 
   router.get('/user/:userId/graph/search', async (req, res) => {
@@ -290,15 +315,69 @@ function registerDashboardRoutes(app, rawServices = {}) {
     } catch (err) {
       ops = { status: 'unavailable', error: err.message };
     }
-    return guards.safeDashboardResponse(res, serializers.sanitizeOpsData(ops || {}));
+    return guards.safeDashboardResponse(res, serializers.sanitizeOps(ops || {}));
+  });
+
+  router.get('/reliability', async (req, res) => {
+    try {
+      const scoreObj = services.opsSystem?.reliabilityScorer?.calculateReliabilityScore?.(services) || { score: 0, status: 'unknown' };
+      return guards.safeDashboardResponse(res, serializers.sanitizeReliability(scoreObj));
+    } catch (err) {
+      return guards.safeDashboardResponse(res, { score: 0, status: 'unavailable', error: err.message });
+    }
+  });
+
+  router.get('/benchmarks', async (req, res) => {
+    try {
+      const history = services.opsSystem?.benchmarkEngine?.getBenchmarkHistory?.({}, services) || [];
+      const summary = services.opsSystem?.benchmarkEngine?.getBenchmarkSummary?.(services) || { totalRuns: 0 };
+      return guards.safeDashboardResponse(res, {
+        summary,
+        history: history.map(serializers.sanitizeBenchmark)
+      });
+    } catch (err) {
+      return guards.safeDashboardResponse(res, { history: [], summary: {}, error: err.message });
+    }
+  });
+
+  router.get('/incidents', async (req, res) => {
+    try {
+      const incidents = services.opsSystem?.incidentHandler?.listIncidents?.(services) || [];
+      return guards.safeDashboardResponse(res, {
+        items: incidents.map(serializers.sanitizeIncident)
+      });
+    } catch (err) {
+      return guards.safeDashboardResponse(res, { items: [], error: err.message });
+    }
   });
 
   router.get('/commands', (req, res) => {
-    return guards.safeDashboardResponse(res, utils.buildCommandCatalog());
+    return guards.safeDashboardResponse(res, serializers.sanitizeCommandList(utils.buildCommandCatalog()));
   });
 
   router.get('/env-check', (req, res) => {
     return guards.safeDashboardResponse(res, serializers.sanitizeEnvStatus(services.env));
+  });
+
+  // Protected Safe Admin Actions API with Rate Limit
+  router.post('/actions/diagnostics/run', guards.rateLimitDashboardAction, async (req, res) => {
+    const result = await actions.handleAction('diagnostics/run', services);
+    return guards.safeDashboardResponse(res, result);
+  });
+
+  router.post('/actions/benchmark/run-light', guards.rateLimitDashboardAction, async (req, res) => {
+    const result = await actions.handleAction('benchmark/run-light', services);
+    return guards.safeDashboardResponse(res, result);
+  });
+
+  router.post('/actions/telemetry/prune', guards.rateLimitDashboardAction, async (req, res) => {
+    const result = await actions.handleAction('telemetry/prune', services);
+    return guards.safeDashboardResponse(res, result);
+  });
+
+  router.post('/actions/ops/refresh', guards.rateLimitDashboardAction, async (req, res) => {
+    const result = await actions.handleAction('ops/refresh', services);
+    return guards.safeDashboardResponse(res, result);
   });
 
   app.use('/api/dashboard', router);

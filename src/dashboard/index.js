@@ -11,5 +11,6 @@ module.exports = {
   auth,
   guards,
   serializers,
-  utils
+  utils,
+  actions: require('./dashboard-actions')
 };

@@ -130,6 +130,113 @@ function sanitizeEnvStatus(env = {}) {
   };
 }
 
+function sanitizeDashboardSummary(data = {}) {
+  return guards.preventSecretLeak({
+    totalUsers: Number(data.totalUsers || 0),
+    memoryCount: Number(data.memoryCount || 0),
+    goalCount: Number(data.goalCount || 0),
+    workflowCount: Number(data.workflowCount || 0),
+    insightCount: Number(data.insightCount || 0),
+    graphNodeCount: Number(data.graphNodeCount || 0),
+    graphEdgeCount: Number(data.graphEdgeCount || 0),
+    storageStatus: data.storageStatus || null,
+    opsStatus: data.opsStatus || null
+  });
+}
+
+function sanitizeHealth(data = {}) {
+  return guards.preventSecretLeak({
+    ok: Boolean(data.ok),
+    uptime: Number(data.uptime || 0),
+    timestamp: data.timestamp || null,
+    version: data.version || 'unknown',
+    storageDriver: data.storageDriver || 'unknown',
+    redisAvailable: Boolean(data.redisAvailable)
+  });
+}
+
+function sanitizeOps(data = {}) {
+  return sanitizeOpsData(data);
+}
+
+function sanitizeReliability(data = {}) {
+  if (!data) return null;
+  return guards.preventSecretLeak({
+    score: Number(data.score ?? 0),
+    status: data.status || 'unknown',
+    lastUpdated: data.lastUpdated || null
+  });
+}
+
+function sanitizeBenchmark(run = {}) {
+  if (!run) return null;
+  return guards.preventSecretLeak({
+    id: run.id,
+    type: run.type,
+    status: run.status,
+    createdAt: run.createdAt,
+    score: Number(run.score ?? 0),
+    passed: Boolean(run.passed),
+    caseCount: Number(run.caseCount ?? 0),
+    regressionAgainstBaseline: Boolean(run.regressionAgainstBaseline),
+    results: Array.isArray(run.results) ? run.results.slice(0, 50).map(res => ({
+      id: res.id,
+      type: res.type,
+      status: res.status,
+      passed: Boolean(res.passed),
+      title: truncateText(res.title || '', 120),
+      score: Number(res.score ?? 0),
+      latencyMs: Number(res.latencyMs ?? 0),
+      notes: truncateText(res.notes || '', 240)
+    })) : []
+  });
+}
+
+function sanitizeIncident(inc = {}) {
+  if (!inc) return null;
+  return guards.preventSecretLeak({
+    id: inc.id,
+    title: truncateText(inc.title || '', 120),
+    category: inc.category || 'ops',
+    status: inc.status || 'open',
+    severity: inc.severity || 'info',
+    suspectedCause: truncateText(inc.suspectedCause || '', 240),
+    recommendedFixes: Array.isArray(inc.recommendedFixes) ? inc.recommendedFixes.slice(0, 5).map(f => truncateText(f, 200)) : [],
+    createdAt: inc.createdAt,
+    resolvedAt: inc.resolvedAt
+  });
+}
+
+function sanitizeCommandList(cmds = {}) {
+  const out = {};
+  for (const [category, list] of Object.entries(cmds)) {
+    if (Array.isArray(list)) {
+      out[category] = list.slice(0, 100).map(cmd => truncateText(cmd, 60));
+    }
+  }
+  return out;
+}
+
+function sanitizeUserOverview(data = {}) {
+  return guards.preventSecretLeak({
+    memoryStats: data.memoryStats || null,
+    activeGoals: Array.isArray(data.activeGoals) ? data.activeGoals.map(sanitizeGoal) : [],
+    activeWorkflows: Array.isArray(data.activeWorkflows) ? data.activeWorkflows.map(sanitizeWorkflow) : [],
+    recentInsights: Array.isArray(data.recentInsights) ? data.recentInsights.map(sanitizeInsight) : [],
+    graphStats: data.graphStats || null,
+    adaptiveProfileSummary: data.adaptiveProfileSummary || null
+  });
+}
+
+function sanitizeGraph(graph = {}) {
+  return guards.preventSecretLeak({
+    stats: graph.stats || { nodes: 0, edges: 0 },
+    summaryText: truncateText(graph.summaryText || '', 500),
+    topNodes: Array.isArray(graph.topNodes) ? graph.topNodes.slice(0, 50).map(sanitizeGraphNode) : [],
+    topEdges: Array.isArray(graph.topEdges) ? graph.topEdges.slice(0, 50).map(sanitizeGraphEdge) : []
+  });
+}
+
 module.exports = {
   sanitizeEnvStatus,
   sanitizeGoal,
@@ -139,5 +246,14 @@ module.exports = {
   sanitizeMemory,
   sanitizeOpsData,
   sanitizeWorkflow,
-  truncateText
+  truncateText,
+  sanitizeDashboardSummary,
+  sanitizeHealth,
+  sanitizeOps,
+  sanitizeReliability,
+  sanitizeBenchmark,
+  sanitizeIncident,
+  sanitizeCommandList,
+  sanitizeUserOverview,
+  sanitizeGraph
 };

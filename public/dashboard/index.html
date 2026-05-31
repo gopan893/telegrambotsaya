@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram AI OS - Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+</head>
+<body class="dark-mode">
+  <div id="toast-container" class="toast-container"></div>
+  
+  <!-- Overlay for action confirmation -->
+  <div id="confirm-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 id="confirm-title">Konfirmasi Tindakan</h3>
+      <p id="confirm-message">Apakah Anda yakin ingin melanjutkan?</p>
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="btn btn-outline">Batal</button>
+        <button id="confirm-ok" class="btn btn-danger">Lanjutkan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Section -->
+  <div id="login-container" class="login-wrapper hidden">
+    <div class="login-card">
+      <div class="login-header">
+        <span class="logo-emoji">🤖</span>
+        <h2>Telegram AI OS</h2>
+        <p>Admin Control Panel</p>
+      </div>
+      <div id="login-status-warning" class="alert alert-warning hidden">
+        DASHBOARD_ENABLED=true tapi token admin belum diset pada server.
+      </div>
+      <div id="login-status-disabled" class="alert alert-danger hidden">
+        Dashboard dinonaktifkan di server (DASHBOARD_ENABLED=false).
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="admin-token">DASHBOARD_ADMIN_TOKEN</label>
+          <input type="password" id="admin-token" placeholder="Masukkan token admin..." required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Masuk ke Dashboard</button>
+      </form>
+      <div class="login-footer">
+        <p>Gunakan DASHBOARD_ADMIN_TOKEN yang diset di .env atau Render.</p>
+        <p class="security-warning">⚠️ Token disimpan secara lokal di browser Anda.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App Section -->
+  <div id="app-container" class="app-wrapper hidden">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <span class="header-logo-icon">🤖</span>
+        <div class="header-logo-text">
+          <h1>Telegram AI OS</h1>
+          <span class="header-version" id="app-version">v1.0.0</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="public-health-badge" id="public-health-indicator">
+          <span class="dot"></span> <span class="status-text">Memuat...</span>
+        </div>
+        <button id="menu-toggle" class="btn btn-icon menu-toggle-btn" aria-label="Toggle Menu">☰</button>
+      </div>
+    </header>
+
+    <div class="main-layout">
+      <!-- Sidebar navigation -->
+      <aside id="app-sidebar" class="sidebar">
+        <nav class="nav-menu" id="nav-menu">
+          <a href="#overview" data-tab="overview" class="nav-item active">📊 Overview</a>
+          <a href="#ops" data-tab="ops" class="nav-item">⚙️ Ops Viewer</a>
+          <a href="#memory" data-tab="memory" class="nav-item">🧠 Memory</a>
+          <a href="#goals" data-tab="goals" class="nav-item">🎯 Goals</a>
+          <a href="#workflows" data-tab="workflows" class="nav-item">🔄 Workflows</a>
+          <a href="#insights" data-tab="insights" class="nav-item">💡 Insights</a>
+          <a href="#graph" data-tab="graph" class="nav-item">🕸️ Knowledge Graph</a>
+          <a href="#benchmarks" data-tab="benchmarks" class="nav-item">⚡ Benchmarks</a>
+          <a href="#incidents" data-tab="incidents" class="nav-item">⚠️ Incidents</a>
+          <a href="#commands" data-tab="commands" class="nav-item">📜 Commands</a>
+          <a href="#env" data-tab="env" class="nav-item">🔒 Env Check</a>
+          <a href="#settings" data-tab="settings" class="nav-item">🔧 Settings</a>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="btn-logout" class="btn btn-outline btn-block">Logout</button>
+        </div>
+      </aside>
+
+      <!-- Main Content pane -->
+      <main class="content-area">
+        <div id="tab-content" class="tab-pane-container">
+          <!-- Injected dynamically by ui.js -->
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="utils.js"></script>
+  <script src="auth.js"></script>
+  <script src="api.js"></script>
+  <script src="ui.js"></script>
+  <script src="charts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
