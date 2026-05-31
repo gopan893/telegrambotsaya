@@ -80,6 +80,24 @@ Data lama yang belum punya `workspaceId` dianggap milik personal workspace user 
 
 `/workspace` tetap menampilkan cognitive workspace lama, tetapi sekarang juga menampilkan workspace permission system.
 
+## Planner Workspace Behavior
+
+Planner Phase 15 memakai permission workspace yang sama:
+
+- `viewer` bisa membaca plan/task.
+- `editor`, `admin`, dan `owner` bisa membuat/update/archive plan/task.
+- Semua plan/task memiliki `workspaceId`.
+- Jika `workspaceId` tidak dikirim, sistem memakai personal workspace default user.
+- Goal/workflow lama yang belum punya `workspaceId` tetap diperlakukan sebagai data personal workspace user.
+
+Endpoint planner dashboard menerima `workspaceId`, `userId`, dan optional `actorId`.
+
+```text
+GET  /api/dashboard/planner?userId=<userId>&workspaceId=<workspaceId>
+POST /api/dashboard/planner/create
+POST /api/dashboard/planner/:planId/tasks/create
+```
+
 ## Safety
 
 - Tidak ada hard delete workspace.

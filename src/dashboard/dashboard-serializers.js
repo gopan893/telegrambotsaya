@@ -51,6 +51,10 @@ function sanitizeWorkflow(workflow = {}) {
     title: truncateText(workflow.title || '', 160),
     description: truncateText(workflow.description || workflow.contextSummary || workflow.context_summary || '', 500),
     goalId: workflow.goalId || workflow.goal_id || null,
+    linkedPlanId: workflow.linkedPlanId || workflow.linked_plan_id || workflow.metadata?.planId || workflow.metadata?.linkedPlanId || null,
+    linkedTaskIds: Array.isArray(workflow.linkedTaskIds || workflow.linked_task_ids || workflow.metadata?.taskIds)
+      ? (workflow.linkedTaskIds || workflow.linked_task_ids || workflow.metadata?.taskIds).slice(0, 30).map(id => truncateText(id, 120))
+      : [],
     steps: steps.slice(0, 30).map(step => ({
       id: step.id,
       stepNumber: step.stepNumber || step.step_number,
@@ -61,6 +65,57 @@ function sanitizeWorkflow(workflow = {}) {
       completedAt: step.completedAt || step.completed_at || null
     }))
   };
+}
+
+function sanitizeMilestone(milestone = {}) {
+  return guards.preventSecretLeak({
+    id: milestone.id,
+    title: truncateText(milestone.title || '', 160),
+    targetDate: milestone.targetDate || milestone.target_date || null,
+    taskIds: Array.isArray(milestone.taskIds || milestone.task_ids) ? (milestone.taskIds || milestone.task_ids).slice(0, 50).map(id => truncateText(id, 120)) : [],
+    status: milestone.status || 'todo',
+    progress: Number(milestone.progress || 0)
+  });
+}
+
+function sanitizePlan(plan = {}) {
+  return guards.preventSecretLeak({
+    ...pickBase(plan),
+    title: truncateText(plan.title || '', 180),
+    description: truncateText(plan.description || '', 700),
+    horizon: plan.horizon || 'weekly',
+    status: plan.status || 'draft',
+    linkedGoalIds: Array.isArray(plan.linkedGoalIds || plan.linked_goal_ids) ? (plan.linkedGoalIds || plan.linked_goal_ids).slice(0, 30).map(id => truncateText(id, 120)) : [],
+    linkedWorkflowIds: Array.isArray(plan.linkedWorkflowIds || plan.linked_workflow_ids) ? (plan.linkedWorkflowIds || plan.linked_workflow_ids).slice(0, 30).map(id => truncateText(id, 120)) : [],
+    taskIds: Array.isArray(plan.taskIds || plan.task_ids) ? (plan.taskIds || plan.task_ids).slice(0, 100).map(id => truncateText(id, 120)) : [],
+    assumptions: Array.isArray(plan.assumptions) ? plan.assumptions.slice(0, 20).map(item => truncateText(item, 160)) : [],
+    risks: Array.isArray(plan.risks) ? plan.risks.slice(0, 20).map(item => truncateText(item, 180)) : [],
+    milestones: Array.isArray(plan.milestones) ? plan.milestones.slice(0, 20).map(sanitizeMilestone) : [],
+    archivedAt: plan.archivedAt || plan.archived_at || null
+  });
+}
+
+function sanitizeTask(task = {}) {
+  return guards.preventSecretLeak({
+    ...pickBase(task),
+    planId: truncateText(task.planId || task.plan_id || '', 120),
+    title: truncateText(task.title || '', 180),
+    description: truncateText(task.description || '', 700),
+    status: task.status || 'todo',
+    priority: task.priority || 'medium',
+    priorityScore: Number(task.priorityScore || task.priority_score || 0),
+    priorityExplanation: truncateText(task.priorityExplanation || task.priority_explanation || '', 260),
+    effort: task.effort || 'medium',
+    impact: task.impact || 'medium',
+    urgency: task.urgency || 'medium',
+    dependencies: Array.isArray(task.dependencies) ? task.dependencies.slice(0, 30).map(id => truncateText(id, 120)) : [],
+    linkedGoalId: truncateText(task.linkedGoalId || task.linked_goal_id || '', 120),
+    linkedWorkflowId: truncateText(task.linkedWorkflowId || task.linked_workflow_id || '', 120),
+    dueDate: task.dueDate || task.due_date || null,
+    blockedReason: truncateText(task.blockedReason || task.blocked_reason || '', 260),
+    completedAt: task.completedAt || task.completed_at || null,
+    archivedAt: task.archivedAt || task.archived_at || null
+  });
 }
 
 function sanitizeInsight(insight = {}) {
@@ -420,7 +475,10 @@ module.exports = {
   sanitizeGraphNode,
   sanitizeInsight,
   sanitizeMemory,
+  sanitizeMilestone,
   sanitizeOpsData,
+  sanitizePlan,
+  sanitizeTask,
   sanitizeWorkflow,
   truncateText,
   sanitizeDashboardSummary,

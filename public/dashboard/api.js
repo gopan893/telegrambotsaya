@@ -154,6 +154,85 @@ const Api = {
     return this.apiGet(`/user/${encoded}/graph${this.workspaceQuery(workspaceId)}`);
   },
 
+  async listPlans(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.userId) params.set('userId', filters.userId);
+    if (filters.actorId) params.set('actorId', filters.actorId);
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    if (filters.includeArchived) params.set('includeArchived', 'true');
+    if (filters.limit) params.set('limit', filters.limit);
+    const query = params.toString();
+    return this.apiGet(`/planner${query ? `?${query}` : ''}`);
+  },
+
+  async createPlan(payload) {
+    return this.apiPost('/planner/create', payload);
+  },
+
+  async getPlan(planId, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.actorId) params.set('actorId', filters.actorId);
+    const query = params.toString();
+    return this.apiGet(`/planner/${encodeURIComponent(planId)}${query ? `?${query}` : ''}`);
+  },
+
+  async updatePlan(planId, payload) {
+    return this.apiPost(`/planner/${encodeURIComponent(planId)}/update`, payload);
+  },
+
+  async archivePlan(planId, payload = {}) {
+    return this.apiPost(`/planner/${encodeURIComponent(planId)}/archive`, payload);
+  },
+
+  async listPlanTasks(planId, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.actorId) params.set('actorId', filters.actorId);
+    if (filters.includeArchived) params.set('includeArchived', 'true');
+    const query = params.toString();
+    return this.apiGet(`/planner/${encodeURIComponent(planId)}/tasks${query ? `?${query}` : ''}`);
+  },
+
+  async createTask(planId, payload) {
+    return this.apiPost(`/planner/${encodeURIComponent(planId)}/tasks/create`, payload);
+  },
+
+  async updateTask(taskId, payload) {
+    return this.apiPost(`/planner/tasks/${encodeURIComponent(taskId)}/update`, payload);
+  },
+
+  async markTaskDone(taskId, payload = {}) {
+    return this.apiPost(`/planner/tasks/${encodeURIComponent(taskId)}/done`, payload);
+  },
+
+  async markTaskBlocked(taskId, payload = {}) {
+    return this.apiPost(`/planner/tasks/${encodeURIComponent(taskId)}/blocked`, payload);
+  },
+
+  async archiveTask(taskId, payload = {}) {
+    return this.apiPost(`/planner/tasks/${encodeURIComponent(taskId)}/archive`, payload);
+  },
+
+  async reorderTasks(payload) {
+    return this.apiPost('/planner/tasks/reorder', payload);
+  },
+
+  async getNextActions(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.userId) params.set('userId', filters.userId);
+    if (filters.actorId) params.set('actorId', filters.actorId);
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    const query = params.toString();
+    return this.apiGet(`/planner/next-actions${query ? `?${query}` : ''}`);
+  },
+
+  async generatePlanFromGoal(payload) {
+    return this.apiPost('/planner/from-goal', payload);
+  },
+
+  async generatePlanFromText(payload) {
+    return this.apiPost('/planner/from-text', payload);
+  },
+
   async searchUserGraph(userId, q, workspaceId = '') {
     const encodedUser = encodeURIComponent(userId);
     const encodedQ = encodeURIComponent(q);

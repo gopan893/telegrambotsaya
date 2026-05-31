@@ -29,6 +29,7 @@ function buildCommandCatalog() {
     memory: ['/remember', '/memory', '/forget'],
     goals: ['/goals', '/goaladd', '/goalupdate'],
     workflows: ['/workflows', '/workflowadd', '/workflowstep', '/workflowdone', '/workflowdecision', '/workflowblocker', '/workflownext'],
+    planner: ['/plans', '/plan <id>', '/planadd <title>', '/plantasks <planId>', '/taskadd <planId> | <task title>', '/taskdone <taskId>', '/taskblock <taskId> | <reason>', '/next', '/priorities'],
     collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],
     graph: ['/graph', '/graph <konsep>', '/concepts', '/relate', '/graphsearch', '/graphrisks', '/graphdeps', '/graphprune', '/graphstats'],
     ops: ['/ops', '/health', '/diag', '/reliability', '/perf', '/tokens', '/benchmark'],

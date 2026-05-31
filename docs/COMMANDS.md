@@ -52,6 +52,27 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | `/workflowstep <workflowId> | <step>` | Tambah step workflow. |
 | `/workflowdone <workflowId> | <stepNumber>` | Tandai step selesai. |
 | `/insights` | Lihat insight terbaru. |
+
+## Planner & Task Orchestration
+
+| Command | Fungsi |
+| --- | --- |
+| `/plans` | Daftar long-term plan aktif user/workspace. |
+| `/plan <planId>` | Detail plan, milestone, progress, dan next action. |
+| `/planadd <judul> | <deskripsi> | <horizon>` | Buat plan baru. |
+| `/plantasks <planId>` | Daftar task dalam plan. |
+| `/taskadd <planId> | <task title> | <description>` | Tambah task ke plan. |
+| `/taskdone <taskId>` | Tandai task selesai. |
+| `/taskblock <taskId> | <reason>` | Tandai task blocked dengan alasan. |
+| `/next` | Tampilkan next action dari planner. |
+| `/priorities` | Tampilkan task prioritas tertinggi. |
+
+Natural chat yang diarahkan ke planner: `apa prioritas saya?`, `langkah berikutnya apa?`, `buat roadmap`, `pecah goal ini jadi task`, dan `apa yang harus saya kerjakan minggu ini?`.
+
+## Knowledge Graph
+
+| Command | Fungsi |
+| --- | --- |
 | `/graph` | Ringkasan knowledge graph. |
 | `/graph <konsep>` | Ringkasan konsep dan relasinya. |
 | `/concepts` | Konsep terpenting user. |

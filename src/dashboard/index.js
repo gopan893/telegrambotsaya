@@ -10,6 +10,7 @@ const permissions = require('./dashboard-permissions');
 const safeActions = require('./safe-actions');
 const softDelete = require('./soft-delete');
 const workspaceRoutes = require('./workspace-routes');
+const plannerRoutes = require('./planner-routes');
 
 module.exports = {
   registerDashboardRoutes,
@@ -20,6 +21,7 @@ module.exports = {
   safeActions,
   serializers,
   softDelete,
+  plannerRoutes,
   workspaceRoutes,
   utils,
   actions: require('./dashboard-actions')

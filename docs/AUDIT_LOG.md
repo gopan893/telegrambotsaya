@@ -73,6 +73,27 @@ Endpoint ini protected dan membutuhkan bearer token.
 
 Command ini admin-only. Output tidak menampilkan secret.
 
+## Planner Audit Events
+
+Phase 15 mencatat perubahan planner/task:
+
+```text
+planner/plan_created
+planner/plan_updated
+planner/plan_archived
+planner/plan_generated_from_goal
+planner/plan_generated_from_text
+planner/task_created
+planner/task_updated
+planner/task_done
+planner/task_blocked
+planner/task_archived
+planner/task_reordered
+planner/permission_denied/<permission>
+```
+
+Entry menyertakan `workspaceId`, `actorRole`, `permission`, `decision`, dan ringkasan `beforeSummary`/`afterSummary` yang sudah disanitasi.
+
 ## Known Limits
 
 - Belum ada export audit terpisah.

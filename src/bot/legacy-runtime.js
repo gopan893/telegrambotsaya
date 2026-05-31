@@ -29,6 +29,7 @@ const naturalLanguage = require('../natural-language/natural-router');
 const naturalToolRouter = require('../natural-language/natural-tool-router');
 const dashboard = require('../dashboard');
 const workspaceSystem = require('../workspace');
+const plannerSystem = require('../planner');
 const {
   formatDashboardStorageStatus,
   formatDbStatus,
@@ -3325,7 +3326,17 @@ function getWorkspaceServices() {
     env: {
       OWNER_CHAT_ID
     },
+    aiOS,
     getUsersSnapshot
+  };
+}
+
+function getPlannerServices(actorId = '') {
+  return {
+    ...getWorkspaceServices(),
+    actorId: actorId || '',
+    actorType: 'telegram',
+    log
   };
 }
 
@@ -3338,6 +3349,26 @@ function formatPermissionFlags(summary = {}) {
     summary.canManageMembers ? 'manage_members' : ''
   ].filter(Boolean);
   return flags.length ? flags.join(', ') : 'limited/none';
+}
+
+function formatPlanLine(plan, index) {
+  const taskCount = Array.isArray(plan.taskIds) ? plan.taskIds.length : 0;
+  const milestoneCount = Array.isArray(plan.milestones) ? plan.milestones.length : 0;
+  return `${index + 1}. ${plan.id} - ${plan.title} [${plan.status}, ${plan.horizon}, tasks ${taskCount}, milestones ${milestoneCount}]`;
+}
+
+function formatTaskLine(task, index) {
+  const score = Number(task.priorityScore || 0);
+  const blocked = task.status === 'blocked' && task.blockedReason ? ` Blocked: ${task.blockedReason}` : '';
+  return `${index + 1}. ${task.id} - ${task.title} [${task.status}, ${task.priority}, score ${score}]${blocked}`;
+}
+
+function buildPlannerCommandText(title, lines, emptyText) {
+  return [
+    title,
+    '',
+    ...(lines.length ? lines : [emptyText])
+  ].join('\n');
 }
 
 async function buildWhoAmIText(userId) {
@@ -3411,6 +3442,155 @@ async function buildWorkspacesText(userId) {
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
+
+  if (cmd === '/plans') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const plans = await plannerSystem.plannerEngine.listPlans({
+      userId,
+      actorId: userId,
+      workspaceId,
+      limit: 20
+    }, getPlannerServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Plans aktif',
+      plans.map(formatPlanLine),
+      'Belum ada plan. Buat dengan /planadd <judul>.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/plan') {
+    const planId = String(args || '').trim();
+    if (!planId) {
+      await safeSendMessage(chatId, 'Format: /plan <planId>', replyOpt);
+      return true;
+    }
+    const summary = await plannerSystem.plannerEngine.summarizePlan(planId, getPlannerServices(userId));
+    await sendChunkedMessage(chatId, summary.ok ? summary.summaryText : `Plan tidak ditemukan: ${summary.reason || planId}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/planadd') {
+    const [title, description = '', horizon = 'weekly'] = splitPipeArgs(args);
+    if (!title) {
+      await safeSendMessage(chatId, 'Format: /planadd <judul> | <deskripsi optional> | <daily/weekly/monthly/quarterly/yearly>', replyOpt);
+      return true;
+    }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await plannerSystem.plannerEngine.createPlan({
+      userId,
+      actorId: userId,
+      workspaceId,
+      title,
+      description,
+      horizon,
+      status: 'active'
+    }, getPlannerServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Plan dibuat:\n${formatPlanLine(result.plan, 0)}` : `Gagal membuat plan: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/plantasks') {
+    const planId = String(args || '').trim();
+    if (!planId) {
+      await safeSendMessage(chatId, 'Format: /plantasks <planId>', replyOpt);
+      return true;
+    }
+    const plan = await plannerSystem.plannerEngine.getPlan(planId, getPlannerServices(userId));
+    if (!plan) {
+      await safeSendMessage(chatId, `Plan tidak ditemukan: ${planId}`, replyOpt);
+      return true;
+    }
+    const tasks = await plannerSystem.taskOrchestrator.listTasks({
+      userId,
+      actorId: userId,
+      workspaceId: plan.workspaceId,
+      planId,
+      limit: 50
+    }, getPlannerServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      `Tasks untuk ${plan.title}`,
+      tasks.map(formatTaskLine),
+      'Belum ada task. Tambah dengan /taskadd <planId> | <task title>.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/taskadd') {
+    const [planId, title, description = ''] = splitPipeArgs(args);
+    if (!planId || !title) {
+      await safeSendMessage(chatId, 'Format: /taskadd <planId> | <task title> | <description optional>', replyOpt);
+      return true;
+    }
+    const plan = await plannerSystem.plannerEngine.getPlan(planId, getPlannerServices(userId));
+    if (!plan) {
+      await safeSendMessage(chatId, `Plan tidak ditemukan: ${planId}`, replyOpt);
+      return true;
+    }
+    const result = await plannerSystem.taskOrchestrator.createTask({
+      userId,
+      actorId: userId,
+      workspaceId: plan.workspaceId,
+      planId,
+      title,
+      description
+    }, getPlannerServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Task dibuat:\n${formatTaskLine(result.task, 0)}` : `Gagal membuat task: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/taskdone') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, 'Format: /taskdone <taskId>', replyOpt);
+      return true;
+    }
+    const result = await plannerSystem.taskOrchestrator.markTaskDone(taskId, getPlannerServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Task selesai:\n${formatTaskLine(result.task, 0)}` : `Gagal menandai task: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/taskblock') {
+    const [taskId, reason = 'Blocked oleh user.'] = splitPipeArgs(args);
+    if (!taskId) {
+      await safeSendMessage(chatId, 'Format: /taskblock <taskId> | <reason>', replyOpt);
+      return true;
+    }
+    const result = await plannerSystem.taskOrchestrator.markTaskBlocked(taskId, reason, getPlannerServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Task blocked:\n${formatTaskLine(result.task, 0)}` : `Gagal block task: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/next' || cmd === '/priorities') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await plannerSystem.plannerEngine.suggestNextActions(workspaceId, userId, getPlannerServices(userId));
+    const lines = (result.actions || []).map(formatTaskLine);
+    if (result.blocked?.length) {
+      lines.push('', 'Blocked:', ...result.blocked.map((task, index) => formatTaskLine(task, index)));
+    }
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      cmd === '/next' ? 'Next actions' : 'Prioritas task',
+      lines,
+      'Belum ada task planner aktif. Buat plan dengan /planadd lalu /taskadd.'
+    ), replyOpt);
+    return true;
+  }
 
   if (cmd === '/aios') {
     const u = ensureUser(userId);
@@ -5694,6 +5874,15 @@ async function handleHelp(chatId, msg) {
 /workflowdecision workflowId | decision
 /workflowblocker workflowId | blocker
 /workflownext workflowId | next action
+/plans - daftar long-term plan
+/plan planId - detail plan dan progress
+/planadd judul | deskripsi | horizon
+/plantasks planId - daftar task plan
+/taskadd planId | task title | deskripsi
+/taskdone taskId
+/taskblock taskId | reason
+/next - next action planner
+/priorities - prioritas task planner
 /graph [konsep] - knowledge graph / relasi konsep
 /concepts - konsep terpenting
 /relate konsep A | konsep B | relationship | evidence
@@ -5844,6 +6033,15 @@ function isUnknownCommand(cmd) {
     '/workflowdecision',
     '/workflowblocker',
     '/workflownext',
+    '/plans',
+    '/plan',
+    '/planadd',
+    '/plantasks',
+    '/taskadd',
+    '/taskdone',
+    '/taskblock',
+    '/next',
+    '/priorities',
     '/graph',
     '/concepts',
     '/relate',
@@ -7336,6 +7534,38 @@ Data endpoint membutuhkan Authorization Bearer token.`;
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg, conversationState);
   await hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision);
+  const naturalPlannerResult = await plannerSystem.plannerEngine.answerWithPlannerContext(userId, chatId, userText, msg, {
+    ...getPlannerServices(userId),
+    adaptiveDecision,
+    safeSendMessage,
+    sendChunkedMessage
+  });
+  if (naturalPlannerResult?.handled) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_planner',
+      processed: true,
+      answerPreview: naturalPlannerResult.answer
+    });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: naturalPlannerResult.answer,
+      intent: `natural_planner:${naturalPlannerResult.type || adaptiveDecision?.mode || 'planner'}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: naturalPlannerResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, naturalPlannerResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+    return;
+  }
   const graphNaturalResult = await aiOS.graphNaturalIntegration.answerWithGraphContext(userId, chatId, userText, msg, {
     ...getAiosServices(),
     adaptiveDecision,

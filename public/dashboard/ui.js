@@ -867,6 +867,7 @@ const UI = {
               <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
                 <button class="btn btn-outline" data-goal-action="progress" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Update Progress</button>
                 <button class="btn btn-outline" data-goal-action="status" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Update Status</button>
+                <button class="btn btn-outline" data-goal-action="generate-plan" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Generate Plan</button>
                 <button class="btn btn-outline" data-goal-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
               </div>
             </div>
@@ -887,6 +888,8 @@ const UI = {
             const status = prompt('Status: active, paused, completed, archived, cancelled');
             if (!status) return;
             res = await Api.updateGoal({ userId, goalId, status, workspaceId });
+          } else if (action === 'generate-plan') {
+            res = await Api.generatePlanFromGoal({ userId, goalId, workspaceId });
           } else if (action === 'archive') {
             const confirmationText = prompt('Ketik ARCHIVE untuk archive goal ini:');
             if (confirmationText !== 'ARCHIVE') return;
@@ -969,6 +972,8 @@ const UI = {
                 <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; padding:16px; margin-bottom:16px;">
                   <span style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:8px;">Goal Linked:</span>
                   <span style="font-family:var(--font-mono); font-size:13px;">${item.goalId ? item.goalId : 'None'}</span>
+                  <div style="margin-top:8px; color:var(--text-secondary); font-size:12px;">Linked plan: <span style="font-family:var(--font-mono);">${Utils.escapeHtml(item.linkedPlanId || '-')}</span></div>
+                  <div style="margin-top:4px; color:var(--text-secondary); font-size:12px;">Linked tasks: ${(item.linkedTaskIds || []).length}</div>
                 </div>
 
                 <!-- Workflow Steps List -->
@@ -1047,6 +1052,257 @@ const UI = {
 
     targetEl.innerHTML = html;
     document.getElementById('btn-load-workflows').addEventListener('click', loadData);
+  },
+
+  async renderPlanner(targetEl) {
+    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
+    let selectedPlanId = '';
+
+    const renderTaskTable = (tasks, userId, workspaceId) => `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Status</th>
+              <th>Priority</th>
+              <th>Score</th>
+              <th>Blocked</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(tasks || []).map(task => `
+              <tr>
+                <td>
+                  <strong>${Utils.escapeHtml(task.title)}</strong>
+                  <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(task.id)}</div>
+                  <div style="font-size:12px; color:var(--text-secondary);">${Utils.escapeHtml(task.priorityExplanation || '')}</div>
+                </td>
+                <td>${UI.renderBadge(task.status || 'todo')}</td>
+                <td><span class="badge badge-none">${Utils.escapeHtml(task.priority || 'medium')}</span></td>
+                <td style="font-family:var(--font-mono);">${Number(task.priorityScore || 0)}</td>
+                <td>${task.blockedReason ? Utils.escapeHtml(task.blockedReason) : '-'}</td>
+                <td>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button class="btn btn-outline" data-planner-task="done" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Done</button>
+                    <button class="btn btn-outline" data-planner-task="blocked" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Block</button>
+                    <button class="btn btn-outline" data-planner-task="archive" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px; color:var(--color-danger);">Archive</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const bindTaskButtons = (container, userId, workspaceId) => {
+      container.querySelectorAll('[data-planner-task]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-planner-task');
+          const taskId = btn.getAttribute('data-id');
+          let res;
+          if (action === 'done') {
+            res = await Api.markTaskDone(taskId, { userId, workspaceId });
+          } else if (action === 'blocked') {
+            const reason = prompt('Alasan blocked:') || '';
+            if (!reason) return;
+            res = await Api.markTaskBlocked(taskId, { userId, workspaceId, reason });
+          } else if (action === 'archive') {
+            return Utils.confirmAction('Archive Task', 'Task akan disembunyikan dari daftar aktif, tetapi tidak dihapus permanen.', async () => {
+              const res = await Api.archiveTask(taskId, { userId, workspaceId });
+              Utils.showToast(res?.ok && res.data?.ok ? 'Task planner di-archive.' : 'Gagal archive task planner.', res?.ok && res.data?.ok ? 'success' : 'danger');
+              if (selectedPlanId) await loadPlanDetail(selectedPlanId);
+              await loadNextActions();
+            });
+          }
+          Utils.showToast(res?.ok && res.data?.ok ? 'Task planner diperbarui.' : 'Gagal update task planner.', res?.ok && res.data?.ok ? 'success' : 'danger');
+          if (selectedPlanId) await loadPlanDetail(selectedPlanId);
+          await loadNextActions();
+        });
+      });
+    };
+
+    const loadPlans = async () => {
+      const userId = document.getElementById('planner-user-id').value.trim();
+      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
+      if (!userId) return;
+      localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
+      const list = document.getElementById('planner-list-container');
+      list.innerHTML = UI.renderLoading('Memuat plan...');
+      const res = await Api.listPlans({ userId, workspaceId });
+      if (!res.ok) {
+        list.innerHTML = UI.renderError('Gagal memuat planner');
+        return;
+      }
+      const plans = res.data.items || [];
+      if (!plans.length) {
+        list.innerHTML = UI.renderEmptyState('🗺️', 'Belum Ada Plan', 'Buat plan baru atau generate dari goal/text.');
+        return;
+      }
+      list.innerHTML = `
+        <div class="card-grid-wide">
+          ${plans.map(plan => {
+            const doneMilestones = (plan.milestones || []).filter(item => item.status === 'done').length;
+            const progress = plan.milestones?.length ? (doneMilestones / plan.milestones.length) * 100 : 0;
+            return `
+              <div class="card">
+                <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+                  <div>
+                    <h3 style="font-size:16px; font-weight:700;">${Utils.escapeHtml(plan.title)}</h3>
+                    <span style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(plan.id)}</span>
+                  </div>
+                  <div style="display:flex; gap:6px;">${UI.renderBadge(plan.status || 'draft')}<span class="badge badge-none">${Utils.escapeHtml(plan.horizon || 'weekly')}</span></div>
+                </div>
+                <p style="font-size:13px; color:var(--text-secondary); margin:12px 0;">${Utils.escapeHtml(plan.description || 'Tidak ada deskripsi.')}</p>
+                ${UI.renderProgressBar(progress)}
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:8px;">Tasks: ${(plan.taskIds || []).length} · Milestone: ${(plan.milestones || []).length}</div>
+                <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+                  <button class="btn btn-outline" data-plan-action="view" data-id="${Utils.escapeHtml(plan.id)}" style="padding:5px 10px; font-size:12px;">View</button>
+                  <button class="btn btn-outline" data-plan-action="archive" data-id="${Utils.escapeHtml(plan.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      list.querySelectorAll('[data-plan-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-plan-action');
+          const planId = btn.getAttribute('data-id');
+          if (action === 'view') {
+            selectedPlanId = planId;
+            await loadPlanDetail(planId);
+          } else if (action === 'archive') {
+            Utils.confirmAction('Archive Plan', 'Plan akan diarsipkan secara soft archive. Task tidak dihapus permanen.', async () => {
+              const res = await Api.archivePlan(planId, { userId, workspaceId });
+              Utils.showToast(res.ok && res.data?.ok ? 'Plan di-archive.' : 'Gagal archive plan.', res.ok && res.data?.ok ? 'success' : 'danger');
+              await loadPlans();
+            });
+          }
+        });
+      });
+    };
+
+    const loadPlanDetail = async (planId) => {
+      const userId = document.getElementById('planner-user-id').value.trim();
+      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
+      const detail = document.getElementById('planner-detail-container');
+      detail.innerHTML = UI.renderLoading('Memuat detail plan...');
+      const res = await Api.getPlan(planId, { userId, workspaceId });
+      if (!res.ok || !res.data?.ok) {
+        detail.innerHTML = UI.renderError('Gagal memuat detail plan');
+        return;
+      }
+      const plan = res.data.plan || {};
+      const tasks = res.data.tasks || [];
+      detail.innerHTML = `
+        <div class="panel">
+          <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+            <div>
+              <h3>${Utils.escapeHtml(plan.title)}</h3>
+              <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">${Utils.escapeHtml(plan.id)}</div>
+            </div>
+            <div>${UI.renderBadge(plan.status || 'draft')} <span class="badge badge-none">${Utils.escapeHtml(plan.horizon || 'weekly')}</span></div>
+          </div>
+          <p style="color:var(--text-secondary); margin-top:12px;">${Utils.escapeHtml(plan.description || '-')}</p>
+          <h4 style="margin-top:18px;">Milestones</h4>
+          ${(plan.milestones || []).length ? (plan.milestones || []).map(item => `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>${Utils.escapeHtml(item.title)}</span><span>${item.progress || 0}%</span></div>
+              ${UI.renderProgressBar(item.progress || 0)}
+            </div>
+          `).join('') : '<p class="text-muted">Belum ada milestone.</p>'}
+          <div style="display:flex; gap:8px; margin:16px 0; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btn-planner-add-task">Add Task</button>
+            <button class="btn btn-outline" id="btn-planner-load-next">Refresh Next Actions</button>
+          </div>
+          ${renderTaskTable(tasks, userId, workspaceId)}
+        </div>
+      `;
+      document.getElementById('btn-planner-add-task').addEventListener('click', async () => {
+        const title = prompt('Judul task:');
+        if (!title) return;
+        const res = await Api.createTask(plan.id, { userId, workspaceId, title });
+        Utils.showToast(res.ok && res.data?.ok ? 'Task dibuat.' : 'Gagal membuat task.', res.ok && res.data?.ok ? 'success' : 'danger');
+        await loadPlanDetail(plan.id);
+        await loadNextActions();
+      });
+      document.getElementById('btn-planner-load-next').addEventListener('click', loadNextActions);
+      bindTaskButtons(detail, userId, workspaceId);
+    };
+
+    const loadNextActions = async () => {
+      const userId = document.getElementById('planner-user-id').value.trim();
+      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
+      const panel = document.getElementById('planner-next-actions');
+      if (!panel || !userId) return;
+      const res = await Api.getNextActions({ userId, workspaceId });
+      if (!res.ok) {
+        panel.innerHTML = UI.renderError('Gagal memuat next actions');
+        return;
+      }
+      const actions = res.data.actions || [];
+      const blocked = res.data.blocked || [];
+      panel.innerHTML = `
+        <div class="card">
+          <div class="card-title">Next Actions</div>
+          ${actions.length ? actions.map((task, index) => `<div style="padding:8px 0; border-bottom:1px solid var(--border-color);"><strong>${index + 1}. ${Utils.escapeHtml(task.title)}</strong><div style="font-size:12px; color:var(--text-secondary);">Priority ${Utils.escapeHtml(task.priority)} · Score ${Number(task.priorityScore || 0)}</div></div>`).join('') : '<p class="text-muted">Belum ada next action.</p>'}
+          ${blocked.length ? `<div style="margin-top:12px;"><strong>Blocked</strong>${blocked.map(task => `<div style="font-size:12px; color:var(--color-warning);">- ${Utils.escapeHtml(task.title)}</div>`).join('')}</div>` : ''}
+        </div>
+      `;
+    };
+
+    const createPlan = async () => {
+      const userId = document.getElementById('planner-user-id').value.trim();
+      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
+      const title = prompt('Judul plan:');
+      if (!title) return;
+      const description = prompt('Deskripsi plan (opsional):') || '';
+      const res = await Api.createPlan({ userId, workspaceId, title, description, status: 'active' });
+      Utils.showToast(res.ok && res.data?.ok ? 'Plan dibuat.' : 'Gagal membuat plan.', res.ok && res.data?.ok ? 'success' : 'danger');
+      await loadPlans();
+    };
+
+    const generateFromText = async () => {
+      const userId = document.getElementById('planner-user-id').value.trim();
+      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
+      const text = prompt('Tulis goal/roadmap yang ingin dipecah menjadi plan:');
+      if (!text) return;
+      const res = await Api.generatePlanFromText({ userId, workspaceId, text });
+      Utils.showToast(res.ok && res.data?.ok ? 'Plan dari teks dibuat.' : 'Gagal generate plan.', res.ok && res.data?.ok ? 'success' : 'danger');
+      await loadPlans();
+    };
+
+    let html = UI.renderSectionHeader('Long-Term Planner');
+    html += `
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label for="planner-user-id">User ID Telegram</label>
+          <input type="text" id="planner-user-id" value="${Utils.escapeHtml(currentUserId)}">
+        </div>
+        ${UI.renderWorkspaceInput('planner')}
+        <button class="btn btn-primary" id="btn-load-plans" style="height:40px;">Load Plans</button>
+        <button class="btn btn-outline" id="btn-create-plan" style="height:40px;">Create Plan</button>
+        <button class="btn btn-outline" id="btn-generate-plan-text" style="height:40px;">Generate From Text</button>
+      </div>
+      <div class="grid grid-2" style="gap:18px; align-items:start;">
+        <div>
+          <div id="planner-list-container">${UI.renderEmptyState('🗺️', 'Masukkan User ID', 'Load planner untuk melihat roadmap dan task.')}</div>
+        </div>
+        <div id="planner-next-actions">${UI.renderEmptyState('✅', 'Next Actions', 'Next action akan muncul setelah data dimuat.')}</div>
+      </div>
+      <div id="planner-detail-container" style="margin-top:24px;"></div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-load-plans').addEventListener('click', async () => {
+      await loadPlans();
+      await loadNextActions();
+    });
+    document.getElementById('btn-create-plan').addEventListener('click', createPlan);
+    document.getElementById('btn-generate-plan-text').addEventListener('click', generateFromText);
   },
 
   async renderInsights(targetEl) {

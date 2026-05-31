@@ -12,6 +12,7 @@ const permissions = require('./dashboard-permissions');
 const safeActions = require('./safe-actions');
 const workspace = require('../workspace');
 const workspaceRoutes = require('./workspace-routes');
+const plannerRoutes = require('./planner-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -303,6 +304,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
   // Authenticate other API routes
   router.use(dashboardAuth);
   workspaceRoutes.registerWorkspaceRoutes(router, services);
+  plannerRoutes.registerPlannerRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
