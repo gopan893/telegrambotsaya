@@ -210,6 +210,38 @@ function compactState(state) {
   return state;
 }
 
+// Section J Required Functions:
+function loadOpsData(key, defaultValue, services = {}) {
+  const state = getOpsState(services);
+  return state[key] !== undefined ? state[key] : defaultValue;
+}
+
+function saveOpsData(key, data, services = {}) {
+  const state = getOpsState(services);
+  state[key] = data;
+  saveOpsState(services);
+  return true;
+}
+
+function appendOpsItem(key, item, limit = 100, services = {}) {
+  const state = getOpsState(services);
+  if (!Array.isArray(state[key])) {
+    state[key] = [];
+  }
+  state[key] = appendBounded(state[key], item, limit);
+  saveOpsState(services);
+  return state[key];
+}
+
+function pruneOpsData(key, limit = 100, services = {}) {
+  const state = getOpsState(services);
+  if (Array.isArray(state[key])) {
+    state[key] = state[key].slice(-limit);
+  }
+  saveOpsState(services);
+  return true;
+}
+
 module.exports = {
   OPS_USER_ID,
   defaultState,
@@ -218,5 +250,9 @@ module.exports = {
   resetOpsState,
   appendBounded,
   compactState,
-  clone
+  clone,
+  loadOpsData,
+  saveOpsData,
+  appendOpsItem,
+  pruneOpsData
 };

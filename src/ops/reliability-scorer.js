@@ -24,30 +24,51 @@ function scoreToolSuccess(toolUsage = {}) {
   return total ? (success / total) * 100 : 86;
 }
 
-function calculateReliabilityScore(services = {}, input = {}) {
-  const health = input.health || healthMonitor.getHealth(services);
-  const telemetry = input.telemetry || telemetryCollector.getTelemetrySummary(services);
-  const token = telemetry.token || {};
-  const resources = resourceAnalyzer.analyzeResources(services, input.userId || '0');
-  const benchmarks = benchmarkEngine.getBenchmarkHistory(services, 5);
+function calculateReliabilityScore(health, telemetry, benchmark, services = {}) {
+  // Signature 1: calculateReliabilityScore(health, telemetry, benchmark, services) -> required
+  // Signature 2: calculateReliabilityScore(services = {}, input = {}) -> backward compatible
+  let finalServices = services;
+  let finalHealth = health;
+  let finalTelemetry = telemetry;
+  let finalBenchmark = benchmark;
+
+  if (health && typeof health.ensureUser === 'function') {
+    finalServices = health;
+    const input = telemetry || {};
+    finalHealth = input.health || healthMonitor.getHealth(finalServices);
+    finalTelemetry = input.telemetry || telemetryCollector.getTelemetrySummary({}, finalServices);
+    finalBenchmark = benchmarkEngine.getBenchmarkHistory({}, finalServices);
+  } else {
+    // If telemetry and health are provided but services is undefined, resolve services
+    if (!finalServices || typeof finalServices.ensureUser !== 'function') {
+      finalServices = {};
+    }
+    if (!finalHealth) finalHealth = healthMonitor.getHealth(finalServices);
+    if (!finalTelemetry) finalTelemetry = telemetryCollector.getTelemetrySummary({}, finalServices);
+    if (!finalBenchmark) finalBenchmark = benchmarkEngine.getBenchmarkHistory({}, finalServices);
+  }
+
+  const token = finalTelemetry.token || {};
+  const resources = resourceAnalyzer.analyzeResources(finalServices, '0');
+  const benchmarks = Array.isArray(finalBenchmark) ? finalBenchmark : [finalBenchmark].filter(Boolean);
   const latestBenchmark = benchmarks[benchmarks.length - 1];
-  const regression = input.regression || regressionDetector.detectRegression(services);
+  const regression = regressionDetector.detectRegression(finalServices);
   const factors = {};
 
   factors.uptime = process.uptime() > 60 * 10 ? 95 : process.uptime() > 60 ? 88 : 72;
-  factors.recoverySuccess = telemetry.recentErrorCount === 0 ? 92 : telemetry.recentErrorCount < 5 ? 75 : 48;
+  factors.recoverySuccess = finalTelemetry.recentErrorCount === 0 ? 92 : finalTelemetry.recentErrorCount < 5 ? 75 : 48;
   factors.reasoningConsistency = latestBenchmark ? (latestBenchmark.score || 0) * 100 : 78;
   factors.responseQuality = latestBenchmark ? (latestBenchmark.score || 0) * 100 : 78;
-  factors.safety = (health.issues || []).some(item => /UNSAFE|CRITICAL/.test(item)) ? 50 : 92;
-  factors.latency = telemetry.latency.p90 < 3000 ? 90 : telemetry.latency.p90 < 9000 ? 68 : 42;
+  factors.safety = (finalHealth.issues || []).some(item => /UNSAFE|CRITICAL/.test(item)) ? 50 : 92;
+  factors.latency = finalTelemetry.latency.p90 < 3000 ? 90 : finalTelemetry.latency.p90 < 9000 ? 68 : 42;
   factors.costEfficiency = (token.averageTokens || 0) < 1200 ? 88 : (token.averageTokens || 0) < 2200 ? 68 : 45;
   factors.memoryEfficiency = resources.memory.telemetrySizeBytes < 120000 && resources.memory.staleItemCount === 0 ? 90 : 62;
-  factors.toolSuccess = scoreToolSuccess(telemetry.toolUsage);
-  factors.userSatisfactionProxy = telemetry.recentErrorCount === 0 && telemetry.latency.p90 < 5000 ? 82 : 60;
+  factors.toolSuccess = scoreToolSuccess(finalTelemetry.toolUsage);
+  factors.userSatisfactionProxy = finalTelemetry.recentErrorCount === 0 && finalTelemetry.latency.p90 < 5000 ? 82 : 60;
   factors.regressionRisk = regression.regressionDetected ? (regression.severity === 'high' ? 35 : 58) : 90;
   factors.stabilityTrend = benchmarks.length >= 2
     ? Math.max(35, Math.min(95, 75 + ((latestBenchmark?.score || 0) - average(benchmarks.slice(0, -1).map(item => item.score || 0))) * 100))
-    : (health.status === 'healthy' ? 86 : 62);
+    : (finalHealth.status === 'healthy' ? 86 : 62);
 
   const weights = {
     uptime: 0.08,
@@ -107,6 +128,53 @@ function calculateReliabilityScore(services = {}, input = {}) {
   };
 }
 
+// Section G Required score helper functions:
+function calculateLatencyScore(telemetry = {}) {
+  const p90 = telemetry.latency?.p90 || 0;
+  if (!p90) return 90;
+  if (p90 < 2000) return 95;
+  if (p90 < 5000) return 85;
+  if (p90 < 9000) return 70;
+  return 45;
+}
+
+function calculateErrorScore(telemetry = {}) {
+  const errors = telemetry.recentErrorCount || 0;
+  if (errors === 0) return 100;
+  if (errors < 3) return 88;
+  if (errors < 7) return 65;
+  return 30;
+}
+
+function calculateToolSuccessScore(telemetry = {}) {
+  return scoreToolSuccess(telemetry.toolUsage || {});
+}
+
+function calculateStorageScore(health = {}) {
+  if (health.storage?.postgresAvailable) return 98;
+  if (health.storage?.driver === 'JSON') return 78;
+  return 50;
+}
+
+function calculateMemoryEfficiencyScore(services = {}) {
+  const resources = resourceAnalyzer.analyzeResources(services, '0');
+  const size = resources.memory?.telemetrySizeBytes || 0;
+  const stale = resources.memory?.staleItemCount || 0;
+  if (size < 80000 && stale === 0) return 95;
+  if (size < 200000 && stale < 3) return 80;
+  return 55;
+}
+
+function getReliabilitySummary(services = {}) {
+  return calculateReliabilityScore(services);
+}
+
 module.exports = {
-  calculateReliabilityScore
+  calculateReliabilityScore,
+  calculateLatencyScore,
+  calculateErrorScore,
+  calculateToolSuccessScore,
+  calculateStorageScore,
+  calculateMemoryEfficiencyScore,
+  getReliabilitySummary
 };

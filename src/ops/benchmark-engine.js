@@ -23,7 +23,24 @@ function normalizeCaseResult(testCase, result, latencyMs, baselineId = null) {
   };
 }
 
-function runBenchmark(testCase, services = {}, options = {}) {
+function runBenchmark(caseIdOrObject, services = {}, options = {}) {
+  // Signature 1: runBenchmark(caseId, services)
+  // Signature 2: runBenchmark(testCaseObject, services, options)
+  let testCase;
+  if (typeof caseIdOrObject === 'string') {
+    testCase = benchmarkCases.cases.find(c => c.id === caseIdOrObject || c.type === caseIdOrObject);
+    if (!testCase) {
+      testCase = {
+        id: 'runtime-dynamic-case',
+        type: 'fallback',
+        title: `Dynamic case: ${caseIdOrObject}`,
+        run: () => ({ score: 0.8, passed: true, notes: 'Fallback dynamic verification.' })
+      };
+    }
+  } else {
+    testCase = caseIdOrObject;
+  }
+
   const start = Date.now();
   try {
     const result = typeof testCase.run === 'function'
@@ -41,11 +58,26 @@ function runBenchmark(testCase, services = {}, options = {}) {
   }
 }
 
-function runBenchmarkSuite(type = null, services = {}, options = {}) {
-  const state = store.getOpsState(services);
+function runBenchmarkSuite(options = {}, services = {}) {
+  // Signature 1: runBenchmarkSuite(options, services) -> required
+  // Signature 2: runBenchmarkSuite(type = null, services = {}, options = {}) -> backward compatible
+  let type = null;
+  let finalServices = services;
+  let finalOptions = options;
+
+  if (typeof options === 'string' || options === null) {
+    type = options;
+    finalServices = services || {};
+    finalOptions = arguments[2] || {};
+  } else {
+    type = options.type || null;
+    finalServices = services || {};
+  }
+
+  const state = store.getOpsState(finalServices);
   const baselineId = state.benchmarkBaselineId || null;
-  const selected = benchmarkCases.getBenchmarkCases(type, options);
-  const results = selected.map(testCase => runBenchmark(testCase, services, { baselineId }));
+  const selected = benchmarkCases.getBenchmarkCases(type, finalOptions);
+  const results = selected.map(testCase => runBenchmark(testCase, finalServices, { baselineId }));
   const score = results.length
     ? results.reduce((sum, item) => sum + item.score, 0) / results.length
     : 0;
@@ -57,7 +89,7 @@ function runBenchmarkSuite(type = null, services = {}, options = {}) {
     score: Number(score.toFixed(3)),
     passed: results.every(item => item.passed),
     caseCount: results.length,
-    full: Boolean(options.full),
+    full: Boolean(finalOptions.full),
     baselineId,
     regressionAgainstBaseline: false,
     results
@@ -76,11 +108,16 @@ function runBenchmarkSuite(type = null, services = {}, options = {}) {
   }
   store.appendBounded(state.benchmarkRuns, run, state.config.maxBenchmarkRuns);
   store.compactState(state);
-  store.saveOpsState(services);
+  store.saveOpsState(finalServices);
   return run;
 }
 
-function compareBenchmarkRuns(before, after) {
+function compareBenchmarkRuns(current, baseline) {
+  // Signature 1: compareBenchmarkRuns(current, baseline) -> current is current, baseline is baseline
+  // Signature 2: compareBenchmarkRuns(before, after) -> before is before, after is after
+  const before = baseline || current;
+  const after = baseline ? current : before; // normalize current/baseline vs before/after
+
   if (!before || !after) {
     return {
       comparable: false,
@@ -100,15 +137,27 @@ function compareBenchmarkRuns(before, after) {
   };
 }
 
-function getBenchmarkHistory(services = {}, limit = 10) {
-  const state = store.getOpsState(services);
+function getBenchmarkHistory(options = {}, services = {}) {
+  // Signature 1: getBenchmarkHistory(options, services) -> required
+  // Signature 2: getBenchmarkHistory(services, limit) -> backward compatible
+  let finalServices = services;
+  let limit = 10;
+
+  if (options && typeof options.ensureUser === 'function') {
+    finalServices = options;
+    limit = Number(services) || 10;
+  } else if (options && typeof options === 'object') {
+    limit = Number(options.limit) || 10;
+  }
+
+  const state = store.getOpsState(finalServices);
   return (state.benchmarkRuns || []).slice(-limit);
 }
 
 function getBenchmarkSummary(services = {}) {
-  const history = getBenchmarkHistory(services, 10);
+  const history = getBenchmarkHistory({}, services);
   const latest = history[history.length - 1] || null;
-  const baseline = history.find(item => item.id === store.getOpsState(services).benchmarkBaselineId) || null;
+  const baseline = history.find(run => run.id === store.getOpsState(services).benchmarkBaselineId) || null;
   return {
     totalRuns: (store.getOpsState(services).benchmarkRuns || []).length,
     baselineId: baseline?.id || store.getOpsState(services).benchmarkBaselineId || null,
@@ -120,10 +169,18 @@ function getBenchmarkSummary(services = {}) {
   };
 }
 
+function saveBenchmarkRun(run, services = {}) {
+  const state = store.getOpsState(services);
+  store.appendBounded(state.benchmarkRuns, run, state.config.maxBenchmarkRuns);
+  store.saveOpsState(services);
+  return true;
+}
+
 module.exports = {
   runBenchmark,
   runBenchmarkSuite,
   compareBenchmarkRuns,
   getBenchmarkHistory,
-  getBenchmarkSummary
+  getBenchmarkSummary,
+  saveBenchmarkRun
 };

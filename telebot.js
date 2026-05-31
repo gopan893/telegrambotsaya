@@ -26,6 +26,9 @@ const humanAISafety = require('./src/ux/human-ai-safety');
 const conversationManager = require('./src/conversation');
 const interactions = require('./src/interactions');
 const naturalLanguage = require('./src/natural-language/natural-router');
+const naturalToolRouter = require('./src/tools/natural-tool-router');
+const contextRelevanceGate = require('./src/ai-os/context-relevance-gate');
+const outputSanitizer = require('./src/ai-os/output-sanitizer');
 
 
 let scheduleLib = null;
@@ -296,7 +299,7 @@ function looksLikeIntentJSON(text) {
   );
 }
 
-function sanitizeOutgoingText(text) {
+function sanitizeOutgoingText(text, opts = {}) {
   const original = String(text || '').trim();
   let t = stripCodeFences(original);
 
@@ -308,7 +311,13 @@ function sanitizeOutgoingText(text) {
     }
   }
 
-  return multiDeviceUX.normalizeForTelegram(original);
+  // Phase 10 Hotfix 2: strip internal debug markers / project context leakage
+  const sanitized = outputSanitizer.sanitizeAssistantVisibleText(original, {
+    isAdmin: Boolean(opts.isAdmin),
+    userText: opts.userText || '',
+    forceClean: Boolean(opts.forceClean)
+  });
+  return multiDeviceUX.normalizeForTelegram(sanitized);
 }
 
 function simpleDetectLanguage(text) {
@@ -6576,6 +6585,24 @@ await withUserActionLock(userId, async () => {
       timestamp: nowMs()
     });
     await saveConversationPair(userId, userText, directText);
+    return;
+  }
+
+  // Phase 10 Hotfix 1: Natural tool router (weather / web search / internet explanation)
+  const naturalToolHandled = await naturalToolRouter.handleNaturalToolIntent(
+    { chatId, userId, userText, msg },
+    {
+      getWeather,
+      summarizeSearchWithRefs,
+      getSystemPrompt,
+      safeSendMessage,
+      sendChunkedMessage,
+      opsSystem,
+      opsServices: getOpsServices()
+    }
+  );
+  if (naturalToolHandled) {
+    if (u.digest?.enabled) scheduleDigestJob(userId);
     return;
   }
 

@@ -20,8 +20,8 @@ function getProviderStatus(services = {}) {
   const breaker = services.aiCircuitBreaker;
   for (const name of ['mistral', 'groq']) {
     const configured = name === 'mistral'
-      ? Boolean(env.MISTRAL_API_KEY || services.MISTRAL_API_KEY)
-      : Boolean(env.GROQ_API_KEY || services.GROQ_API_KEY);
+      ? Boolean(env.MISTRAL_API_KEY || services.MISTRAL_API_KEY || process.env.MISTRAL_API_KEY)
+      : Boolean(env.GROQ_API_KEY || services.GROQ_API_KEY || process.env.GROQ_API_KEY);
     let circuit = { open: false, failures: 0 };
     try {
       circuit = breaker?.status?.(name) || circuit;
@@ -45,7 +45,7 @@ function getHealth(services = {}) {
     externalMb: Math.round(mem.external / 1024 / 1024)
   };
   const queue = getQueueStatus(services);
-  const telemetry = telemetryCollector.getTelemetrySummary(services);
+  const telemetry = telemetryCollector.getTelemetrySummary({}, services);
   const providers = getProviderStatus(services);
   const recentErrorCount = telemetry.recentErrorCount || 0;
   const issues = [];
@@ -69,6 +69,9 @@ function getHealth(services = {}) {
   if (issues.some(item => /CRITICAL|ALL_AI|QUEUE_CRITICAL/.test(item))) status = 'critical';
   else if (issues.length) status = 'degraded';
 
+  const hasPostgres = Boolean(services.storageManager?.getStorageStatus?.()?.postgresAvailable || services.postgresAvailable);
+  const hasRedis = Boolean(services.storageManager?.getStorageStatus?.()?.redisAvailable || services.redisAvailable || services.redisClient);
+
   return {
     status,
     healthy: status === 'healthy',
@@ -83,8 +86,12 @@ function getHealth(services = {}) {
     },
     providers,
     redis: {
-      configured: Boolean(services.env?.REDIS_URL || services.REDIS_URL),
-      status: services.redisClient ? 'available' : 'not-attached'
+      configured: Boolean(services.env?.REDIS_URL || services.REDIS_URL || process.env.REDIS_URL),
+      status: hasRedis ? 'available' : 'not-attached'
+    },
+    storage: {
+      driver: services.storageManager?.getStorageStatus?.()?.driver || 'JSON',
+      postgresAvailable: hasPostgres
     },
     webhook: {
       status: services.webhookStatus || 'unknown'
@@ -109,7 +116,54 @@ function formatHealth(health) {
   ].join('\n');
 }
 
+// Section C Required Functions:
+function getHealthStatus(services = {}) {
+  return getHealth(services);
+}
+
+function getRuntimeHealth(services = {}) {
+  const h = getHealth(services);
+  return {
+    uptime: h.uptimeSeconds,
+    memory: h.memory,
+    queue: h.queue
+  };
+}
+
+function getStorageHealth(services = {}) {
+  const h = getHealth(services);
+  return {
+    activeDriver: h.storage?.driver || 'JSON',
+    postgresAvailable: h.storage?.postgresAvailable || false
+  };
+}
+
+function getRedisHealth(services = {}) {
+  const h = getHealth(services);
+  return {
+    configured: h.redis?.configured || false,
+    status: h.redis?.status || 'not-attached'
+  };
+}
+
+function getProviderHealth(services = {}) {
+  const h = getHealth(services);
+  return h.providers || {};
+}
+
+function classifyHealth(health = {}) {
+  if (health.issues && health.issues.some(item => /CRITICAL|ALL_AI|QUEUE_CRITICAL/.test(item))) return 'critical';
+  if (health.issues && health.issues.length > 0) return 'degraded';
+  return 'healthy';
+}
+
 module.exports = {
   getHealth,
-  formatHealth
+  formatHealth,
+  getHealthStatus,
+  getRuntimeHealth,
+  getStorageHealth,
+  getRedisHealth,
+  getProviderHealth,
+  classifyHealth
 };

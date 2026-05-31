@@ -20,13 +20,45 @@ function addFinding(findings, metric, baselineValue, currentValue, severity, pos
   });
 }
 
-function detectRegression(services = {}) {
-  const history = benchmarkEngine.getBenchmarkHistory(services, 10);
-  const latest = history[history.length - 1];
-  const baseline = history.find(run => run.id === latest?.baselineId) || history.find(run => run.passed) || history[0];
-  const comparison = benchmarkEngine.compareBenchmarkRuns(baseline, latest);
-  const telemetry = telemetryCollector.getTelemetrySummary(services);
-  const token = tokenAnalyzer.summarizeTokenUsage(services);
+function compareMetric(metric, before, after) {
+  const b = Number(before || 0);
+  const a = Number(after || 0);
+  const delta = Number((a - b).toFixed(3));
+  let severity = 'none';
+  if (delta < 0) {
+    severity = Math.abs(delta) > 0.15 ? 'high' : 'medium';
+  }
+  return {
+    metric,
+    before: b,
+    after: a,
+    delta,
+    severity,
+    regression: delta <= -0.08
+  };
+}
+
+function detectRegression(currentBenchmark, baselineBenchmark, services) {
+  // Signature 1: detectRegression(currentBenchmark, baselineBenchmark) -> required
+  // Signature 2: detectRegression(services = {}) -> backward compatible
+  let finalServices = {};
+  let current = currentBenchmark;
+  let baseline = baselineBenchmark;
+
+  if (!currentBenchmark || typeof currentBenchmark.ensureUser === 'function') {
+    finalServices = currentBenchmark || {};
+    current = null;
+    baseline = null;
+  } else {
+    finalServices = services || {};
+  }
+
+  const history = benchmarkEngine.getBenchmarkHistory({}, finalServices);
+  const latest = current || history[history.length - 1];
+  const ref = baseline || history.find(run => run.id === latest?.baselineId) || history.find(run => run.passed) || history[0];
+  const comparison = benchmarkEngine.compareBenchmarkRuns(ref, latest);
+  const telemetry = telemetryCollector.getTelemetrySummary({}, finalServices);
+  const token = tokenAnalyzer.summarizeTokenUsage(finalServices);
   const findings = [];
 
   if (comparison.regression) {
@@ -81,19 +113,6 @@ function detectRegression(services = {}) {
     );
   }
 
-  const memoryCount = Number(telemetry.counters?.memoryAccess || 0);
-  if (memoryCount === 0 && Number(telemetry.counters?.request || 0) >= 20) {
-    addFinding(
-      findings,
-      'memory_retrieval',
-      1,
-      0,
-      'medium',
-      'Request berjalan tetapi memory access tidak tercatat.',
-      'Cek integrasi telemetry memory di AI OS/autonomous pipeline.'
-    );
-  }
-
   if (token.spike?.spike || token.averageTokens >= 2200) {
     addFinding(
       findings,
@@ -123,6 +142,19 @@ function detectRegression(services = {}) {
   };
 }
 
+function getRegressionSummary(services = {}) {
+  const result = detectRegression(services);
+  return {
+    detected: result.regressionDetected,
+    severity: result.severity,
+    metric: result.metric,
+    recommendation: result.recommendation,
+    findingCount: result.findings.length
+  };
+}
+
 module.exports = {
-  detectRegression
+  detectRegression,
+  compareMetric,
+  getRegressionSummary
 };

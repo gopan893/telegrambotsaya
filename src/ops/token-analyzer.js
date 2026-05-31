@@ -3,85 +3,61 @@
 const store = require('./ops-store');
 const guards = require('./ops-guards');
 
-function estimateTokens(text) {
-  const s = String(text || '');
-  if (!s) return 0;
-  const ascii = s.replace(/[^\x00-\x7F]/g, '');
-  const nonAscii = s.length - ascii.length;
-  return Math.max(1, Math.ceil(ascii.length / 4 + nonAscii / 1.8));
+function estimateTokens(text = '') {
+  if (!text) return 0;
+  // Dynamic estimate: 1 token is roughly 4 characters
+  return Math.max(1, Math.round(String(text).length / 4));
 }
 
-function recordPromptSize(text, services = {}, meta = {}) {
-  return recordTokenSample({
-    kind: 'prompt',
-    promptTokens: estimateTokens(text),
-    completionTokens: 0,
-    ...meta
-  }, services);
-}
-
-function recordCompletionSize(text, services = {}, meta = {}) {
-  return recordTokenSample({
-    kind: 'completion',
-    promptTokens: 0,
-    completionTokens: estimateTokens(text),
-    ...meta
-  }, services);
-}
-
-function recordTokenSample(sample = {}, services = {}) {
+function recordTokenEstimate(scope, inputText, outputText, services = {}) {
+  const promptTokens = estimateTokens(inputText);
+  const completionTokens = estimateTokens(outputText);
+  const totalTokens = promptTokens + completionTokens;
   const state = store.getOpsState(services);
-  const promptTokens = Math.max(0, Number(sample.promptTokens || 0));
-  const completionTokens = Math.max(0, Number(sample.completionTokens || 0));
-  const item = {
+  
+  store.appendBounded(state.telemetry.tokenSamples, {
     timestamp: guards.nowIso(),
-    kind: sample.kind || 'ai',
-    provider: guards.sanitizeText(sample.provider || 'unknown', 80),
-    model: guards.sanitizeText(sample.model || 'unknown', 120),
+    kind: 'estimate',
+    scope: guards.sanitizeText(scope || 'unknown', 80),
     promptTokens,
     completionTokens,
-    totalTokens: promptTokens + completionTokens,
-    cached: Boolean(sample.cached)
-  };
-  store.appendBounded(state.telemetry.tokenSamples, item, state.config.maxTokenSamples);
-  store.compactState(state);
+    totalTokens
+  }, state.config.maxTokenSamples || 160);
+  
   store.saveOpsState(services);
-  return item;
+  return totalTokens;
 }
 
 function summarizeTokenUsage(services = {}) {
   const state = store.getOpsState(services);
   const samples = state.telemetry.tokenSamples || [];
-  const recent = samples.slice(-50);
-  const total = recent.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0);
-  const prompt = recent.reduce((sum, item) => sum + Number(item.promptTokens || 0), 0);
-  const completion = recent.reduce((sum, item) => sum + Number(item.completionTokens || 0), 0);
-  const byProvider = {};
-  let topExpensiveOperation = null;
-  for (const item of recent) {
-    const key = item.provider || 'unknown';
-    byProvider[key] = (byProvider[key] || 0) + Number(item.totalTokens || 0);
-    if (!topExpensiveOperation || Number(item.totalTokens || 0) > Number(topExpensiveOperation.totalTokens || 0)) {
-      topExpensiveOperation = {
-        provider: item.provider || 'unknown',
-        model: item.model || 'unknown',
-        kind: item.kind || 'ai',
-        totalTokens: Number(item.totalTokens || 0),
-        promptTokens: Number(item.promptTokens || 0),
-        completionTokens: Number(item.completionTokens || 0),
-        timestamp: item.timestamp
-      };
-    }
+  const total = samples.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0);
+  const prompt = samples.reduce((sum, item) => sum + Number(item.promptTokens || 0), 0);
+  const comp = samples.reduce((sum, item) => sum + Number(item.completionTokens || 0), 0);
+  const avg = samples.length ? Math.round(total / samples.length) : 0;
+  
+  const providers = {};
+  for (const item of samples) {
+    const key = item.provider || item.scope || 'unknown';
+    providers[key] = (providers[key] || 0) + (item.totalTokens || 0);
   }
+  
+  const sorted = [...samples].sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0));
+  const expensive = sorted[0]
+    ? { provider: sorted[0].provider || 'unknown', model: sorted[0].model || 'unknown', totalTokens: sorted[0].totalTokens }
+    : null;
+  const spike = guards.detectTokenSpike(samples);
+
   return {
-    sampleCount: recent.length,
+    sampleCount: samples.length,
     estimatedTotalTokens: total,
     estimatedPromptTokens: prompt,
-    estimatedCompletionTokens: completion,
-    averageTokens: recent.length ? Math.round(total / recent.length) : 0,
-    byProvider,
-    topExpensiveOperation,
-    spike: guards.detectTokenSpike(samples)
+    estimatedCompletionTokens: comp,
+    averageTokens: avg,
+    spike,
+    topExpensiveOperation: expensive,
+    byProvider: providers,
+    generatedAt: guards.nowIso()
   };
 }
 
@@ -90,11 +66,14 @@ function detectTokenSpike(services = {}) {
   return guards.detectTokenSpike(state.telemetry.tokenSamples || []);
 }
 
+function getTokenSummary(services = {}) {
+  return summarizeTokenUsage(services);
+}
+
 module.exports = {
   estimateTokens,
-  recordPromptSize,
-  recordCompletionSize,
-  recordTokenSample,
+  recordTokenEstimate,
   summarizeTokenUsage,
-  detectTokenSpike
+  detectTokenSpike,
+  getTokenSummary
 };

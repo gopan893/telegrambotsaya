@@ -21,7 +21,7 @@ function addDiagnosis(items, type, severity, cause, fix, confidence, evidence = 
 
 function diagnose(services = {}, input = {}) {
   const health = input.health || healthMonitor.getHealth(services);
-  const telemetry = input.telemetry || telemetryCollector.getTelemetrySummary(services);
+  const telemetry = input.telemetry || telemetryCollector.getTelemetrySummary({}, services);
   const items = [];
   const issues = health.issues || [];
 
@@ -108,7 +108,65 @@ function formatDiagnosis(result) {
   ].join('\n');
 }
 
+// Section E Required Functions:
+function runDiagnostics(services = {}) {
+  return diagnose(services);
+}
+
+function diagnoseHealth(health, telemetry, services = {}) {
+  return diagnose(services, { health, telemetry });
+}
+
+function classifyIssue(evidence = []) {
+  const text = evidence.join(' ').toLowerCase();
+  if (text.includes('api_key') || text.includes('provider') || text.includes('circuit')) return 'model_issue';
+  if (text.includes('ram') || text.includes('memory') || text.includes('cpu')) return 'infra_issue';
+  if (text.includes('queue') || text.includes('workflow')) return 'workflow_issue';
+  if (text.includes('tool') || text.includes('weather') || text.includes('search')) return 'tool_issue';
+  if (text.includes('postgres') || text.includes('database')) return 'storage_issue';
+  if (text.includes('redis')) return 'redis_issue';
+  return 'unknown';
+}
+
+function recommendFix(issue = '') {
+  const cat = classifyIssue([issue]);
+  switch (cat) {
+    case 'model_issue':
+      return 'Cek API key environment variables di Render.';
+    case 'infra_issue':
+      return 'Lakukan pruning telemetry/memory dan reset volatile cache.';
+    case 'workflow_issue':
+      return 'Tunda pemicu otomatis dan kurangi concurrency.';
+    case 'tool_issue':
+      return 'Verifikasi status API eksternal dan gunakan fallback respons.';
+    case 'storage_issue':
+      return 'Pastikan koneksi database stabil atau fallback ke file JSON.';
+    case 'redis_issue':
+      return 'Fallback ke memory internal untuk storage cache transient.';
+    default:
+      return 'Lanjutkan observasi telemetry dan jalankan benchmark.';
+  }
+}
+
+function getDiagnosticsSummary(services = {}) {
+  const result = diagnose(services);
+  return {
+    status: result.status,
+    severity: result.severity,
+    category: result.category,
+    suspectedCause: result.suspectedCause,
+    evidence: result.evidence,
+    recommendedFixes: result.recommendedFixes,
+    confidence: result.confidence
+  };
+}
+
 module.exports = {
   diagnose,
-  formatDiagnosis
+  formatDiagnosis,
+  runDiagnostics,
+  diagnoseHealth,
+  classifyIssue,
+  recommendFix,
+  getDiagnosticsSummary
 };

@@ -4,6 +4,7 @@ const store = require('./ops-store');
 const guards = require('./ops-guards');
 const healthMonitor = require('./health-monitor');
 const diagnosticsEngine = require('./diagnostics-engine');
+const telemetryCollector = require('./telemetry-collector');
 
 function classifyIncident(health, diagnosis) {
   if (health.status === 'critical' || diagnosis.severity === 'critical') return 'critical';
@@ -13,13 +14,19 @@ function classifyIncident(health, diagnosis) {
 }
 
 function createIncident(payload = {}, services = {}) {
+  // If services is passed as first arg in some call
+  if (payload && typeof payload.ensureUser === 'function') {
+    const temp = payload;
+    payload = services;
+    services = temp;
+  }
   const state = store.getOpsState(services);
   const incident = {
     id: `inc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     title: guards.sanitizeText(payload.title || 'Operational event', 160),
     category: guards.sanitizeText(payload.category || payload.classification || 'ops', 80),
     classification: payload.classification || 'info',
-    status: 'open',
+    status: payload.status || 'open',
     severity: payload.severity || payload.classification || 'info',
     evidence: (payload.evidence || []).slice(0, 8).map(item => guards.sanitizeText(item, 220)),
     suspectedCause: guards.sanitizeText(payload.suspectedCause || '-', 300),
@@ -38,26 +45,44 @@ function createIncident(payload = {}, services = {}) {
   return incident;
 }
 
-function detectIncident(services = {}, input = {}) {
-  const state = store.getOpsState(services);
-  const health = input.health || healthMonitor.getHealth(services);
-  const diagnosis = input.diagnosis || diagnosticsEngine.diagnose(services, { health });
-  let classification = classifyIncident(health, diagnosis);
+function detectIncident(health, telemetry, services = {}) {
+  // Signature 1: detectIncident(health, telemetry, services) -> required
+  // Signature 2: detectIncident(services = {}, input = {}) -> backward compatible
+  let finalServices = services;
+  let finalHealth = health;
+  let finalTelemetry = telemetry;
+
+  if (health && typeof health.ensureUser === 'function') {
+    finalServices = health;
+    const input = telemetry || {};
+    finalHealth = input.health || healthMonitor.getHealth(finalServices);
+    finalTelemetry = input.telemetry || telemetryCollector.getTelemetrySummary({}, finalServices);
+  } else {
+    if (!finalServices || typeof finalServices.ensureUser !== 'function') {
+      finalServices = {};
+    }
+    if (!finalHealth) finalHealth = healthMonitor.getHealth(finalServices);
+    if (!finalTelemetry) finalTelemetry = telemetryCollector.getTelemetrySummary({}, finalServices);
+  }
+
+  const state = store.getOpsState(finalServices);
+  const diagnosis = diagnosticsEngine.diagnose(finalServices, { health: finalHealth, telemetry: finalTelemetry });
+  let classification = classifyIncident(finalHealth, diagnosis);
   const escalation = guards.incidentEscalationGuard(state, classification, (diagnosis.evidence || []).length);
   classification = escalation.severity || classification;
   const eventKey = `${classification}:${diagnosis.diagnosis}:${diagnosis.suspectedCause}`;
 
   if (classification === 'info') {
-    return { detected: false, classification, health, diagnosis };
+    return { detected: false, classification, health: finalHealth, diagnosis };
   }
 
   if (guards.suppressFalsePositive(state, eventKey, 3 * 60 * 1000, classification === 'critical' ? 1 : 2)) {
-    store.saveOpsState(services);
+    store.saveOpsState(finalServices);
     return {
       detected: false,
       classification,
       suppressed: true,
-      health,
+      health: finalHealth,
       diagnosis
     };
   }
@@ -68,8 +93,8 @@ function detectIncident(services = {}, input = {}) {
   if (existing) {
     existing.updatedAt = guards.nowIso();
     existing.confidence = Math.max(existing.confidence || 0, diagnosis.confidence || 0);
-    store.saveOpsState(services);
-    return { detected: true, incident: existing, classification, health, diagnosis };
+    store.saveOpsState(finalServices);
+    return { detected: true, incident: existing, classification, health: finalHealth, diagnosis };
   }
 
   const incident = createIncident({
@@ -83,9 +108,9 @@ function detectIncident(services = {}, input = {}) {
     recommendedFixes: diagnosis.recommendedFixes,
     confidence: diagnosis.confidence,
     eventKey
-  }, services);
+  }, finalServices);
 
-  return { detected: true, incident, classification, health, diagnosis };
+  return { detected: true, incident, classification, health: finalHealth, diagnosis };
 }
 
 function updateIncident(incidentId, patch = {}, services = {}) {
@@ -118,6 +143,29 @@ function listRecentIncidents(services = {}, limit = 8) {
   return (state.incidents || []).slice(-limit).reverse();
 }
 
+function listIncidents(options = {}, services = {}) {
+  // Signature 1: listIncidents(options, services) -> required
+  // Signature 2: listRecentIncidents(services, limit) -> backward compatible mapping
+  let finalServices = services;
+  let limit = 8;
+  let status = null;
+
+  if (options && typeof options.ensureUser === 'function') {
+    finalServices = options;
+    limit = Number(services) || 8;
+  } else if (options && typeof options === 'object') {
+    limit = Number(options.limit) || 8;
+    status = options.status || null;
+  }
+
+  const state = store.getOpsState(finalServices);
+  let list = state.incidents || [];
+  if (status) {
+    list = list.filter(item => item.status === status);
+  }
+  return list.slice(-limit).reverse();
+}
+
 function getIncident(incidentId, services = {}) {
   const state = store.getOpsState(services);
   return (state.incidents || []).find(item => item.id === incidentId) || null;
@@ -145,6 +193,7 @@ module.exports = {
   updateIncident,
   resolveIncident,
   listRecentIncidents,
+  listIncidents,
   getIncident,
   createPostmortemDraft
 };

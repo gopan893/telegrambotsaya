@@ -9,6 +9,12 @@ function inc(obj, key, amount = 1) {
 }
 
 function recordEvent(event = {}, services = {}) {
+  // If services is actually passed as first arg in some call
+  if (event && typeof event.ensureUser === 'function') {
+    const temp = event;
+    event = services;
+    services = temp;
+  }
   const state = store.getOpsState(services);
   const counters = state.telemetry.counters;
   const type = guards.sanitizeText(event.type || 'event', 80);
@@ -53,8 +59,22 @@ function recordRequest(payload = {}, services = {}) {
   }, services);
 }
 
-function recordCommand(command, userId, services = {}) {
-  const state = store.getOpsState(services);
+function recordCommand(command, data, services = {}) {
+  // Signature 1: recordCommand(command, userId, services) -> where data is userId (string/number)
+  // Signature 2: recordCommand(command, data, services) -> where data is object
+  let userId;
+  let finalServices = services;
+  if (data && typeof data === 'object') {
+    if (typeof data.ensureUser === 'function') {
+      finalServices = data;
+    } else {
+      userId = data.userId;
+    }
+  } else if (typeof data === 'string' || typeof data === 'number') {
+    userId = String(data);
+  }
+  
+  const state = store.getOpsState(finalServices);
   const clean = guards.sanitizeText(command || 'unknown', 80);
   inc(state.telemetry.commandUsage, clean);
   recordEvent({
@@ -64,7 +84,7 @@ function recordCommand(command, userId, services = {}) {
     scope: 'command',
     userId,
     meta: { userId: userId ? guards.sanitizeText(userId, 40) : undefined }
-  }, services);
+  }, finalServices);
 }
 
 function recordMemoryAccess(payload = {}, services = {}) {
@@ -162,15 +182,27 @@ function recordAIUsage(payload = {}, services = {}) {
   store.saveOpsState(services);
 }
 
-function recordToolUsage(payload = {}, services = {}) {
-  const state = store.getOpsState(services);
-  const tool = guards.sanitizeText(payload.tool || payload.name || 'unknown', 80);
+function recordToolUsage(toolName, data, services = {}) {
+  // Signature 1: recordToolUsage(toolName, data, services) -> standard required
+  // Signature 2: recordToolUsage(payload, services) -> backward compatible
+  let tool = toolName;
+  let payload = data || {};
+  let finalServices = services;
+
+  if (toolName && typeof toolName === 'object') {
+    payload = toolName;
+    tool = payload.tool || payload.name || 'unknown';
+    finalServices = data || {};
+  }
+
+  const state = store.getOpsState(finalServices);
+  const cleanTool = guards.sanitizeText(tool, 80);
   const latencyMs = Math.max(0, Number(payload.latencyMs || 0));
   inc(state.telemetry.counters, 'toolExecution');
-  if (!state.telemetry.toolUsage[tool]) {
-    state.telemetry.toolUsage[tool] = { calls: 0, success: 0, failure: 0, latencyTotalMs: 0 };
+  if (!state.telemetry.toolUsage[cleanTool]) {
+    state.telemetry.toolUsage[cleanTool] = { calls: 0, success: 0, failure: 0, latencyTotalMs: 0 };
   }
-  const usage = state.telemetry.toolUsage[tool];
+  const usage = state.telemetry.toolUsage[cleanTool];
   usage.calls += 1;
   usage.success += payload.success === false ? 0 : 1;
   usage.failure += payload.success === false ? 1 : 0;
@@ -178,7 +210,7 @@ function recordToolUsage(payload = {}, services = {}) {
   if (latencyMs) {
     store.appendBounded(state.telemetry.latencySamples, {
       timestamp: guards.nowIso(),
-      scope: `tool:${tool}`,
+      scope: `tool:${cleanTool}`,
       latencyMs: Math.round(latencyMs),
       meta: {}
     }, state.config.maxLatencySamples);
@@ -193,16 +225,30 @@ function recordToolUsage(payload = {}, services = {}) {
     error: payload.error ? guards.sanitizeText(payload.error, 160) : undefined,
     createdAt: guards.nowIso(),
     timestamp: guards.nowIso(),
-    name: tool,
+    name: cleanTool,
     component: 'tool',
     meta: payload.meta || {}
   }, state.config.maxEvents);
   store.compactState(state);
-  store.saveOpsState(services);
+  store.saveOpsState(finalServices);
 }
 
-function recordError(error, services = {}, meta = {}) {
-  const state = store.getOpsState(services);
+function recordError(error, context, services = {}) {
+  // Signature 1: recordError(error, context, services) -> required
+  // Signature 2: recordError(error, services = {}, meta = {}) -> backward compatible
+  let finalServices = services;
+  let meta = {};
+
+  if (context && typeof context.ensureUser === 'function') {
+    finalServices = context;
+    meta = services || {};
+  } else if (context && typeof context === 'object') {
+    meta = context;
+  } else if (typeof context === 'string') {
+    meta = { scope: context };
+  }
+
+  const state = store.getOpsState(finalServices);
   inc(state.telemetry.counters, 'error');
   const item = {
     ...guards.safeError(error, meta.scope || 'unknown'),
@@ -216,11 +262,21 @@ function recordError(error, services = {}, meta = {}) {
     component: item.component,
     status: item.severity,
     meta: { message: item.message }
-  }, services);
+  }, finalServices);
 }
 
-function recordLatency(scope, latencyMs, services = {}, meta = {}) {
-  const state = store.getOpsState(services);
+function recordLatency(scope, latencyMs, metadata, services = {}) {
+  // Signature 1: recordLatency(scope, latencyMs, metadata, services) -> required
+  // Signature 2: recordLatency(scope, latencyMs, services, meta) -> backward compatible
+  let finalServices = services;
+  let meta = metadata || {};
+
+  if (metadata && typeof metadata.ensureUser === 'function') {
+    finalServices = metadata;
+    meta = services || {};
+  }
+
+  const state = store.getOpsState(finalServices);
   const ms = Math.max(0, Number(latencyMs || 0));
   if (!ms) return;
   store.appendBounded(state.telemetry.latencySamples, {
@@ -230,11 +286,16 @@ function recordLatency(scope, latencyMs, services = {}, meta = {}) {
     meta: guards.sanitizeMeta(meta)
   }, state.config.maxLatencySamples);
   store.compactState(state);
-  store.saveOpsState(services);
+  store.saveOpsState(finalServices);
 }
 
-function getTelemetrySummary(services = {}) {
-  const state = store.getOpsState(services);
+function getTelemetrySummary(options = {}, services = {}) {
+  // If options is actually services:
+  let finalServices = services;
+  if (options && typeof options.ensureUser === 'function') {
+    finalServices = options;
+  }
+  const state = store.getOpsState(finalServices);
   const latencies = state.telemetry.latencySamples || [];
   const sorted = latencies.map(item => Number(item.latencyMs || 0)).sort((a, b) => a - b);
   const p = (q) => {
@@ -268,7 +329,7 @@ function getTelemetrySummary(services = {}) {
     recentErrorCount: recentErrors.length,
     failureClusters: clusterList,
     anomalyScore,
-    token: tokenAnalyzer.summarizeTokenUsage(services),
+    token: tokenAnalyzer.summarizeTokenUsage(finalServices),
     generatedAt: guards.nowIso()
   };
 }
@@ -277,7 +338,7 @@ function pruneTelemetry(services = {}) {
   const state = store.getOpsState(services);
   store.compactState(state);
   store.saveOpsState(services);
-  return getTelemetrySummary(services);
+  return getTelemetrySummary({}, services);
 }
 
 module.exports = {

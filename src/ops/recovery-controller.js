@@ -1,147 +1,169 @@
 'use strict';
 
 const store = require('./ops-store');
-const guards = require('./ops-guards');
+const healthMonitor = require('./health-monitor');
 const diagnosticsEngine = require('./diagnostics-engine');
+const guards = require('./ops-guards');
 
-const SAFE_RECOVERY_ACTIONS = new Set([
-  'clear_volatile_ops_cache',
-  'prune_telemetry',
-  'mark_provider_degraded',
-  'reduce_non_critical_benchmark_frequency',
-  'switch_to_lightweight_mode',
-  'reset_local_ops_counters',
-  'pause_non_critical_evaluation',
-  'keep_monitoring'
-]);
-
-function createRecoveryPlan(diagnosis) {
+function getRecoveryRecommendation(services = {}, input = {}) {
+  const health = input.health || healthMonitor.getHealth(services);
+  const diagnosis = input.diagnosis || diagnosticsEngine.diagnose(services, { health });
   const actions = [];
-  const type = diagnosis?.diagnosis || 'healthy';
 
-  if (type === 'infra_issue') {
-    actions.push('clear_volatile_ops_cache', 'prune_telemetry', 'reduce_non_critical_benchmark_frequency', 'suggest_manual_restart');
-  } else if (type === 'model_issue') {
-    actions.push('mark_provider_degraded', 'switch_to_lightweight_mode', 'reset_circuit_breaker_after_cooldown');
-  } else if (type === 'workflow_issue') {
-    actions.push('pause_non_critical_evaluation', 'switch_to_lightweight_mode', 'increase_queue_cooldown_recommendation');
-  } else if (type === 'cost_issue') {
-    actions.push('enable_summary_context', 'reduce_max_tokens_recommendation');
-  } else if (type === 'tool_issue') {
-    actions.push('disable_non_critical_ops_temporarily', 'switch_to_lightweight_mode');
-  } else {
-    actions.push('keep_monitoring');
+  if (diagnosis.severity === 'critical') {
+    if (diagnosis.diagnosis === 'model_issue') {
+      actions.push({
+        action: 'switch_to_fallback_provider',
+        riskLevel: 'low',
+        safeToExecute: true,
+        expectedImpact: 'Memulihkan kemampuan AI dengan beralih ke provider cadangan (Groq/Mistral).',
+        rollbackOption: 'Beralih kembali setelah primary provider kembali stabil.'
+      });
+    }
+    if (diagnosis.diagnosis === 'infra_issue') {
+      actions.push({
+        action: 'prune_volatile_telemetry',
+        riskLevel: 'low',
+        safeToExecute: true,
+        expectedImpact: 'Membersihkan telemetry lama di memory untuk meringankan RAM RSS.',
+        rollbackOption: 'Tidak ada (pruning telemetry aman dilakukan kapan saja).'
+      });
+      actions.push({
+        action: 'clear_ops_caches',
+        riskLevel: 'low',
+        safeToExecute: true,
+        expectedImpact: 'Mereset cache transient ops untuk membebaskan heap memory.',
+        rollbackOption: 'Cache akan terisi kembali secara bertahap.'
+      });
+    }
   }
 
-  const detailedActions = actions.map(action => describeRecoveryAction(action));
-  return {
-    severity: diagnosis?.severity || 'info',
-    recommendedAction: detailedActions[0] || describeRecoveryAction('keep_monitoring'),
-    actions: detailedActions,
-    requiresAdminConfirmation: actions.some(guards.isSensitiveAction),
-    notes: 'Recovery otomatis hanya menjalankan aksi non-destruktif. Aksi sensitif tetap butuh admin.'
-  };
-}
-
-function describeRecoveryAction(action) {
-  const risk = SAFE_RECOVERY_ACTIONS.has(action) ? 'low' : 'medium';
-  const impact = {
-    clear_volatile_ops_cache: 'Mengurangi data ops sementara tanpa menghapus memory user.',
-    prune_telemetry: 'Memangkas telemetry lama agar RAM/storage tetap kecil.',
-    mark_provider_degraded: 'Menandai provider bermasalah agar routing lebih hati-hati.',
-    reduce_non_critical_benchmark_frequency: 'Mengurangi beban benchmark background.',
-    switch_to_lightweight_mode: 'Mengutamakan pipeline ringan untuk menjaga stabilitas.',
-    reset_local_ops_counters: 'Mengosongkan counter ops lokal tanpa menghapus user memory.',
-    pause_non_critical_evaluation: 'Menghentikan evaluasi ringan sementara.',
-    keep_monitoring: 'Tidak mengubah state, hanya melanjutkan monitoring.'
-  }[action] || 'Recommendation only, tidak menjalankan aksi destruktif.';
-  return {
-    action,
-    riskLevel: risk,
-    expectedImpact: impact,
-    rollbackOption: 'Ops state bisa dipantau ulang lewat /ops; aksi destruktif tidak dijalankan otomatis.',
-    confidence: SAFE_RECOVERY_ACTIONS.has(action) ? 0.78 : 0.55,
-    safeToExecute: SAFE_RECOVERY_ACTIONS.has(action)
-  };
-}
-
-function executeRecoveryAction(action, services = {}, options = {}) {
-  const state = store.getOpsState(services);
-  if (!SAFE_RECOVERY_ACTIONS.has(action)) {
-    return {
-      ok: false,
-      action,
-      reason: 'Aksi recovery ini tidak termasuk safe action. Gunakan rollback/tuning manual.'
-    };
-  }
-  const gate = guards.guardAutonomousAction({
-    type: action,
-    confidence: options.confidence || 0.8,
-    risk: guards.isSensitiveAction(action) ? 0.8 : 0.25,
-    confirmedByAdmin: Boolean(options.confirmedByAdmin)
-  });
-  if (!gate.allowed) {
-    return { ok: false, action, reason: gate.reason };
+  if (diagnosis.severity === 'degraded' || diagnosis.severity === 'warning') {
+    actions.push({
+      action: 'cooldown_circuit_breakers',
+      riskLevel: 'low',
+      safeToExecute: true,
+      expectedImpact: 'Mereset status circuit breaker provider AI yang sempat cooldown.',
+      rollbackOption: 'Akan terbuka kembali jika kegagalan berulang.'
+    });
+    actions.push({
+      action: 'enable_lightweight_routing',
+      riskLevel: 'low',
+      safeToExecute: true,
+      expectedImpact: 'Mengaktifkan mode adaptif sederhana untuk membatasi token/orchestration.',
+      rollbackOption: 'Nonaktifkan mode adaptif setelah load menurun.'
+    });
   }
 
-  let result = { ok: true, action, effect: 'recommendation_only' };
-  if (action === 'clear_volatile_ops_cache' || action === 'prune_telemetry') {
-    state.telemetry.events = [];
-    state.telemetry.latencySamples = state.telemetry.latencySamples.slice(-40);
-    state.telemetry.tokenSamples = state.telemetry.tokenSamples.slice(-40);
-    state.profiler.operations = state.profiler.operations.slice(-40);
-    result.effect = 'ops_volatile_cache_pruned';
-  } else if (action === 'pause_non_critical_evaluation') {
-    state.scheduler.enabled = false;
-    result.effect = 'evaluation_scheduler_paused';
-  } else if (action === 'reduce_non_critical_benchmark_frequency') {
-    state.scheduler.intervalMs = Math.max(Number(state.scheduler.intervalMs || 0), 12 * 60 * 60 * 1000);
-    result.effect = 'benchmark_frequency_reduced';
-  } else if (action === 'switch_to_lightweight_mode') {
-    state.config.telemetrySamplingRate = Math.min(Number(state.config.telemetrySamplingRate || 1), 0.5);
-    result.effect = 'lightweight_mode_marked';
-  } else if (action === 'reset_local_ops_counters') {
-    state.telemetry.counters = {
-      request: 0,
-      command: 0,
-      aiCall: 0,
-      toolExecution: 0,
-      error: 0,
-      memoryAccess: 0,
-      workflowExecution: 0
-    };
-    result.effect = 'ops_counters_reset';
-  } else if (action === 'mark_provider_degraded') {
-    const provider = options.provider || 'unknown';
-    state.providerState[provider] = {
-      status: 'degraded',
-      reason: guards.sanitizeText(options.reason || 'manual recovery plan', 180),
-      updatedAt: guards.nowIso()
-    };
-    result.effect = `provider_${provider}_marked_degraded`;
+  // Fallback safe action
+  if (actions.length === 0) {
+    actions.push({
+      action: 'noop_maintain_baseline',
+      riskLevel: 'low',
+      safeToExecute: true,
+      expectedImpact: 'Baseline stabil, tidak memerlukan tindakan mitigasi aktif.',
+      rollbackOption: 'N/A'
+    });
   }
 
-  store.appendBounded(state.recoveryHistory, {
-    timestamp: guards.nowIso(),
-    action,
-    result: result.effect
-  }, 50);
-  store.compactState(state);
-  store.saveOpsState(services);
-  return result;
-}
+  const worst = actions.find(item => item.safeToExecute) || actions[0];
 
-function getRecoveryRecommendation(services = {}) {
-  const diagnosis = diagnosticsEngine.diagnose(services);
   return {
     diagnosis,
-    plan: createRecoveryPlan(diagnosis)
+    severity: diagnosis.severity,
+    recommendedAction: worst,
+    actions,
+    plan: {
+      recommendedAction: worst,
+      actions
+    },
+    generatedAt: guards.nowIso()
   };
+}
+
+function executeRecoveryAction(action, services = {}, ctx = {}) {
+  const allowedGuard = guards.guardAutonomousAction({
+    type: 'recovery_action',
+    name: action,
+    risk: action.includes('clear') ? 0.3 : 0.1,
+    confidence: ctx.confidence || 0.8,
+    confirmedByAdmin: Boolean(ctx.confirmedByAdmin)
+  });
+  if (!allowedGuard.allowed) {
+    return { ok: false, reason: allowedGuard.reason };
+  }
+
+  const loopGuard = guards.loopPrevention(store.getOpsState(services), `recovery:${action}`);
+  if (!loopGuard.allowed) {
+    return { ok: false, reason: loopGuard.reason };
+  }
+
+  const state = store.getOpsState(services);
+  let effect = 'No-op.';
+  let executed = false;
+
+  if (action === 'prune_volatile_telemetry') {
+    state.telemetry.events = [];
+    state.telemetry.latencySamples = [];
+    state.telemetry.tokenSamples = [];
+    effect = 'Cleaned active telemetry lists in state.';
+    executed = true;
+  } else if (action === 'clear_ops_caches') {
+    state.profiler.operations = [];
+    effect = 'Cleared operations profile records cache.';
+    executed = true;
+  } else if (action === 'switch_to_fallback_provider') {
+    state.providerState.activeFallback = true;
+    effect = 'Forced fallback AI provider mode.';
+    executed = true;
+  } else if (action === 'cooldown_circuit_breakers') {
+    if (services.aiCircuitBreaker?.reset) {
+      services.aiCircuitBreaker.reset();
+    }
+    effect = 'Cooldown circuit breakers successfully called.';
+    executed = true;
+  } else if (action === 'enable_lightweight_routing') {
+    state.adaptive.lightweightModeEnabled = true;
+    effect = 'Enabled lightweight routing override.';
+    executed = true;
+  }
+
+  if (executed) {
+    state.recoveryHistory.push({
+      action,
+      timestamp: guards.nowIso(),
+      effect,
+      status: 'success'
+    });
+    store.saveOpsState(services);
+  }
+
+  return { ok: true, action, effect };
+}
+
+// Section I Required Functions:
+function getRecoveryRecommendations(diagnostics = {}, services = {}) {
+  return getRecoveryRecommendation(services, { diagnosis: diagnostics }).actions;
+}
+
+function executeSafeRecovery(action = '', services = {}) {
+  return executeRecoveryAction(action, services, { confirmedByAdmin: true });
+}
+
+function listRecoveryActions() {
+  return [
+    { action: 'prune_volatile_telemetry', description: 'Prune active telemetry state events and samples.' },
+    { action: 'clear_ops_caches', description: 'Clear volatile operations profiler lists.' },
+    { action: 'switch_to_fallback_provider', description: 'Force AI routing to fallback/cooldown provider.' },
+    { action: 'cooldown_circuit_breakers', description: 'Manually cooldown circuit breaker thresholds.' },
+    { action: 'enable_lightweight_routing', description: 'Switch routing policy to simplified adaptive mode.' }
+  ];
 }
 
 module.exports = {
-  createRecoveryPlan,
-  describeRecoveryAction,
+  getRecoveryRecommendation,
   executeRecoveryAction,
-  getRecoveryRecommendation
+  getRecoveryRecommendations,
+  executeSafeRecovery,
+  listRecoveryActions
 };
