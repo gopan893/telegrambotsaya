@@ -35,6 +35,7 @@ Protected:
 
 ```text
 GET /api/dashboard/summary
+GET /api/dashboard/storage
 GET /api/dashboard/user/:userId/overview
 GET /api/dashboard/user/:userId/memories?q=&type=&limit=
 GET /api/dashboard/user/:userId/goals
@@ -45,7 +46,40 @@ GET /api/dashboard/user/:userId/graph/search?q=<query>
 GET /api/dashboard/ops
 GET /api/dashboard/commands
 GET /api/dashboard/env-check
+POST /api/dashboard/actions/report/export-health
+POST /api/dashboard/actions/report/export-user-summary
 ```
+
+## Health Shape Phase 12
+
+`GET /api/dashboard/health` selalu mengembalikan field aman berikut:
+
+```json
+{
+  "ok": true,
+  "uptime": 123,
+  "timestamp": "2026-06-01T00:00:00.000Z",
+  "version": "1.0.0",
+  "dashboardEnabled": true,
+  "tokenConfigured": true,
+  "storageDriver": "postgres",
+  "configuredStorageDriver": "auto",
+  "fallbackActive": false,
+  "databaseUrlConfigured": true,
+  "postgresAvailable": true,
+  "postgresTableReady": true,
+  "postgresStatus": "connected",
+  "postgresLatencyMs": 12,
+  "postgresRecommendedFix": "No action needed",
+  "redisUrlConfigured": false,
+  "redisAvailable": false,
+  "redisStatus": "missing_env",
+  "redisLatencyMs": null,
+  "redisRecommendedFix": "Set REDIS_URL or use memory cache fallback"
+}
+```
+
+Tidak ada credential atau connection string di response.
 
 ## Contoh Curl
 
@@ -72,6 +106,22 @@ curl \
 ```
 
 Output `env-check` hanya `set` atau `missing`, tidak pernah value asli.
+
+Storage protected:
+
+```bash
+curl \
+  -H "Authorization: Bearer $DASHBOARD_ADMIN_TOKEN" \
+  https://your-render-url.onrender.com/api/dashboard/storage
+```
+
+Export health report:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $DASHBOARD_ADMIN_TOKEN" \
+  https://your-render-url.onrender.com/api/dashboard/actions/report/export-health
+```
 
 ## Keamanan
 

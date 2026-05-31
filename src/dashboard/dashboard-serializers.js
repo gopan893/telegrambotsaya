@@ -143,12 +143,68 @@ function sanitizeDashboardSummary(data = {}) {
     insightCount: Number(data.insightCount || 0),
     graphNodeCount: Number(data.graphNodeCount || 0),
     graphEdgeCount: Number(data.graphEdgeCount || 0),
-    storageStatus: data.storageStatus || null,
+    storageStatus: data.storageStatus ? sanitizeStorage(data.storageStatus) : null,
     opsStatus: data.opsStatus || null
   });
 }
 
+function normalizeStorageHealth(storage = {}) {
+  const postgres = storage.postgres || {};
+  const postgresHealth = postgres.health || postgres || {};
+  const redis = storage.redis || storage.cache || {};
+  const redisHealth = redis.health || redis || {};
+  return {
+    storageDriver: storage.driver || storage.storageDriver || storage.persistentType || 'unknown',
+    configuredStorageDriver: storage.configuredDriver || storage.preferredDriver || 'auto',
+    fallbackActive: Boolean(storage.fallbackActive || storage.fallback),
+    databaseUrlConfigured: Boolean(storage.postgresConfigured || postgresHealth.configured),
+    postgresAvailable: Boolean(storage.postgresAvailable || postgresHealth.available),
+    postgresTableReady: Boolean(storage.postgresTableReady || postgresHealth.tableReady),
+    postgresStatus: postgresHealth.status || (postgresHealth.available ? 'connected' : 'unavailable'),
+    postgresLatencyMs: postgresHealth.latencyMs ?? null,
+    postgresRecommendedFix: truncateText(postgresHealth.recommendedFix || '', 240),
+    redisUrlConfigured: Boolean(storage.redisConfigured || redisHealth.configured),
+    redisAvailable: Boolean(storage.redisAvailable || redis.redisAvailable || redisHealth.available),
+    redisStatus: redisHealth.status || (redisHealth.available ? 'connected' : 'unavailable'),
+    redisLatencyMs: redisHealth.latencyMs ?? null,
+    redisRecommendedFix: truncateText(redisHealth.recommendedFix || '', 240)
+  };
+}
+
+function sanitizeStorage(storage = {}) {
+  const normalized = normalizeStorageHealth(storage);
+  const postgres = storage.postgres || {};
+  const postgresHealth = postgres.health || {};
+  const redis = storage.redis || storage.cache || {};
+  const redisHealth = redis.health || {};
+  return guards.preventSecretLeak({
+    ...normalized,
+    initialized: Boolean(storage.initialized),
+    migrations: storage.migrations || postgres.migrations || 'skipped',
+    lastError: truncateText(storage.lastError || '', 160),
+    postgres: {
+      configured: normalized.databaseUrlConfigured,
+      available: normalized.postgresAvailable,
+      tableReady: normalized.postgresTableReady,
+      status: normalized.postgresStatus,
+      latencyMs: normalized.postgresLatencyMs,
+      errorMessageSafe: truncateText(postgresHealth.errorMessageSafe || postgres.errorMessageSafe || '', 160),
+      recommendedFix: normalized.postgresRecommendedFix
+    },
+    redis: {
+      configured: normalized.redisUrlConfigured,
+      available: normalized.redisAvailable,
+      status: normalized.redisStatus,
+      latencyMs: normalized.redisLatencyMs,
+      errorMessageSafe: truncateText(redisHealth.errorMessageSafe || redis.errorMessageSafe || '', 160),
+      recommendedFix: normalized.redisRecommendedFix
+    },
+    cacheFallback: redis.fallback ? { type: redis.fallback.type, available: Boolean(redis.fallback.available), size: Number(redis.fallback.size || 0) } : null
+  });
+}
+
 function sanitizeHealth(data = {}) {
+  const storage = sanitizeStorage(data.storage || data.storageStatus || data);
   return guards.preventSecretLeak({
     ok: Boolean(data.ok),
     uptime: Number(data.uptime || 0),
@@ -156,8 +212,20 @@ function sanitizeHealth(data = {}) {
     version: data.version || 'unknown',
     dashboardEnabled: Boolean(data.dashboardEnabled),
     tokenConfigured: Boolean(data.tokenConfigured ?? data.adminTokenSet),
-    storageDriver: data.storageDriver || 'unknown',
-    redisAvailable: Boolean(data.redisAvailable)
+    storageDriver: data.storageDriver || storage.storageDriver || 'unknown',
+    configuredStorageDriver: data.configuredStorageDriver || storage.configuredStorageDriver || 'auto',
+    fallbackActive: Boolean(data.fallbackActive ?? storage.fallbackActive),
+    databaseUrlConfigured: Boolean(data.databaseUrlConfigured ?? storage.databaseUrlConfigured),
+    postgresAvailable: Boolean(data.postgresAvailable ?? storage.postgresAvailable),
+    postgresTableReady: Boolean(data.postgresTableReady ?? storage.postgresTableReady),
+    postgresStatus: data.postgresStatus || storage.postgresStatus || 'unavailable',
+    postgresLatencyMs: data.postgresLatencyMs ?? storage.postgresLatencyMs ?? null,
+    postgresRecommendedFix: truncateText(data.postgresRecommendedFix || storage.postgresRecommendedFix || '', 240),
+    redisUrlConfigured: Boolean(data.redisUrlConfigured ?? storage.redisUrlConfigured),
+    redisAvailable: Boolean(data.redisAvailable ?? storage.redisAvailable),
+    redisStatus: data.redisStatus || storage.redisStatus || 'unavailable',
+    redisLatencyMs: data.redisLatencyMs ?? storage.redisLatencyMs ?? null,
+    redisRecommendedFix: truncateText(data.redisRecommendedFix || storage.redisRecommendedFix || '', 240)
   });
 }
 
@@ -270,6 +338,7 @@ module.exports = {
   truncateText,
   sanitizeDashboardSummary,
   sanitizeHealth,
+  sanitizeStorage,
   sanitizeOps,
   sanitizeReliability,
   sanitizeBenchmark,

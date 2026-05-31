@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const tab = item.getAttribute('data-tab');
       if (tab) {
         currentTab = tab;
+        if (window.DashboardState) DashboardState.setActiveTab(tab);
         navItems.forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
         window.location.hash = `#${tab}`;
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hash = window.location.hash.substring(1) || 'overview';
     currentTab = hash;
+    if (window.DashboardState) DashboardState.setActiveTab(currentTab);
 
     // Highlight nav item
     navItems.forEach(nav => {

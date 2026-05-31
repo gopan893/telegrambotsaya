@@ -1,6 +1,7 @@
 # Dashboard UI
 
 Phase 11 menambahkan dashboard web vanilla untuk melihat status AI OS dari browser tanpa React/Next.js.
+Phase 12 menambahkan health card PostgreSQL/Redis, graph SVG renderer, export report, dan state ringan untuk UX admin.
 
 ## Akses
 
@@ -12,6 +13,9 @@ Phase 11 menambahkan dashboard web vanilla untuk melihat status AI OS dari brows
   - `/dashboard/auth.js`
   - `/dashboard/ui.js`
   - `/dashboard/charts.js`
+  - `/dashboard/graph.js`
+  - `/dashboard/export.js`
+  - `/dashboard/state.js`
   - `/dashboard/utils.js`
   - `/dashboard/app.js`
 
@@ -48,8 +52,34 @@ Dashboard menyediakan action aman:
 - Run Light Benchmark
 - Prune Telemetry
 - Refresh Ops Snapshot
+- Export Health Report
+- Export User Summary Report
 
 Action ini protected, butuh token, rate-limited, dan tidak menghapus memory user.
+
+## PostgreSQL dan Redis Health
+
+Overview menampilkan:
+
+- storage driver aktif
+- configured storage driver
+- PostgreSQL status, table readiness, latency, dan rekomendasi perbaikan
+- Redis status, latency, fallback memory cache, dan rekomendasi perbaikan
+
+Jika PostgreSQL atau Redis tidak dikonfigurasi, dashboard tetap berjalan dan menampilkan fallback secara eksplisit.
+
+## Graph Visualization
+
+Tab Knowledge Graph memakai SVG renderer ringan di `graph.js`.
+
+- Node diberi warna berdasarkan type.
+- Edge menampilkan relationship label.
+- Output dibatasi agar Render free tier tetap ringan.
+- Jika graph kosong, UI menampilkan empty state tanpa error.
+
+## Export
+
+Health report bisa diunduh dari Overview. Export memanggil safe admin action dan fallback ke data client-side jika action tidak tersedia.
 
 ## Troubleshooting
 

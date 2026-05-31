@@ -46,7 +46,9 @@ GOOGLE_REDIRECT_URI=
 - `RUN_MIGRATIONS=true` untuk membuat schema PostgreSQL saat database tersedia.
 - `DASHBOARD_ENABLED=true` jika ingin membuka endpoint protected dashboard.
 - `DASHBOARD_ADMIN_TOKEN` wajib diisi token panjang acak sebelum memakai endpoint data dashboard.
-- Dashboard UI tersedia di `/dashboard`; static assets harus terbuka di `/dashboard/styles.css`, `/dashboard/app.js`, dan `/dashboard/api.js`.
+- Dashboard UI tersedia di `/dashboard`; static assets harus terbuka di `/dashboard/styles.css`, `/dashboard/app.js`, `/dashboard/api.js`, `/dashboard/graph.js`, `/dashboard/export.js`, dan `/dashboard/state.js`.
+- `/api/dashboard/health` menampilkan status PostgreSQL/Redis public-safe tanpa credential.
+- `/api/dashboard/storage` protected dan butuh bearer token.
 - Tidak ada secret ditulis di log.
 
 ## Smoke Test Setelah Deploy
@@ -65,6 +67,8 @@ GOOGLE_REDIRECT_URI=
    - `/help`
    - `/dashboard`
    - `/dashboardstatus`
+   - `/dbstatus`
+   - `/redisstatus`
    - `/stats`
    - `/adaptive status`
    - `/aios`
@@ -94,6 +98,7 @@ Jika deploy gagal:
 - Jika PostgreSQL error saat startup/migration: bot fallback ke JSON.
 - Tanpa `REDIS_URL`: bot memakai memory cache lokal.
 - Jika Redis error: cache fallback memory/local.
+- `/dbstatus` dan `/redisstatus` membantu melihat status health tanpa membuka dashboard.
 
 ## Known Deployment Risk
 

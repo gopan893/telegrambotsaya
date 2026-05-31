@@ -79,6 +79,10 @@ const Api = {
     return this.apiGet('/ops');
   },
 
+  async getStorage() {
+    return this.apiGet('/storage');
+  },
+
   async getReliability() {
     return this.apiGet('/reliability');
   },
@@ -152,6 +156,14 @@ const Api = {
 
   async refreshOpsSnapshot() {
     return this.apiPost('/actions/ops/refresh');
+  },
+
+  async exportHealthReport() {
+    return this.apiPost('/actions/report/export-health');
+  },
+
+  async exportUserSummaryReport(userId) {
+    return this.apiPost('/actions/report/export-user-summary', { userId });
   }
 };
 

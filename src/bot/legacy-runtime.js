@@ -28,6 +28,11 @@ const interactions = require('../interactions');
 const naturalLanguage = require('../natural-language/natural-router');
 const naturalToolRouter = require('../natural-language/natural-tool-router');
 const dashboard = require('../dashboard');
+const {
+  formatDashboardStorageStatus,
+  formatDbStatus,
+  formatRedisStatus
+} = require('../dashboard/storage-status-formatters');
 const outputSanitizer = require('../ai-os/output-sanitizer');
 const {
   sendTelegramMessage,
@@ -3135,9 +3140,15 @@ function buildDashboardInfoText() {
     '',
     `Dashboard URL: ${base ? `${base}/dashboard` : 'WEBHOOK_URL belum diset'}`,
     `API health: ${base ? `${base}/api/dashboard/health` : '/api/dashboard/health'}`,
+    'Storage API: /api/dashboard/storage',
     '',
     'Endpoint data user membutuhkan header:',
     'Authorization: Bearer <DASHBOARD_ADMIN_TOKEN>',
+    '',
+    'Cek dari Telegram:',
+    '/dashboardstatus',
+    '/dbstatus',
+    '/redisstatus',
     '',
     'Token tidak akan pernah ditampilkan oleh bot.'
   ].join('\n');
@@ -5515,6 +5526,8 @@ async function handleHelp(chatId, msg) {
 /menu atau /actions - menu interaktif
 /dashboard - info dashboard/API
 /dashboardstatus - status dashboard tanpa token
+/dbstatus - status PostgreSQL/storage
+/redisstatus - status Redis/cache
 /belajar - catatan belajar arsitektur bot
 /stats - statistik
 /system - status agent production [admin]
@@ -5664,6 +5677,8 @@ function isUnknownCommand(cmd) {
     '/actions',
     '/dashboard',
     '/dashboardstatus',
+    '/dbstatus',
+    '/redisstatus',
     '/belajar',
     '/stats',
     '/system',
@@ -6565,6 +6580,8 @@ function buildDashboardNaturalAnswer() {
     '',
     'Untuk cek cepat:',
     '- Telegram: /dashboard',
+    '- Telegram: /dbstatus',
+    '- Telegram: /redisstatus',
     '- Browser: /api/dashboard/health',
     '- Data protected: pakai Authorization Bearer token.'
   ].join('\n');
@@ -6997,6 +7014,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/dashboard') { await sendChunkedMessage(chatId, buildDashboardInfoText(), { reply_to_message_id: msg.message_id }); return; }
   if (resolvedCmd === '/dashboardstatus') {
     const status = getDashboardStatusText();
+    const storageStatus = storageManager.getStorageStatus?.() || {};
     const text =
 `Dashboard Status
 DASHBOARD_ENABLED: ${status.enabled ? 'true' : 'false'}
@@ -7004,9 +7022,27 @@ DASHBOARD_ADMIN_TOKEN: ${status.tokenSet ? 'set' : 'missing'}
 Protected endpoints: ${status.protectedStatus}
 Static UI: ${status.staticAssets}
 
+${formatDashboardStorageStatus(storageStatus)}
+
 Health public: /api/dashboard/health
+Storage public summary: /api/dashboard/health
+Storage protected detail: /api/dashboard/storage
 Data endpoint membutuhkan Authorization Bearer token.`;
     await sendChunkedMessage(chatId, text, { reply_to_message_id: msg.message_id });
+    return;
+  }
+  if (resolvedCmd === '/dbstatus') {
+    if (storageManager.refreshStorageHealth) {
+      await storageManager.refreshStorageHealth({ force: true }).catch(() => null);
+    }
+    await sendChunkedMessage(chatId, formatDbStatus(storageManager.getStorageStatus?.() || {}), { reply_to_message_id: msg.message_id });
+    return;
+  }
+  if (resolvedCmd === '/redisstatus') {
+    if (storageManager.refreshStorageHealth) {
+      await storageManager.refreshStorageHealth({ force: true }).catch(() => null);
+    }
+    await sendChunkedMessage(chatId, formatRedisStatus(storageManager.getStorageStatus?.() || {}), { reply_to_message_id: msg.message_id });
     return;
   }
 

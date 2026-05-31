@@ -36,7 +36,7 @@ function detectInternetCapability(text = '') {
 
 function detectDashboardHelp(text = '') {
   const lower = normalize(text).toLowerCase();
-  return /dashboard.*(?:dimana|di mana|mana|lihat|akses|login|disabled|dinonaktifkan|token|konfigurasi|error|gagal)|cara.*(?:lihat|cek|buka|akses).*dashboard|cara.*cek.*health.*bot|cara.*lihat.*(?:memory|graph|reliability)|cara.*cek.*env|token.*(?:belum|tidak).*konfigurasi/i.test(lower);
+  return /dashboard.*(?:dimana|di mana|mana|lihat|akses|login|disabled|dinonaktifkan|token|konfigurasi|error|gagal|postgres|redis|database)|cara.*(?:lihat|cek|buka|akses).*(?:dashboard|postgres|redis|database)|cara.*cek.*health.*bot|cara.*lihat.*(?:memory|graph|reliability)|cara.*cek.*env|token.*(?:belum|tidak).*konfigurasi|(?:postgres|database|redis).*(?:dashboard|unavailable|tidak tersedia|gagal|error|missing|belum set|connection failed)/i.test(lower);
 }
 
 function extractWeatherCity(text = '') {

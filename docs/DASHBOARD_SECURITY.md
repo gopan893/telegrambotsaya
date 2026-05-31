@@ -38,8 +38,25 @@ Serializer dan guard dashboard menyembunyikan:
 - `DASHBOARD_ADMIN_TOKEN`
 - Authorization header
 - connection string
+- `rediss://` Redis TLS connection string
+- Groq `gsk_...` key
+- Tavily `tvly_...` key
+- generic bearer token
 
 `/api/dashboard/env-check` hanya mengembalikan `set` atau `missing`.
+
+## Storage Health Sanitization
+
+Endpoint health/storage tidak pernah mengembalikan URL database/cache asli. Field yang boleh tampil:
+
+- configured/available
+- status
+- latency
+- table readiness
+- safe error message
+- recommended fix
+
+`DATABASE_URL`, `REDIS_URL`, username/password, token, dan credential lain selalu diringkas menjadi status aman.
 
 ## LocalStorage Risk
 
@@ -63,6 +80,7 @@ Action dashboard dibatasi:
 - Tidak menghapus memory user.
 - Rate limit 10 request per menit per IP/token hash.
 - Action berat/destruktif tidak diaktifkan di Phase 11.
+- Phase 12 menambahkan export report yang hanya mengembalikan data sanitized.
 
 ## Known Limitations
 

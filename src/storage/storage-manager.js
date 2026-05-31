@@ -3,8 +3,9 @@
 const fsp = require('fs').promises;
 const path = require('path');
 const { readJsonFile, writeJsonFileAtomic } = require('../../storage/json-store');
+const { checkPostgresHealth } = require('./database');
 const { createPostgresStore } = require('./postgres-store');
-const { createRedisStore } = require('./redis-store');
+const { createRedisStore, checkRedisHealth } = require('./redis-store');
 const { createJsonRepositories } = require('./json-repositories');
 
 function normalizeDriver(value) {
@@ -32,6 +33,8 @@ function createStorageManager(options = {}) {
   let lastError = null;
   let repositories = null;
   let migrationsStatus = 'skipped';
+  let postgresHealth = null;
+  let redisHealth = null;
 
   function shouldTryPostgres() {
     if (preferredDriver === 'json') return false;
@@ -47,6 +50,7 @@ function createStorageManager(options = {}) {
     }
 
     const cacheStatus = await cache.init();
+    redisHealth = cache.status().health || await checkRedisHealth({ redisUrl: env.REDIS_URL, env, force: true });
     let pgStatus = { ok: false, reason: shouldTryPostgres() ? 'not_initialized' : 'postgres_not_requested' };
 
     if (shouldTryPostgres()) {
@@ -61,12 +65,14 @@ function createStorageManager(options = {}) {
       persistentType = 'postgres';
       repositories = postgres.getRepositories();
       migrationsStatus = postgres.status().migrations || 'ok';
+      postgresHealth = postgres.status().health || await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true });
       lastError = null;
     } else {
       persistentType = 'json';
       repositories = createJsonRepositories({ loadData, saveData });
       migrationsStatus = pgStatus.reason === 'postgres_not_requested' ? 'skipped' : 'error';
       lastError = pgStatus.reason;
+      postgresHealth = await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true });
     }
 
     initialized = true;
@@ -223,16 +229,83 @@ function createStorageManager(options = {}) {
 
   async function healthCheck() {
     await ensureInitialized();
-    const postgresStatus = postgres.status();
-    const cacheStatus = cache.status();
+    await refreshStorageHealth();
+    const postgresStatus = normalizePostgresStatus(postgres.status());
+    const cacheStatus = normalizeRedisStatus(cache.status());
     return {
       postgres: postgresStatus.available ? 'available' : (env.DATABASE_URL ? 'error' : 'unavailable'),
       redis: cacheStatus.redisAvailable ? 'available' : (env.REDIS_URL ? 'error' : 'unavailable'),
       fallback: persistentType === 'json' ? 'json' : null,
       storageDriver: persistentType,
       migrations: migrationsStatus || postgresStatus.migrations || 'skipped',
+      postgresHealth: postgresStatus.health,
+      redisHealth: cacheStatus.health,
       lastError
     };
+  }
+
+  function normalizePostgresStatus(status = {}) {
+    const health = postgresHealth || status.health || {
+      configured: Boolean(env.DATABASE_URL),
+      available: Boolean(status.available),
+      tableReady: Boolean(status.available && status.migrated),
+      status: status.available ? 'connected' : (env.DATABASE_URL ? 'unavailable' : 'missing_env'),
+      latencyMs: null,
+      errorMessageSafe: status.lastError ? 'connection failed' : null,
+      recommendedFix: status.available ? 'No action needed' : 'Set DATABASE_URL correctly or use JSON fallback'
+    };
+    return {
+      ...status,
+      health,
+      configured: Boolean(health.configured),
+      available: Boolean(health.available),
+      tableReady: Boolean(health.tableReady),
+      status: health.status || (health.available ? 'connected' : 'unavailable'),
+      latencyMs: health.latencyMs ?? null,
+      errorMessageSafe: health.errorMessageSafe || null,
+      recommendedFix: health.recommendedFix || null
+    };
+  }
+
+  function normalizeRedisStatus(status = {}) {
+    const health = redisHealth || status.health || {
+      configured: Boolean(env.REDIS_URL),
+      available: Boolean(status.redisAvailable),
+      status: status.redisAvailable ? 'connected' : (env.REDIS_URL ? 'unavailable' : 'missing_env'),
+      latencyMs: null,
+      errorMessageSafe: status.lastError ? 'connection failed' : null,
+      recommendedFix: status.redisAvailable ? 'No action needed' : 'Set REDIS_URL correctly or use memory cache fallback'
+    };
+    return {
+      ...status,
+      health,
+      configured: Boolean(health.configured),
+      available: Boolean(health.available),
+      redisAvailable: Boolean(health.available),
+      status: health.status || (health.available ? 'connected' : 'unavailable'),
+      latencyMs: health.latencyMs ?? null,
+      errorMessageSafe: health.errorMessageSafe || null,
+      recommendedFix: health.recommendedFix || null
+    };
+  }
+
+  async function refreshStorageHealth(options = {}) {
+    await ensureInitialized();
+    const force = Boolean(options.force);
+    const pool = postgres.getPool?.() || null;
+    postgresHealth = await checkPostgresHealth({
+      pool: pool || undefined,
+      databaseUrl: env.DATABASE_URL,
+      env,
+      force
+    });
+    redisHealth = await checkRedisHealth({
+      client: cache.getClient?.(),
+      redisUrl: env.REDIS_URL,
+      env,
+      force
+    });
+    return getStorageStatus();
   }
 
   async function closeStorage() {
@@ -243,20 +316,25 @@ function createStorageManager(options = {}) {
   }
 
   function getStorageStatus() {
-    const postgresStatus = postgres.status();
-    const cacheStatus = cache.status();
+    const postgresStatus = normalizePostgresStatus(postgres.status());
+    const cacheStatus = normalizeRedisStatus(cache.status());
     return {
       initialized,
       driver: persistentType,
+      storageDriver: persistentType,
+      configuredDriver: preferredDriver,
       preferredDriver,
       persistentType,
       postgres: postgresStatus,
       postgresConfigured: Boolean(env.DATABASE_URL),
       postgresAvailable: Boolean(postgresStatus.available),
+      postgresTableReady: Boolean(postgresStatus.tableReady),
       migrations: migrationsStatus || postgresStatus.migrations || 'skipped',
       cache: cacheStatus,
       redisConfigured: Boolean(env.REDIS_URL),
       redisAvailable: Boolean(cacheStatus.redisAvailable),
+      fallbackActive: persistentType === 'json',
+      fallback: persistentType === 'json' ? 'json' : null,
       lastError
     };
   }
@@ -268,6 +346,7 @@ function createStorageManager(options = {}) {
     deleteData,
     closeStorage,
     getStorageStatus,
+    refreshStorageHealth,
     getRepositories,
     getStore,
     healthCheck,

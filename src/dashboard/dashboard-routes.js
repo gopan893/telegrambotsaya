@@ -29,6 +29,33 @@ function getStorageStatus(storageManager) {
   }
 }
 
+function buildDashboardHealthPayload(storage, dashboardStatus) {
+  const storageSafe = serializers.sanitizeStorage(storage || {});
+  return {
+    ok: true,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    version: utils.getVersion(),
+    dashboardEnabled: dashboardStatus.enabled,
+    tokenConfigured: dashboardStatus.tokenConfigured,
+    storageDriver: storageSafe.storageDriver,
+    configuredStorageDriver: storageSafe.configuredStorageDriver,
+    fallbackActive: storageSafe.fallbackActive,
+    databaseUrlConfigured: storageSafe.databaseUrlConfigured,
+    postgresAvailable: storageSafe.postgresAvailable,
+    postgresTableReady: storageSafe.postgresTableReady,
+    postgresStatus: storageSafe.postgresStatus,
+    postgresLatencyMs: storageSafe.postgresLatencyMs,
+    postgresRecommendedFix: storageSafe.postgresRecommendedFix,
+    redisUrlConfigured: storageSafe.redisUrlConfigured,
+    redisAvailable: storageSafe.redisAvailable,
+    redisStatus: storageSafe.redisStatus,
+    redisLatencyMs: storageSafe.redisLatencyMs,
+    redisRecommendedFix: storageSafe.redisRecommendedFix,
+    storage: storageSafe
+  };
+}
+
 function getAiosServices(services) {
   return {
     aiOS: services.aiOS,
@@ -199,16 +226,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
   router.get('/health', (req, res) => {
     const storage = getStorageStatus(services.storageManager);
     const dashboardStatus = auth.getDashboardStatus(services.env);
-    return guards.safeDashboardResponse(res, serializers.sanitizeHealth({
-      ok: true,
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      version: utils.getVersion(),
-      storageDriver: storage.driver || storage.persistentType || 'unknown',
-      redisAvailable: Boolean(storage.redisAvailable || storage.cache?.redisAvailable),
-      dashboardEnabled: dashboardStatus.enabled,
-      tokenConfigured: dashboardStatus.tokenConfigured
-    }));
+    return guards.safeDashboardResponse(res, serializers.sanitizeHealth(buildDashboardHealthPayload(storage, dashboardStatus)));
   });
 
   // Authenticate other API routes
@@ -228,6 +246,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
       storageStatus,
       opsStatus
     }));
+  });
+
+  router.get('/storage', async (req, res) => {
+    if (services.storageManager?.refreshStorageHealth) {
+      await safeCall(() => services.storageManager.refreshStorageHealth({ force: true }), null);
+    }
+    const storageStatus = getStorageStatus(services.storageManager);
+    return guards.safeDashboardResponse(res, serializers.sanitizeStorage(storageStatus));
   });
 
   router.get('/user/:userId/overview', async (req, res) => {
@@ -384,22 +410,32 @@ function registerDashboardRoutes(app, rawServices = {}) {
 
   // Protected Safe Admin Actions API with Rate Limit
   router.post('/actions/diagnostics/run', guards.rateLimitDashboardAction, async (req, res) => {
-    const result = await actions.handleAction('diagnostics/run', services);
+    const result = await actions.handleAction('diagnostics/run', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
   router.post('/actions/benchmark/run-light', guards.rateLimitDashboardAction, async (req, res) => {
-    const result = await actions.handleAction('benchmark/run-light', services);
+    const result = await actions.handleAction('benchmark/run-light', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
   router.post('/actions/telemetry/prune', guards.rateLimitDashboardAction, async (req, res) => {
-    const result = await actions.handleAction('telemetry/prune', services);
+    const result = await actions.handleAction('telemetry/prune', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 
   router.post('/actions/ops/refresh', guards.rateLimitDashboardAction, async (req, res) => {
-    const result = await actions.handleAction('ops/refresh', services);
+    const result = await actions.handleAction('ops/refresh', services, req.body || {});
+    return guards.safeDashboardResponse(res, result);
+  });
+
+  router.post('/actions/report/export-health', guards.rateLimitDashboardAction, async (req, res) => {
+    const result = await actions.handleAction('report/export-health', services, req.body || {});
+    return guards.safeDashboardResponse(res, result);
+  });
+
+  router.post('/actions/report/export-user-summary', guards.rateLimitDashboardAction, async (req, res) => {
+    const result = await actions.handleAction('report/export-user-summary', services, req.body || {});
     return guards.safeDashboardResponse(res, result);
   });
 

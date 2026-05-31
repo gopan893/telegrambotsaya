@@ -4,6 +4,8 @@ let singletonPool = null;
 let singletonUrl = '';
 let lastError = null;
 let lastAvailable = false;
+let lastHealth = null;
+let lastHealthAt = 0;
 
 function safeRequirePg() {
   try {
@@ -32,6 +34,29 @@ function shouldUseSsl(databaseUrl = '', env = process.env, options = {}) {
 function maskDatabaseUrl(url) {
   if (!url) return '';
   return String(url).replace(/:\/\/([^:]+):([^@]+)@/, '://$1:***@');
+}
+
+function safePostgresError(err, fallback = 'unknown') {
+  const message = String(err?.message || err || '').toLowerCase();
+  if (!message) return fallback;
+  if (/timeout|timed out|etimedout/i.test(message)) return 'timeout';
+  if (/does not exist|relation .* does not exist|migration/i.test(message)) return 'migration required';
+  if (/password|authentication|sasl|pg_hba|econnrefused|enotfound|connection|connect/i.test(message)) return 'connection failed';
+  return fallback;
+}
+
+function buildPostgresHealth(patch = {}) {
+  return {
+    configured: false,
+    available: false,
+    latencyMs: null,
+    errorCode: null,
+    errorMessageSafe: 'DATABASE_URL missing',
+    tableReady: false,
+    status: 'missing_env',
+    recommendedFix: 'Set DATABASE_URL or use JSON fallback',
+    ...patch
+  };
 }
 
 function buildPoolConfig(databaseUrl, options = {}) {
@@ -137,6 +162,91 @@ async function testPostgresConnection(options = {}) {
   }
 }
 
+async function checkPostgresHealth(options = {}) {
+  const env = options.env || process.env;
+  const databaseUrl = getDatabaseUrl({ ...options, databaseUrl: options.databaseUrl || env.DATABASE_URL });
+  const cacheTtlMs = Number(options.cacheTtlMs || 30000);
+  const now = Date.now();
+
+  if (!options.force && !options.pool && lastHealth && now - lastHealthAt < cacheTtlMs) {
+    return { ...lastHealth };
+  }
+
+  if (!databaseUrl) {
+    lastHealth = buildPostgresHealth();
+    lastHealthAt = now;
+    return { ...lastHealth };
+  }
+
+  const pg = safeRequirePg();
+  if (!pg?.Pool) {
+    lastHealth = buildPostgresHealth({
+      configured: true,
+      errorMessageSafe: 'pg module missing',
+      status: 'pg_missing',
+      recommendedFix: 'Install dependency pg'
+    });
+    lastHealthAt = now;
+    return { ...lastHealth };
+  }
+
+  const started = Date.now();
+  let pool = options.pool || null;
+  let temporaryPool = false;
+
+  try {
+    if (!pool) {
+      pool = new pg.Pool(buildPoolConfig(databaseUrl, {
+        ...options,
+        connectionTimeoutMillis: options.connectionTimeoutMillis || 5000,
+        max: options.max || 1
+      }));
+      temporaryPool = true;
+    }
+
+    await pool.query('SELECT 1 AS ok');
+    const tableResult = await pool.query("SELECT to_regclass('public.app_kv_store') AS table_name");
+    const tableReady = Boolean(tableResult.rows?.[0]?.table_name);
+    const latencyMs = Date.now() - started;
+    lastError = tableReady ? null : 'migration required';
+    lastAvailable = true;
+    lastHealth = buildPostgresHealth({
+      configured: true,
+      available: true,
+      latencyMs,
+      errorCode: null,
+      errorMessageSafe: tableReady ? null : 'migration required',
+      tableReady,
+      status: tableReady ? 'connected' : 'migration_required',
+      recommendedFix: tableReady ? 'No action needed' : 'Run storage migrations'
+    });
+  } catch (err) {
+    const safe = safePostgresError(err, 'connection failed');
+    const status = safe === 'timeout' ? 'timeout' : 'connection_failed';
+    lastError = safe;
+    lastAvailable = false;
+    lastHealth = buildPostgresHealth({
+      configured: true,
+      available: false,
+      latencyMs: Date.now() - started,
+      errorCode: err?.code || null,
+      errorMessageSafe: safe,
+      tableReady: false,
+      status,
+      recommendedFix: status === 'timeout'
+        ? 'Check database network/SSL and retry'
+        : 'Check DATABASE_URL, SSL, database availability, and credentials'
+    });
+  } finally {
+    if (temporaryPool && pool) {
+      try { await pool.end(); } catch (_) {}
+    }
+    lastHealthAt = Date.now();
+  }
+
+  return { ...lastHealth };
+}
+
 async function checkPool(pool) {
   return testPostgresConnection({ pool, databaseUrl: process.env.DATABASE_URL || 'pool' });
 }
@@ -187,6 +297,7 @@ module.exports = {
   getLastDatabaseError,
   getPgPool,
   getPool,
+  checkPostgresHealth,
   isPostgresAvailable,
   isPostgresConfigured,
   maskDatabaseUrl,

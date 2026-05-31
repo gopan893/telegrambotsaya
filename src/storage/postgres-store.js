@@ -1,6 +1,6 @@
 'use strict';
 
-const { createPostgresPool, checkPool } = require('./database');
+const { createPostgresPool, checkPool, checkPostgresHealth } = require('./database');
 const { safeRunMigrations } = require('./migrations');
 const { createPostgresRepositories } = require('./postgres-repositories');
 
@@ -12,22 +12,25 @@ function createPostgresStore(options = {}) {
   let migrationStatus = 'skipped';
   let migrationResult = null;
   let repositories = null;
+  let health = null;
 
   async function init() {
     const created = createPostgresPool(options.databaseUrl, options);
     if (!created.ok) {
       lastError = created.reason;
       available = false;
+      health = await checkPostgresHealth({ databaseUrl: options.databaseUrl, env: options.env, force: true });
       return { ok: false, reason: lastError };
     }
 
     pool = created.pool;
-    const health = await checkPool(pool);
-    if (!health.ok) {
-      lastError = health.reason;
+    const connectionHealth = await checkPool(pool);
+    if (!connectionHealth.ok) {
+      lastError = connectionHealth.reason;
       available = false;
       try { await pool.end(); } catch (_) {}
       pool = null;
+      health = await checkPostgresHealth({ databaseUrl: options.databaseUrl, env: options.env, force: true });
       return { ok: false, reason: lastError };
     }
 
@@ -45,6 +48,7 @@ function createPostgresStore(options = {}) {
         available = false;
         try { await pool.end(); } catch (_) {}
         pool = null;
+        health = await checkPostgresHealth({ databaseUrl: options.databaseUrl, env: options.env, force: true });
         return { ok: false, reason: lastError };
       }
     }
@@ -52,6 +56,7 @@ function createPostgresStore(options = {}) {
     available = true;
     repositories = createPostgresRepositories(pool);
     lastError = null;
+    health = await checkPostgresHealth({ pool, databaseUrl: options.databaseUrl, env: options.env, force: true });
     return { ok: true, migrated };
   }
 
@@ -143,7 +148,16 @@ function createPostgresStore(options = {}) {
       migrated,
       migrations: migrationStatus,
       migrationResult,
-      lastError
+      lastError,
+      health: health || {
+        configured: Boolean(options.databaseUrl),
+        available,
+        tableReady: Boolean(migrated && available),
+        status: available ? 'connected' : (options.databaseUrl ? 'unavailable' : 'missing_env'),
+        latencyMs: null,
+        errorMessageSafe: lastError ? 'connection failed' : null,
+        recommendedFix: available ? 'No action needed' : 'Check DATABASE_URL or use JSON fallback'
+      }
     };
   }
 

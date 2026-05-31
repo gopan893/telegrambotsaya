@@ -5,29 +5,41 @@ const auth = require('./dashboard-auth');
 
 const SECRET_PATTERNS = [
   /\b(token|api[_\s-]?key|secret|password|credential|authorization|private\s+key)\b/i,
-  /\b(database_url|redis_url|telegram_token|groq_api_key|mistral_api_key|openweather_api_key|tavily_api_key)\b/i,
-  /\b(databaseurl|redisurl|telegramtoken|groqapikey|mistralapikey|openweatherapikey|tavilyapikey|dashboardadmintoken)\b/i,
+  /\b(database_url|redis_url|telegram_token|groq_api_key|mistral_api_key|openweather_api_key|tavily_api_key|openai_api_key|github_token|google_client_secret)\b/i,
+  /\b(databaseurl|redisurl|telegramtoken|groqapikey|mistralapikey|openweatherapikey|tavilyapikey|dashboardadmintoken|openaiapikey|githubtoken|googleclientsecret)\b/i,
   /\bpostgres(?:ql)?:\/\/[^:\s]+:[^@\s]+@/i,
-  /\bredis:\/\/[^:\s]+:[^@\s]+@/i,
-  /\b(?:sk|ghp|github_pat|xoxb|bot)[-_][A-Za-z0-9_-]{16,}\b/i
+  /\brediss?:\/\/[^:\s]+:[^@\s]+@/i,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b/i,
+  /\b(?:sk|gsk|tvly|ghp|github_pat|xoxb|bot)[-_][A-Za-z0-9_-]{12,}\b/i
+];
+
+const SECRET_VALUE_PATTERNS = [
+  /\bpostgres(?:ql)?:\/\/[^:\s]+:[^@\s]+@/i,
+  /\brediss?:\/\/[^:\s]+:[^@\s]+@/i,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b/i,
+  /\b(?:sk|gsk|tvly|ghp|github_pat|xoxb|bot)[-_][A-Za-z0-9_-]{12,}\b/i,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/i
 ];
 
 function maskSecretLikeValues(str) {
   if (typeof str !== 'string') return str;
   let out = str;
   out = out.replace(/(postgres(?:ql)?:\/\/)[^:]+:[^@]+@/ig, '$1***:***@');
-  out = out.replace(/(redis:\/\/)[^:]+:[^@]+@/ig, '$1***:***@');
-  out = out.replace(/\b(?:sk|ghp|github_pat|xoxb|bot)[-_][A-Za-z0-9_-]{16,}\b/ig, '[redacted]');
+  out = out.replace(/(rediss?:\/\/)[^:]+:[^@]+@/ig, '$1***:***@');
+  out = out.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b/ig, 'Bearer [redacted]');
+  out = out.replace(/\b(?:sk|gsk|tvly|ghp|github_pat|xoxb|bot)[-_][A-Za-z0-9_-]{12,}\b/ig, '[redacted]');
   return out;
 }
 
 function preventSecretLeak(data) {
   if (data === null || typeof data === 'undefined') return data;
   if (typeof data === 'string') {
-    if (SECRET_PATTERNS.some(pattern => pattern.test(data))) {
+    const masked = maskSecretLikeValues(data);
+    if (masked !== data) return masked;
+    if (SECRET_VALUE_PATTERNS.some(pattern => pattern.test(data))) {
       return '[redacted]';
     }
-    return maskSecretLikeValues(data);
+    return data;
   }
   if (typeof data !== 'object') return data;
   if (Array.isArray(data)) return data.map(preventSecretLeak);
@@ -57,7 +69,14 @@ function validateUserId(userId) {
 }
 
 function validateActionName(actionName) {
-  const VALID_ACTIONS = ['diagnostics/run', 'benchmark/run-light', 'telemetry/prune', 'ops/refresh'];
+  const VALID_ACTIONS = [
+    'diagnostics/run',
+    'benchmark/run-light',
+    'telemetry/prune',
+    'ops/refresh',
+    'report/export-health',
+    'report/export-user-summary'
+  ];
   return VALID_ACTIONS.includes(actionName);
 }
 

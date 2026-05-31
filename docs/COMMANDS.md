@@ -10,6 +10,8 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 | `/help` | Daftar command. |
 | `/dashboard` | Info dashboard/API dan endpoint health. |
 | `/dashboardstatus` | Status dashboard tanpa menampilkan token. |
+| `/dbstatus` | Status PostgreSQL, readiness tabel, fallback, dan rekomendasi perbaikan. |
+| `/redisstatus` | Status Redis/cache, fallback memory cache, dan rekomendasi perbaikan. |
 | `/ping` | Cek respons bot. |
 | `/reset` | Reset state user dengan guard/konfirmasi jika tersedia. |
 | `/stats` | Status runtime ringkas, storage, Redis, memory, plugin. |
@@ -99,6 +101,8 @@ Bot dapat memakai AI OS context secara natural untuk pesan seperti:
 - `Cek apakah bot saya sehat`
 - `dashboard nya dimana?`
 - `cara cek health bot?`
+- `kenapa PostgreSQL dashboard unavailable?`
+- `redis dashboard error gimana ceknya?`
 - `Apa hubungan antara PostgreSQL, Redis, dan memory bot saya?`
 - `Apa konsep penting dari project ini?`
 - `Apa dependency terbesar dari roadmap bot saya?`

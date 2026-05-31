@@ -17,6 +17,32 @@ const UI = {
     return `${Math.round(n <= 1 ? n * 100 : n)}%`;
   },
 
+  storageStatusLabel(status) {
+    const labels = {
+      connected: 'Connected',
+      missing_env: 'Missing env',
+      pg_missing: 'pg missing',
+      ioredis_missing: 'ioredis missing',
+      connection_failed: 'Connection failed',
+      migration_required: 'Migration required',
+      timeout: 'Timeout',
+      tls_issue: 'TLS issue',
+      unavailable: 'Unavailable',
+      disabled: 'Disabled'
+    };
+    return labels[String(status || 'unavailable')] || String(status || 'unavailable');
+  },
+
+  renderStorageCards(storage = {}) {
+    return `
+      <div class="card-grid">
+        ${UI.renderMetric('Storage Driver', storage.storageDriver || 'unknown', `Configured: ${storage.configuredStorageDriver || 'auto'}`)}
+        ${UI.renderMetric('PostgreSQL', UI.storageStatusLabel(storage.postgresStatus), `Available: ${storage.postgresAvailable ? 'yes' : 'no'} | Table: ${storage.postgresTableReady ? 'ready' : 'not ready'} | ${storage.postgresLatencyMs ?? '-'}ms`)}
+        ${UI.renderMetric('Redis', UI.storageStatusLabel(storage.redisStatus), `Available: ${storage.redisAvailable ? 'yes' : 'no'} | ${storage.redisLatencyMs ?? '-'}ms`)}
+      </div>
+    `;
+  },
+
   renderCard(title, body, footer = '') {
     return `
       <div class="card">
@@ -130,10 +156,12 @@ const UI = {
 
     const health = healthRes.data;
     const summary = summaryRes.ok ? summaryRes.data : null;
+    const storage = health.storage || health;
 
     let html = UI.renderSectionHeader('System Overview', `
       <button class="btn btn-outline" id="btn-refresh-overview">🔄 Refresh</button>
       <button class="btn btn-primary" id="btn-diagnostics-overview">🩺 Run Diagnostics</button>
+      <button class="btn btn-outline" id="btn-export-health">Export Health</button>
     `);
 
     // Public Health Cards Grid
@@ -157,9 +185,10 @@ const UI = {
         <div class="card">
           <div class="card-title">Storage Driver</div>
           <div class="card-value">${Utils.escapeHtml(health.storageDriver)}</div>
-          <div class="card-subtitle">Redis status: ${health.redisAvailable ? 'Connected' : 'Disconnected'}</div>
+          <div class="card-subtitle">Fallback: ${health.fallbackActive ? 'Active' : 'Inactive'}</div>
         </div>
       </div>
+      ${UI.renderStorageCards(storage)}
     `;
 
     // Protected Summary (Only if login/token is valid)
@@ -238,6 +267,18 @@ const UI = {
       });
     }
 
+    const exportBtn = document.getElementById('btn-export-health');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', async () => {
+        try {
+          await window.DashboardExport.exportHealthReport();
+          Utils.showToast('Health report diunduh.', 'success');
+        } catch (_) {
+          Utils.showToast('Gagal export health report.', 'danger');
+        }
+      });
+    }
+
     const benchBtn = document.getElementById('btn-quick-benchmark');
     if (benchBtn) {
       benchBtn.addEventListener('click', () => {
@@ -274,7 +315,10 @@ const UI = {
   async renderOps(targetEl) {
     targetEl.innerHTML = UI.renderLoading('Memuat telemetry & diagnostics...');
     
-    const opsRes = await Api.getOps();
+    const [opsRes, storageRes] = await Promise.all([
+      Api.getOps(),
+      Api.getStorage ? Api.getStorage() : Promise.resolve({ ok: false, data: null })
+    ]);
     if (!opsRes.ok) {
       targetEl.innerHTML = UI.renderError('Gagal Memuat Ops Viewer', 'Pastikan token admin Anda benar.');
       return;
@@ -284,6 +328,7 @@ const UI = {
     const health = ops.health || {};
     const telemetry = ops.telemetry || {};
     const reliability = ops.reliability || {};
+    const storage = storageRes.ok ? storageRes.data : {};
 
     let html = UI.renderSectionHeader('Ops Viewer', `
       <button class="btn btn-outline" id="btn-refresh-ops">🔄 Refresh</button>
@@ -328,12 +373,16 @@ const UI = {
               <span class="kv-value">${health.memory?.heapUsedMb ? `${health.memory.heapUsedMb}/${health.memory.heapTotalMb} MB` : '-'}</span>
             </div>
             <div class="kv-item">
-              <span class="kv-key">Redis Available</span>
-              <span class="kv-value">${health.redis?.available !== undefined ? (health.redis.available ? 'OK' : 'FAIL') : '-'}</span>
+              <span class="kv-key">Redis</span>
+              <span class="kv-value">${UI.storageStatusLabel(storage.redisStatus)} (${storage.redisAvailable ? 'OK' : 'fallback'})</span>
             </div>
             <div class="kv-item">
-              <span class="kv-key">PostgreSQL Database</span>
-              <span class="kv-value">${health.db?.driver || 'Unavailable'}</span>
+              <span class="kv-key">PostgreSQL</span>
+              <span class="kv-value">${UI.storageStatusLabel(storage.postgresStatus)} (${storage.postgresAvailable ? 'OK' : 'fallback'})</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-key">Storage Driver</span>
+              <span class="kv-value">${Utils.escapeHtml(storage.storageDriver || 'unknown')}</span>
             </div>
           </div>
         </div>
@@ -789,44 +838,11 @@ const UI = {
         return;
       }
 
-      // Draw dynamic SVGs for visual representation (Mock graph layout)
-      let svgHtml = '';
-      if (nodes.length > 0) {
-        const svgWidth = 800;
-        const svgHeight = 240;
-        const centerX = svgWidth / 2;
-        const centerY = svgHeight / 2;
-        const radius = 90;
-
-        // Radial nodes around a main central node
-        const nodeCircles = [];
-        const edgeLines = [];
-
-        // Main node center
-        nodeCircles.push(`<circle cx="${centerX}" cy="${centerY}" r="14" fill="var(--color-accent)" stroke="#fff" stroke-width="2"/>`);
-        nodeCircles.push(`<text x="${centerX}" y="${centerY - 20}" fill="var(--text-primary)" font-size="11" font-weight="bold" text-anchor="middle">${Utils.escapeHtml(nodes[0].label || 'Center')}</text>`);
-
-        // Outer nodes
-        const numOuter = Math.min(nodes.length - 1, 8);
-        for (let i = 0; i < numOuter; i++) {
-          const angle = (i / numOuter) * 2 * Math.PI;
-          const x = centerX + radius * Math.cos(angle);
-          const y = centerY + radius * Math.sin(angle);
-          
-          edgeLines.push(`<line x1="${centerX}" y1="${centerY}" x2="${x}" y2="${y}" stroke="var(--border-color)" stroke-width="1.5" />`);
-          nodeCircles.push(`<circle cx="${x}" cy="${y}" r="8" fill="var(--bg-tertiary)" stroke="var(--color-accent)" stroke-width="1.5" />`);
-          nodeCircles.push(`<text x="${x}" y="${y + 18}" fill="var(--text-secondary)" font-size="10" text-anchor="middle">${Utils.escapeHtml(nodes[i + 1].label || '')}</text>`);
-        }
-
-        svgHtml = `
-          <div class="svg-graph-container">
-            <svg viewBox="0 0 ${svgWidth} ${svgHeight}" class="svg-graph" style="width:100%; max-height:240px;">
-              ${edgeLines.join('')}
-              ${nodeCircles.join('')}
-            </svg>
-          </div>
-        `;
-      }
+      const graphForView = { nodes, edges, stats };
+      const svgHtml = window.GraphViz
+        ? window.GraphViz.renderGraphSvg(graphForView, { nodeLimit: 24, edgeLimit: 40 })
+        : '';
+      const graphStats = window.GraphViz ? window.GraphViz.renderGraphStats(graphForView) : stats;
 
       let gHtml = `
         ${svgHtml}
@@ -834,8 +850,9 @@ const UI = {
         <div class="card" style="margin-bottom:24px;">
           <div class="card-title">Graph Statistics</div>
           <div style="display:flex; gap:32px; font-family:var(--font-mono); font-size:18px; font-weight:700; margin-top:8px;">
-            <div>Nodes: <span class="text-info">${stats.nodes}</span></div>
-            <div>Edges: <span class="text-success">${stats.edges}</span></div>
+            <div>Nodes: <span class="text-info">${graphStats.nodes}</span></div>
+            <div>Edges: <span class="text-success">${graphStats.edges}</span></div>
+            <div>Avg confidence: <span class="text-warning">${((graphStats.averageConfidence || 0) * 100).toFixed(0)}%</span></div>
           </div>
         </div>
 
