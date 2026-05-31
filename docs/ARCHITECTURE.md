@@ -95,6 +95,42 @@ Keputusan penting:
 - Redis hanya menjadi cache/session sementara. Jika Redis mati, bot tetap berjalan dengan memory cache lokal.
 - `DATABASE_URL` dan `REDIS_URL` tidak diwajibkan oleh `validateConfig`, sehingga Render free tier tetap aman saat belum memakai add-on database.
 
+## Phase 6: PostgreSQL Relational Schema
+
+Storage PostgreSQL sekarang punya dua lapisan:
+
+```text
+storage-manager
+-> PostgreSQL repositories + relational tables jika DATABASE_URL sehat
+-> app_kv_store untuk compatibility JSON/KV lama
+-> JSON repositories + JSON files jika PostgreSQL tidak tersedia
+-> Redis cache jika REDIS_URL sehat, memory cache jika tidak
+```
+
+Migration idempotent disimpan di `schema_migrations`:
+
+- `001_core_users`
+- `002_memory_schema`
+- `003_goal_workflow_schema`
+- `004_graph_schema`
+- `005_insight_reflection_schema`
+- `006_research_workspace_schema`
+- `007_ops_telemetry_schema`
+- `008_kv_compat_schema`
+
+Tabel relational yang dibuat:
+
+- `users`, `adaptive_profiles`
+- `memories`
+- `goals`, `workflows`, `workflow_steps`
+- `insights`, `reflections`
+- `graph_nodes`, `graph_edges`
+- `research_sessions`, `workspace_notes`
+- `telemetry_events`, `incidents`, `benchmark_runs`, `ops_lessons`
+- `app_kv_store`
+
+Repository memakai query parameterized langsung lewat `pg`, tanpa ORM berat. Semua query user-data utama memakai `user_id`, soft delete dipakai untuk memory/goal/workflow/graph/insight, dan telemetry tidak menyimpan prompt penuh atau secret.
+
 ## Tahap 3: Autonomous AI System
 
 Alur utama sekarang diarahkan ke `src/core/autonomous-engine.js` setelah command Telegram lama selesai diproses.

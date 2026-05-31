@@ -70,7 +70,8 @@ decision = cleanManager.prepare({
   text: 'iya',
   command: null
 });
-assert.strictEqual(decision.action, 'normal', 'affirmative without pending should stay normal chat');
+assert.strictEqual(decision.action, 'direct', 'affirmative without context should ask clarification');
+assert(/maksud/i.test(decision.responseText));
 
 const genericQuestionManager = createConversationManager();
 const genericPending = genericQuestionManager.recordBotReply({
@@ -94,6 +95,7 @@ assert(/bagian/i.test(decision.responseText));
 assert.strictEqual(followup.detect('boleh').kind, 'affirm');
 assert.strictEqual(followup.detect('tidak').kind, 'deny');
 assert.strictEqual(followup.detect('lanjutkan').kind, 'continue');
+assert.strictEqual(followup.detectFollowUp('iya', {}).isFollowUp, false);
 
 const shift = topicShift.detectTopicShift({
   text: 'Buatkan kode login Next.js',
@@ -105,5 +107,31 @@ const shift = topicShift.detectTopicShift({
   context: {}
 });
 assert.strictEqual(shift.shifted, true);
+assert.strictEqual(shift.isTopicShift, true);
+
+const manager2 = createConversationManager();
+manager2.recordBotReply({
+  userId: 'u5',
+  chatId: 'c5',
+  userText: 'Jelaskan spesifikasi Xiaomi 14',
+  botText: 'Xiaomi 14 adalah flagship compact dengan Snapdragon 8 Gen 3.',
+  intent: 'product_spec_explanation'
+});
+decision = manager2.prepare({
+  userId: 'u5',
+  chatId: 'c5',
+  text: 'Bandingkan dengan iPhone',
+  command: null
+});
+assert.strictEqual(decision.action, 'continue');
+assert(/Xiaomi|flagship/i.test(decision.promptContext));
+
+decision = manager2.prepare({
+  userId: 'u5',
+  chatId: 'c5',
+  text: 'Buatkan kode login Next.js',
+  command: null
+});
+assert.strictEqual(decision.action, 'new_topic');
 
 console.log('Conversation layer checks passed.');

@@ -17,6 +17,9 @@ function replyExtra(ctx) {
 }
 
 async function sendText(services, ctx, text, extra = {}) {
+  if (typeof services.sendTelegramMessage === 'function') {
+    return services.sendTelegramMessage(ctx.chatId, text, { ...replyExtra(ctx), ...extra });
+  }
   if (typeof services.sendChunkedMessage === 'function') {
     await services.sendChunkedMessage(ctx.chatId, text, { ...replyExtra(ctx), ...extra });
     return true;
@@ -62,7 +65,7 @@ async function getRequiredState(services, ctx) {
     await sendText(
       services,
       ctx,
-      'Pilihan ini sudah kedaluwarsa. Kirim pertanyaan lagi, lalu pilih tombol yang baru.'
+      'Konteks tombol ini sudah kedaluwarsa. Coba kirim pertanyaannya lagi ya.'
     );
     return null;
   }
@@ -155,9 +158,11 @@ async function handleCodingAction(services, query, action) {
   const topic = state.userText || 'kebutuhan coding tadi';
   const actionMap = {
     make: 'buat implementasi kode production-ready',
+    code: 'buat implementasi kode production-ready',
     debug: 'bantu debug dan cari akar masalah',
     error: 'jelaskan error, penyebab, dan solusinya',
     structure: 'buat struktur folder yang scalable',
+    folder: 'buat struktur folder yang scalable',
     jwt: 'gunakan JWT',
     nextauth: 'gunakan NextAuth',
     session: 'gunakan session-based auth',
@@ -276,6 +281,34 @@ async function handleOpsAction(services, query, action) {
   return true;
 }
 
+async function handleWellnessAction(services, query, action) {
+  const ctx = getQueryContext(query);
+  const state = await getRequiredState(services, ctx);
+  if (!state) return true;
+
+  const topic = state.userText || 'topik kesehatan atau kebiasaan tadi';
+  const actionMap = {
+    safe: 'beri tips aman dan batasan yang perlu diperhatikan',
+    plan7d: 'buat rencana 7 hari yang realistis dan tidak ekstrem',
+    help: 'jelaskan kapan perlu bantuan profesional atau pemeriksaan lebih lanjut'
+  };
+  const prompt = `Konteks user:
+${topic}
+
+Fokus tombol: ${actionMap[action] || 'bantu secara aman dan empatik'}.
+
+Jawab dengan empati, ringkas, dan aman:
+- inti jawaban
+- langkah aman
+- tanda bahaya atau kapan perlu bantuan
+- next step kecil
+
+Jangan diagnosis pasti dan jangan mengaku sebagai dokter.`;
+  const result = await askActionAI(services, ctx, prompt, 'interactive_wellness');
+  await sendText(services, ctx, result);
+  return true;
+}
+
 async function handleProductAction(services, query, action) {
   const ctx = getQueryContext(query);
   const state = await getRequiredState(services, ctx);
@@ -307,5 +340,6 @@ module.exports = {
   handleOpsAction,
   handleProductAction,
   handleSaveMemory,
-  handleSummarize
+  handleSummarize,
+  handleWellnessAction
 };

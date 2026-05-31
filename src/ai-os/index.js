@@ -9,6 +9,12 @@ const workflowEngine = require('./workflow-engine');
 const insightStore = require('./insight-store');
 const knowledgeGraph = require('./knowledge-graph');
 const semanticRelationshipEngine = require('./semantic-relationship-engine');
+const conceptExtractor = require('./concept-extractor');
+const graphRetriever = require('./graph-retriever');
+const graphSummarizer = require('./graph-summarizer');
+const graphGuards = require('./graph-guards');
+const graphUtils = require('./graph-utils');
+const graphNaturalIntegration = require('./graph-natural-integration');
 const strategicReasoning = require('./strategic-reasoning');
 const reflectionEngine = require('./reflection-engine');
 const metaReasoning = require('./meta-reasoning');
@@ -17,6 +23,7 @@ const researchIntelligence = require('./research-intelligence');
 const cognitiveWorkspace = require('./cognitive-workspace');
 const learningEvolution = require('./learning-evolution');
 const cognitiveAnalytics = require('./cognitive-analytics');
+const naturalIntegration = require('./natural-integration');
 const legacyGuards = require('./guards');
 const guards = require('./aios-guards');
 const utils = require('./aios-utils');
@@ -32,6 +39,12 @@ function createAIOS() {
     insightStore,
     knowledgeGraph,
     semanticRelationshipEngine,
+    conceptExtractor,
+    graphRetriever,
+    graphSummarizer,
+    graphGuards,
+    graphUtils,
+    graphNaturalIntegration,
     strategicReasoning,
     reflectionEngine,
     metaReasoning,
@@ -40,6 +53,7 @@ function createAIOS() {
     cognitiveWorkspace,
     learningEvolution,
     cognitiveAnalytics,
+    naturalIntegration,
     guards,
     legacyGuards,
     utils,

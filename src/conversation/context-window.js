@@ -3,6 +3,7 @@
 const guards = require('./conversation-guards');
 
 const DEFAULT_MAX_MESSAGES = 8;
+const DEFAULT_TTL_MS = 45 * 60 * 1000;
 
 function makeKey(userId, chatId) {
   return `${guards.safeText(userId)}:${guards.safeText(chatId)}`;
@@ -11,6 +12,7 @@ function makeKey(userId, chatId) {
 class ContextWindow {
   constructor(options = {}) {
     this.maxMessages = Number(options.maxMessages || DEFAULT_MAX_MESSAGES);
+    this.ttlMs = Number(options.ttlMs || DEFAULT_TTL_MS);
     this.windows = new Map();
   }
 
@@ -24,7 +26,8 @@ class ContextWindow {
         activeTopic: '',
         lastIntent: '',
         shortSummary: '',
-        updatedAt: guards.nowMs()
+        updatedAt: guards.nowMs(),
+        expiresAt: guards.nowMs() + this.ttlMs
       });
     }
     return this.windows.get(key);
@@ -60,6 +63,8 @@ class ContextWindow {
     win.messages = win.messages.slice(-this.maxMessages);
     win.shortSummary = this.summarize(win);
     win.updatedAt = guards.nowMs();
+    win.expiresAt = win.updatedAt + this.ttlMs;
+    this.cleanupExpiredContext();
     return win;
   }
 
@@ -107,9 +112,46 @@ class ContextWindow {
   clear(userId, chatId) {
     this.windows.delete(makeKey(userId, chatId));
   }
+
+  cleanupExpiredContext() {
+    const now = guards.nowMs();
+    for (const [key, win] of this.windows.entries()) {
+      if (now > Number(win.expiresAt || 0)) this.windows.delete(key);
+    }
+  }
+}
+
+const singleton = new ContextWindow();
+
+function addMessage(userId, chatId, role, content, meta = {}) {
+  return singleton.record(userId, chatId, role, content, meta);
+}
+
+function getContextWindow(userId, chatId) {
+  return singleton.get(userId, chatId);
+}
+
+function summarizeContextWindow(messagesOrWindow) {
+  const win = Array.isArray(messagesOrWindow)
+    ? { messages: messagesOrWindow }
+    : messagesOrWindow;
+  return singleton.summarize(win || { messages: [] });
+}
+
+function clearContextWindow(userId, chatId) {
+  return singleton.clear(userId, chatId);
+}
+
+function cleanupExpiredContext() {
+  return singleton.cleanupExpiredContext();
 }
 
 module.exports = {
+  addMessage,
+  cleanupExpiredContext,
+  clearContextWindow,
   ContextWindow,
-  createContextWindow: (options) => new ContextWindow(options)
+  createContextWindow: (options) => new ContextWindow(options),
+  getContextWindow,
+  summarizeContextWindow
 };

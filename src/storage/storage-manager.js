@@ -5,6 +5,7 @@ const path = require('path');
 const { readJsonFile, writeJsonFileAtomic } = require('../../storage/json-store');
 const { createPostgresStore } = require('./postgres-store');
 const { createRedisStore } = require('./redis-store');
+const { createJsonRepositories } = require('./json-repositories');
 
 function normalizeDriver(value) {
   const driver = String(value || 'auto').trim().toLowerCase();
@@ -19,7 +20,8 @@ function createStorageManager(options = {}) {
   const preferredDriver = normalizeDriver(env.STORAGE_DRIVER);
   const postgres = createPostgresStore({
     databaseUrl: env.DATABASE_URL,
-    runMigrations: true
+    env,
+    runMigrations: String(env.RUN_MIGRATIONS || 'true').toLowerCase() !== 'false'
   });
   let cache = createRedisStore({
     redisUrl: env.REDIS_URL,
@@ -28,6 +30,8 @@ function createStorageManager(options = {}) {
   let persistentType = 'json';
   let initialized = false;
   let lastError = null;
+  let repositories = null;
+  let migrationsStatus = 'skipped';
 
   function shouldTryPostgres() {
     if (preferredDriver === 'json') return false;
@@ -55,9 +59,13 @@ function createStorageManager(options = {}) {
 
     if (pgStatus.ok) {
       persistentType = 'postgres';
+      repositories = postgres.getRepositories();
+      migrationsStatus = postgres.status().migrations || 'ok';
       lastError = null;
     } else {
       persistentType = 'json';
+      repositories = createJsonRepositories({ loadData, saveData });
+      migrationsStatus = pgStatus.reason === 'postgres_not_requested' ? 'skipped' : 'error';
       lastError = pgStatus.reason;
     }
 
@@ -67,6 +75,7 @@ function createStorageManager(options = {}) {
       persistentType,
       cache: cacheStatus.ok ? 'redis' : 'memory-cache',
       postgres: pgStatus,
+      migrations: migrationsStatus,
       fallback: persistentType === 'json'
     };
   }
@@ -92,6 +101,7 @@ function createStorageManager(options = {}) {
       const postgresStatus = postgres.status();
       if (!postgresStatus.available) {
         persistentType = 'json';
+        repositories = createJsonRepositories({ loadData, saveData });
         lastError = postgresStatus.lastError || 'postgres_read_failed';
         value = await readJsonFile(jsonBaseDir, key, defaultValue);
       }
@@ -115,6 +125,7 @@ function createStorageManager(options = {}) {
       if (!saved) {
         const status = postgres.status();
         persistentType = 'json';
+        repositories = createJsonRepositories({ loadData, saveData });
         lastError = status.lastError || 'postgres_write_failed';
       }
     }
@@ -165,6 +176,65 @@ function createStorageManager(options = {}) {
     return cache.setCache(key, value, ttlSeconds);
   }
 
+  function isPostgresEnabled() {
+    return persistentType === 'postgres' && Boolean(postgres.status().available);
+  }
+
+  function isRedisEnabled() {
+    return Boolean(cache.status().redisAvailable);
+  }
+
+  function getStore() {
+    return persistentType === 'postgres' ? postgres : null;
+  }
+
+  function getRepositories() {
+    if (!repositories) {
+      repositories = persistentType === 'postgres' && postgres.getRepositories()
+        ? postgres.getRepositories()
+        : createJsonRepositories({ loadData, saveData });
+    }
+    return repositories;
+  }
+
+  async function safeRead(key, defaultValue) {
+    try {
+      return await loadData(key, defaultValue);
+    } catch (_) {
+      return defaultValue;
+    }
+  }
+
+  async function safeWrite(key, value) {
+    try {
+      return await saveData(key, value);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function safeDelete(key) {
+    try {
+      return await deleteData(key);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function healthCheck() {
+    await ensureInitialized();
+    const postgresStatus = postgres.status();
+    const cacheStatus = cache.status();
+    return {
+      postgres: postgresStatus.available ? 'available' : (env.DATABASE_URL ? 'error' : 'unavailable'),
+      redis: cacheStatus.redisAvailable ? 'available' : (env.REDIS_URL ? 'error' : 'unavailable'),
+      fallback: persistentType === 'json' ? 'json' : null,
+      storageDriver: persistentType,
+      migrations: migrationsStatus || postgresStatus.migrations || 'skipped',
+      lastError
+    };
+  }
+
   async function closeStorage() {
     await Promise.allSettled([
       postgres.close(),
@@ -183,6 +253,7 @@ function createStorageManager(options = {}) {
       postgres: postgresStatus,
       postgresConfigured: Boolean(env.DATABASE_URL),
       postgresAvailable: Boolean(postgresStatus.available),
+      migrations: migrationsStatus || postgresStatus.migrations || 'skipped',
       cache: cacheStatus,
       redisConfigured: Boolean(env.REDIS_URL),
       redisAvailable: Boolean(cacheStatus.redisAvailable),
@@ -197,10 +268,19 @@ function createStorageManager(options = {}) {
     deleteData,
     closeStorage,
     getStorageStatus,
+    getRepositories,
+    getStore,
+    healthCheck,
+    isPostgresEnabled,
+    isRedisEnabled,
+    safeDelete,
+    safeRead,
+    safeWrite,
     cacheGet,
     cacheSet,
     init: initStorage,
     readData: loadData,
+    writeData: saveData,
     close: closeStorage,
     status: getStorageStatus
   };

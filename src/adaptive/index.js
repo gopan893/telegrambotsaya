@@ -24,7 +24,8 @@ function createAdaptiveSystem() {
     const decision = router.routeMessage({
       text: input.text,
       profile,
-      hasAttachment: input.hasAttachment
+      hasAttachment: input.hasAttachment,
+      conversationState: input.conversationState || null
     });
     decision.memoryHints = memorySelector.selectMemoryHints(user, aiOSStatus, decision.mode);
     decision.promptHint = style.buildPromptHint(decision);

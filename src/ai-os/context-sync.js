@@ -8,19 +8,27 @@ const knowledgeGraph = require('./knowledge-graph');
 const memoryBus = require('./memory-bus');
 const insightStore = require('./insight-store');
 const utils = require('./aios-utils');
+const contextRelevanceGate = require('./context-relevance-gate');
 
 function syncContext(userId, query = '', botServices, options = {}) {
   const state = guards.ensureAIOSState(userId, botServices);
   const maxChars = Number(options.maxChars || guards.DEFAULT_LIMITS.contextChars);
-  const activeGoals = goalManager.getActiveGoals(userId, botServices, 5);
-  const activeWorkflows = workflowEngine.listActiveWorkflows(userId, botServices, 5);
-  const memories = options.skipMemory
+  let activeGoals = goalManager.getActiveGoals(userId, botServices, 5);
+  let activeWorkflows = workflowEngine.listActiveWorkflows(userId, botServices, 5);
+  let memories = options.skipMemory
     ? []
     : unifiedMemory.searchMemory(userId, query, { limit: options.memoryLimit || 8 }, botServices);
   const graph = options.skipGraph
     ? { nodes: [], edges: [] }
     : knowledgeGraph.searchGraph(userId, query, botServices, 6);
-  const insights = memoryBus.getRecentInsights(userId, botServices, 5);
+  let insights = memoryBus.getRecentInsights(userId, botServices, 5);
+
+  try {
+    memories = contextRelevanceGate.filterRelevantContext(query, memories);
+    activeGoals = contextRelevanceGate.filterRelevantContext(query, activeGoals);
+    activeWorkflows = contextRelevanceGate.filterRelevantContext(query, activeWorkflows);
+    insights = contextRelevanceGate.filterRelevantContext(query, insights);
+  } catch (_) {}
 
   const fragments = [
     formatGoals(activeGoals),
@@ -62,11 +70,18 @@ async function buildAIOSContext(userId, query = '', services = {}) {
     await knowledgeGraph.hydrateGraphFromStorage?.(userId, services);
   } catch (_) {}
 
-  const relevantMemory = unifiedMemory.searchMemory(userId, query, { limit: 5 }, services);
-  const activeGoals = goalManager.listGoals(userId, { status: 'active', limit: 5 }, services);
-  const activeWorkflows = workflowEngine.listWorkflows(userId, { status: 'active', limit: 5 }, services);
-  const recentInsights = await insightStore.listInsights(userId, { limit: 5 }, services);
+  let relevantMemory = unifiedMemory.searchMemory(userId, query, { limit: 5 }, services);
+  let activeGoals = goalManager.listGoals(userId, { status: 'active', limit: 5 }, services);
+  let activeWorkflows = workflowEngine.listWorkflows(userId, { status: 'active', limit: 5 }, services);
+  let recentInsights = await insightStore.listInsights(userId, { limit: 5 }, services);
   const graph = knowledgeGraph.searchGraph(userId, query, services, 5);
+
+  try {
+    relevantMemory = contextRelevanceGate.filterRelevantContext(query, relevantMemory);
+    activeGoals = contextRelevanceGate.filterRelevantContext(query, activeGoals);
+    activeWorkflows = contextRelevanceGate.filterRelevantContext(query, activeWorkflows);
+    recentInsights = contextRelevanceGate.filterRelevantContext(query, recentInsights);
+  } catch (_) {}
 
   const summaryText = [
     activeGoals.length ? `Goals: ${activeGoals.map(goal => goal.title).join(', ')}` : '',

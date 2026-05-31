@@ -26,6 +26,15 @@ function buildPendingInstruction(text, pending, followup) {
 function buildContextInstruction(text, context, followup) {
   const topic = context?.activeTopic || 'topik sebelumnya';
   const kind = followup?.kind || 'continue';
+  const lower = guards.safeLower(text);
+
+  if (lower.includes('ringkas')) {
+    return `User ingin ringkasan dari pembahasan "${topic}". Ringkas jawaban terakhir, jangan ulang semua detail.`;
+  }
+
+  if (lower.includes('bandingkan')) {
+    return `User ingin perbandingan terkait "${topic}". Gunakan konteks sebelumnya sebagai objek utama, lalu bandingkan dengan objek yang disebut user.`;
+  }
 
   if (kind === 'referential') {
     return `User merujuk ke "${topic}". Jawab berdasarkan konteks terakhir jika cukup jelas; jika tidak, minta klarifikasi singkat.`;
@@ -52,6 +61,53 @@ function buildContinuation(input = {}) {
   };
 }
 
+function handleContinuation(context = {}) {
+  return buildContinuation(context);
+}
+
+function handleAffirmative(context = {}) {
+  return buildContinuation({
+    ...context,
+    followup: { ...(context.followup || {}), kind: 'affirm' }
+  });
+}
+
+function handleNegative(context = {}) {
+  return {
+    action: 'direct',
+    reason: 'negative_followup',
+    responseText: 'Oke, saya tidak lanjutkan bagian itu. Kamu bisa kirim topik baru kapan saja.'
+  };
+}
+
+function handleContinue(context = {}) {
+  return buildContinuation({
+    ...context,
+    followup: { ...(context.followup || {}), kind: 'continue' }
+  });
+}
+
+function handleReference(context = {}) {
+  return buildContinuation({
+    ...context,
+    followup: { ...(context.followup || {}), kind: 'referential' }
+  });
+}
+
+function handleCancel() {
+  return {
+    action: 'direct',
+    reason: 'cancel_followup',
+    responseText: 'Oke, saya batalkan. Tidak ada aksi yang dijalankan.'
+  };
+}
+
 module.exports = {
-  buildContinuation
+  buildContinuation,
+  handleAffirmative,
+  handleCancel,
+  handleContinuation,
+  handleContinue,
+  handleNegative,
+  handleReference
 };

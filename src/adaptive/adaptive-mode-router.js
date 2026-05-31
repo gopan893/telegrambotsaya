@@ -121,6 +121,7 @@ const SIGNALS = {
 function routeMessage(input = {}) {
   const text = String(input.text || '');
   const lower = text.toLowerCase();
+  const conversationState = input.conversationState || {};
   const complexity = detectComplexity(text);
   let mode = 'simple';
   let reason = 'Pesan sederhana, gunakan assistant ringan.';
@@ -162,6 +163,18 @@ function routeMessage(input = {}) {
     mode = 'strategic';
     reason = 'Kompleksitas tinggi, aktifkan reasoning strategis.';
     confidence = 0.68;
+  }
+
+  if (conversationState.action === 'continue' && mode === 'simple') {
+    mode = 'simple';
+    reason = 'Pesan adalah follow-up; gunakan konteks percakapan tanpa pipeline berat.';
+    confidence = Math.max(confidence, 0.7);
+  }
+
+  if (conversationState.action === 'new_topic' && conversationState.newIntent && mode === 'simple') {
+    mode = conversationState.newIntent === 'general_question' ? 'simple' : conversationState.newIntent;
+    reason = 'Conversation layer mendeteksi topik baru yang jelas.';
+    confidence = Math.max(confidence, Number(conversationState.confidence || 0.72));
   }
 
   return guards.capConfidence({

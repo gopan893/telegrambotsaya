@@ -1,13 +1,17 @@
 'use strict';
 
 const { createPostgresPool, checkPool } = require('./database');
-const { runMigrations } = require('./migrations');
+const { safeRunMigrations } = require('./migrations');
+const { createPostgresRepositories } = require('./postgres-repositories');
 
 function createPostgresStore(options = {}) {
   let pool = null;
   let available = false;
   let lastError = null;
   let migrated = false;
+  let migrationStatus = 'skipped';
+  let migrationResult = null;
+  let repositories = null;
 
   async function init() {
     const created = createPostgresPool(options.databaseUrl, options);
@@ -29,8 +33,13 @@ function createPostgresStore(options = {}) {
 
     if (options.runMigrations !== false) {
       try {
-        const migration = await runMigrations(pool);
+        const migration = await safeRunMigrations(pool);
+        migrationResult = migration;
+        migrationStatus = migration?.status || (migration?.ok ? 'ok' : 'error');
         migrated = Boolean(migration?.ok);
+        if (!migration?.ok) {
+          throw new Error(migration?.reason || 'migration_failed');
+        }
       } catch (err) {
         lastError = err.message;
         available = false;
@@ -41,6 +50,7 @@ function createPostgresStore(options = {}) {
     }
 
     available = true;
+    repositories = createPostgresRepositories(pool);
     lastError = null;
     return { ok: true, migrated };
   }
@@ -121,6 +131,7 @@ function createPostgresStore(options = {}) {
     }
     available = false;
     pool = null;
+    repositories = null;
   }
 
   function status() {
@@ -130,8 +141,18 @@ function createPostgresStore(options = {}) {
       available,
       connected: available,
       migrated,
+      migrations: migrationStatus,
+      migrationResult,
       lastError
     };
+  }
+
+  function getPool() {
+    return pool;
+  }
+
+  function getRepositories() {
+    return repositories;
   }
 
   return {
@@ -139,6 +160,8 @@ function createPostgresStore(options = {}) {
     getJson,
     setJson,
     deleteKey,
+    getPool,
+    getRepositories,
     listKeys,
     readKey: getJson,
     writeKey: setJson,

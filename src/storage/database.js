@@ -3,13 +3,30 @@
 let singletonPool = null;
 let singletonUrl = '';
 let lastError = null;
+let lastAvailable = false;
 
 function safeRequirePg() {
   try {
     return require('pg');
   } catch (err) {
+    lastError = err.message;
     return null;
   }
+}
+
+function getDatabaseUrl(options = {}) {
+  return options.databaseUrl || process.env.DATABASE_URL || '';
+}
+
+function isPostgresConfigured(env = process.env) {
+  return Boolean(env.DATABASE_URL);
+}
+
+function shouldUseSsl(databaseUrl = '', env = process.env, options = {}) {
+  if (options.ssl === false) return false;
+  if (options.ssl === true) return true;
+  if (String(env.PGSSL || '').toLowerCase() === 'true') return true;
+  return /(render|supabase|neon|railway|amazonaws|azure|heroku)/i.test(String(databaseUrl));
 }
 
 function maskDatabaseUrl(url) {
@@ -17,30 +34,58 @@ function maskDatabaseUrl(url) {
   return String(url).replace(/:\/\/([^:]+):([^@]+)@/, '://$1:***@');
 }
 
-function createPostgresPool(databaseUrl, options = {}) {
-  const pg = safeRequirePg();
-  if (!databaseUrl) {
-    return {
-      ok: false,
-      reason: 'DATABASE_URL tidak diset',
-      pool: null
-    };
-  }
-  if (!pg?.Pool) {
-    return {
-      ok: false,
-      reason: 'Package pg belum tersedia. Jalankan npm install setelah package.json diperbarui.',
-      pool: null
-    };
+function buildPoolConfig(databaseUrl, options = {}) {
+  const env = options.env || process.env;
+  const config = {
+    connectionString: databaseUrl,
+    max: Number(options.max || 5),
+    idleTimeoutMillis: Number(options.idleTimeoutMillis || 30000),
+    connectionTimeoutMillis: Number(options.connectionTimeoutMillis || 5000)
+  };
+
+  if (shouldUseSsl(databaseUrl, env, options)) {
+    config.ssl = { rejectUnauthorized: false };
   }
 
-  const pool = new pg.Pool({
-    connectionString: databaseUrl,
-    max: options.max || 3,
-    idleTimeoutMillis: options.idleTimeoutMillis || 30000,
-    connectionTimeoutMillis: options.connectionTimeoutMillis || 5000,
-    ssl: options.ssl === false ? false : { rejectUnauthorized: false }
-  });
+  return config;
+}
+
+function createPgPool(options = {}) {
+  const pg = safeRequirePg();
+  const databaseUrl = getDatabaseUrl(options);
+
+  if (!databaseUrl) {
+    lastError = 'DATABASE_URL tidak diset';
+    lastAvailable = false;
+    return null;
+  }
+
+  if (!pg?.Pool) {
+    lastError = 'Package pg tidak tersedia';
+    lastAvailable = false;
+    return null;
+  }
+
+  try {
+    const pool = new pg.Pool(buildPoolConfig(databaseUrl, options));
+    lastError = null;
+    return pool;
+  } catch (err) {
+    lastError = err.message;
+    lastAvailable = false;
+    return null;
+  }
+}
+
+function createPostgresPool(databaseUrl, options = {}) {
+  const pool = createPgPool({ ...options, databaseUrl });
+  if (!pool) {
+    return {
+      ok: false,
+      reason: lastError || 'postgres_pool_failed',
+      pool: null
+    };
+  }
 
   return {
     ok: true,
@@ -49,9 +94,11 @@ function createPostgresPool(databaseUrl, options = {}) {
   };
 }
 
-function getPool(databaseUrl = process.env.DATABASE_URL, options = {}) {
+function getPgPool(options = {}) {
+  const databaseUrl = getDatabaseUrl(options);
   if (!databaseUrl) {
     lastError = 'DATABASE_URL tidak diset';
+    lastAvailable = false;
     return null;
   }
 
@@ -59,43 +106,55 @@ function getPool(databaseUrl = process.env.DATABASE_URL, options = {}) {
     return singletonPool;
   }
 
-  const created = createPostgresPool(databaseUrl, options);
-  if (!created.ok) {
-    lastError = created.reason;
-    return null;
-  }
-
-  singletonPool = created.pool;
-  singletonUrl = databaseUrl;
-  lastError = null;
+  singletonPool = createPgPool(options);
+  singletonUrl = singletonPool ? databaseUrl : '';
   return singletonPool;
 }
 
-async function checkPool(pool) {
-  if (!pool) return { ok: false, reason: 'pool_missing' };
+function getPool(databaseUrl = process.env.DATABASE_URL, options = {}) {
+  return getPgPool({ ...options, databaseUrl });
+}
+
+async function testPostgresConnection(options = {}) {
+  if (!getDatabaseUrl(options)) {
+    return { ok: false, available: false, reason: 'DATABASE_URL tidak diset' };
+  }
+
+  const pool = options.pool || getPgPool(options);
+  if (!pool) {
+    return { ok: false, available: false, reason: lastError || 'pool_missing' };
+  }
+
   try {
     await pool.query('SELECT 1 AS ok');
-    return { ok: true };
+    lastError = null;
+    lastAvailable = true;
+    return { ok: true, available: true };
   } catch (err) {
-    return { ok: false, reason: err.message };
+    lastError = err.message;
+    lastAvailable = false;
+    return { ok: false, available: false, reason: err.message };
   }
 }
 
+async function checkPool(pool) {
+  return testPostgresConnection({ pool, databaseUrl: process.env.DATABASE_URL || 'pool' });
+}
+
 async function query(sql, params = [], options = {}) {
-  const pool = options.pool || getPool(options.databaseUrl || process.env.DATABASE_URL, options);
-  if (!pool) {
-    return null;
-  }
+  const pool = options.pool || getPgPool(options);
+  if (!pool) return null;
 
   try {
     return await pool.query(sql, params);
   } catch (err) {
     lastError = err.message;
+    lastAvailable = false;
     return null;
   }
 }
 
-async function closeDatabase() {
+async function closePgPool() {
   if (singletonPool) {
     try {
       await singletonPool.end();
@@ -103,6 +162,15 @@ async function closeDatabase() {
   }
   singletonPool = null;
   singletonUrl = '';
+  lastAvailable = false;
+}
+
+async function closeDatabase() {
+  return closePgPool();
+}
+
+function isPostgresAvailable() {
+  return Boolean(lastAvailable && singletonPool);
 }
 
 function getLastDatabaseError() {
@@ -110,11 +178,19 @@ function getLastDatabaseError() {
 }
 
 module.exports = {
-  createPostgresPool,
+  buildPoolConfig,
   checkPool,
-  getPool,
-  query,
   closeDatabase,
+  closePgPool,
+  createPgPool,
+  createPostgresPool,
   getLastDatabaseError,
-  maskDatabaseUrl
+  getPgPool,
+  getPool,
+  isPostgresAvailable,
+  isPostgresConfigured,
+  maskDatabaseUrl,
+  query,
+  shouldUseSsl,
+  testPostgresConnection
 };

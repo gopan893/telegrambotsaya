@@ -97,6 +97,8 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /help
 /menu
 /actions
+/dashboard
+/dashboardstatus
 /mode
 /adaptive status
 /think masalah
@@ -113,6 +115,13 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /goals
 /workflows
 /graph
+/graph PostgreSQL
+/concepts
+/relate PostgreSQL | persistent memory | supports | PostgreSQL menyimpan memory jangka panjang
+/graphsearch memory
+/graphrisks
+/graphdeps
+/graphstats
 /ops
 /health
 /stats
@@ -143,6 +152,36 @@ Layer `src/conversation/` menangani pesan non-command sebelum masuk AI pipeline:
 - topik baru seperti coding/debugging tidak dipaksa ke konteks lama;
 - `lanjut` tanpa konteks cukup akan memicu klarifikasi singkat;
 - context window dibatasi beberapa pesan terakhir agar ringan untuk Render free tier.
+
+## PostgreSQL Relational Storage
+
+Phase 6 menambahkan schema relational PostgreSQL tanpa menghapus fallback lama.
+
+- `app_kv_store` tetap ada untuk kompatibilitas data JSON/KV lama.
+- Jika `DATABASE_URL` valid, startup menjalankan migration idempotent dan mengaktifkan repository PostgreSQL.
+- Jika PostgreSQL kosong/error, bot tetap memakai JSON fallback.
+- Redis tetap optional untuk cache/session; tanpa `REDIS_URL`, sistem memakai memory cache lokal.
+- Tabel relational utama: `users`, `adaptive_profiles`, `memories`, `goals`, `workflows`, `workflow_steps`, `insights`, `graph_nodes`, `graph_edges`, `telemetry_events`, `incidents`, `benchmark_runs`, dan `ops_lessons`.
+- Command `/memory`, `/remember`, `/goals`, `/goaladd`, `/goalupdate`, `/workflows`, `/workflowadd`, `/workflowstep`, `/workflowdone`, `/graph`, `/insights`, `/health`, dan `/stats` aman berjalan dengan PostgreSQL maupun JSON fallback.
+
+Env storage:
+
+```text
+DATABASE_URL=
+REDIS_URL=
+PGSSL=false
+STORAGE_DRIVER=auto
+RUN_MIGRATIONS=true
+```
+
+## Phase 7 Stabilization Docs
+
+Dokumentasi audit dan deploy final:
+
+- `docs/COMMANDS.md`: ringkasan command core, adaptive, AI OS, collaboration, dan ops.
+- `docs/PHASE7_E2E_AUDIT.md`: checklist manual command dan natural chat.
+- `docs/RENDER_DEPLOYMENT.md`: checklist deploy Render, env, fallback, dan rollback.
+- `docs/NATURAL_AI_OS_INTEGRATION.md`: cara kerja AI OS context untuk chat natural.
 
 ## Interactive Telegram UX
 
