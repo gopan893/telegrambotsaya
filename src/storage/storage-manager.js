@@ -42,6 +42,23 @@ function createStorageManager(options = {}) {
     return Boolean(env.DATABASE_URL);
   }
 
+  function buildPostgresSkippedHealth() {
+    return {
+      configured: Boolean(env.DATABASE_URL),
+      available: false,
+      tableReady: false,
+      status: preferredDriver === 'json' ? 'disabled' : 'missing_env',
+      latencyMs: null,
+      errorMessageSafe: preferredDriver === 'json' ? 'PostgreSQL disabled by STORAGE_DRIVER=json' : 'DATABASE_URL missing',
+      recommendedFix: preferredDriver === 'json' ? 'Set STORAGE_DRIVER=auto to use PostgreSQL' : 'Set DATABASE_URL or use JSON fallback'
+    };
+  }
+
+  function isPostgresReady(status = {}) {
+    const health = status.health || {};
+    return Boolean((health.available || status.available) && health.tableReady);
+  }
+
   async function initStorage(runtime = {}) {
     if (runtime.redisClient && !options.redisClient) {
       cache = createRedisStore({
@@ -62,31 +79,29 @@ function createStorageManager(options = {}) {
       }
     }
 
-    if (pgStatus.ok) {
+    const postgresStatusAfterInit = postgres.status();
+    postgresHealth = postgresStatusAfterInit.health || (shouldTryPostgres()
+      ? await checkPostgresHealth({
+          pool: postgres.getPool?.() || undefined,
+          databaseUrl: env.DATABASE_URL,
+          env,
+          force: true
+        })
+      : buildPostgresSkippedHealth());
+
+    if (shouldTryPostgres() && (pgStatus.ok || postgresStatusAfterInit.available) && isPostgresReady({ ...postgresStatusAfterInit, health: postgresHealth })) {
       persistentType = 'postgres';
       repositories = postgres.getRepositories();
-      migrationsStatus = postgres.status().migrations || 'ok';
-      postgresHealth = postgres.status().health || await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true });
+      migrationsStatus = postgresStatusAfterInit.migrations || 'ok';
       lastError = null;
       fallbackReason = null;
     } else {
       persistentType = 'json';
       repositories = createJsonRepositories({ loadData, saveData });
       migrationsStatus = pgStatus.reason === 'postgres_not_requested' ? 'skipped' : 'error';
-      lastError = pgStatus.reason;
-      postgresHealth = postgres.status().health || (shouldTryPostgres()
-        ? await checkPostgresHealth({ databaseUrl: env.DATABASE_URL, env, force: true })
-        : {
-            configured: Boolean(env.DATABASE_URL),
-            available: false,
-            tableReady: false,
-            status: preferredDriver === 'json' ? 'disabled' : 'missing_env',
-            latencyMs: null,
-            errorMessageSafe: preferredDriver === 'json' ? 'PostgreSQL disabled by STORAGE_DRIVER=json' : 'DATABASE_URL missing',
-            recommendedFix: preferredDriver === 'json' ? 'Set STORAGE_DRIVER=auto to use PostgreSQL' : 'Set DATABASE_URL or use JSON fallback'
-          });
+      lastError = pgStatus.reason || postgresHealth.errorMessageSafe || postgresHealth.status || 'postgres_not_ready';
       fallbackReason = shouldTryPostgres()
-        ? (pgStatus.reason || postgresHealth.status || 'postgres_unavailable')
+        ? (pgStatus.reason || postgresHealth.errorMessageSafe || postgresHealth.status || 'postgres_unavailable')
         : (preferredDriver === 'json' ? 'storage_driver_json' : 'database_url_missing');
     }
 
@@ -177,6 +192,12 @@ function createStorageManager(options = {}) {
 
     if (persistentType === 'postgres') {
       deleted = await postgres.deleteKey(key);
+      if (!deleted && !postgres.status().available) {
+        persistentType = 'json';
+        repositories = createJsonRepositories({ loadData, saveData });
+        lastError = postgres.status().lastError || 'postgres_delete_failed';
+        fallbackReason = lastError;
+      }
     }
 
     if (persistentType === 'json') {
@@ -192,6 +213,36 @@ function createStorageManager(options = {}) {
       await cache.deleteCache(`bot:data:${key}`);
     } catch (_) {}
     return deleted;
+  }
+
+  async function listKeys(prefix = '') {
+    await ensureInitialized();
+
+    if (persistentType === 'postgres') {
+      const keys = await postgres.listKeys(prefix);
+      if (!postgres.status().available) {
+        persistentType = 'json';
+        repositories = createJsonRepositories({ loadData, saveData });
+        lastError = postgres.status().lastError || 'postgres_list_keys_failed';
+        fallbackReason = lastError;
+      } else {
+        return Array.isArray(keys) ? keys : [];
+      }
+    }
+
+    try {
+      const files = await fsp.readdir(jsonBaseDir);
+      const cleanPrefix = String(prefix || '');
+      return files
+        .filter(file => file.endsWith('.json'))
+        .map(file => file.slice(0, -5))
+        .filter(key => !cleanPrefix || key.startsWith(cleanPrefix))
+        .sort()
+        .slice(0, 500);
+    } catch (err) {
+      lastError = err.message;
+      return [];
+    }
   }
 
   async function cacheGet(key) {
@@ -355,6 +406,7 @@ function createStorageManager(options = {}) {
       postgresTableReady: Boolean(postgresStatus.tableReady),
       migrations: migrationsStatus || postgresStatus.migrations || 'skipped',
       cache: cacheStatus,
+      redis: cacheStatus,
       redisConfigured: Boolean(env.REDIS_URL),
       redisAvailable: Boolean(cacheStatus.redisAvailable),
       fallbackActive: persistentType === 'json',
@@ -370,6 +422,7 @@ function createStorageManager(options = {}) {
     loadData,
     saveData,
     deleteData,
+    listKeys,
     closeStorage,
     getStorageStatus,
     refreshStorageHealth,
@@ -386,6 +439,7 @@ function createStorageManager(options = {}) {
     init: initStorage,
     readData: loadData,
     writeData: saveData,
+    listDataKeys: listKeys,
     close: closeStorage,
     status: getStorageStatus
   };

@@ -35,7 +35,7 @@ const UI = {
 
   renderStorageCards(storage = {}) {
     const warning = storage.postgresAvailable && storage.postgresTableReady && (storage.activeDriver || storage.storageDriver) === 'json'
-      ? '<div class="alert alert-warning" style="margin-top:12px;">PostgreSQL connected, but storage is using JSON fallback.</div>'
+      ? `<div class="alert alert-warning" style="margin-top:12px;">PostgreSQL connected, but storage is using JSON fallback. Reason: ${Utils.escapeHtml(storage.fallbackReason || 'unknown')}</div>`
       : '';
     return `
       <div class="card-grid">

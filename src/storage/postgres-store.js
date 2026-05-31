@@ -45,19 +45,34 @@ function createPostgresStore(options = {}) {
         }
       } catch (err) {
         lastError = err.message;
+        migrationStatus = 'error';
+        migrated = false;
+        health = await checkPostgresHealth({ pool, databaseUrl: options.databaseUrl, env: options.env, force: true });
+        if (health.available && health.tableReady) {
+          available = true;
+          repositories = createPostgresRepositories(pool);
+          return { ok: true, migrated: false, migrationWarning: lastError, tableReady: true };
+        }
         available = false;
         try { await pool.end(); } catch (_) {}
         pool = null;
-        health = await checkPostgresHealth({ databaseUrl: options.databaseUrl, env: options.env, force: true });
         return { ok: false, reason: lastError };
       }
+    }
+
+    health = await checkPostgresHealth({ pool, databaseUrl: options.databaseUrl, env: options.env, force: true });
+    if (!health.available || !health.tableReady) {
+      lastError = health.errorMessageSafe || 'app_kv_store_not_ready';
+      available = false;
+      try { await pool.end(); } catch (_) {}
+      pool = null;
+      return { ok: false, reason: lastError };
     }
 
     available = true;
     repositories = createPostgresRepositories(pool);
     lastError = null;
-    health = await checkPostgresHealth({ pool, databaseUrl: options.databaseUrl, env: options.env, force: true });
-    return { ok: true, migrated };
+    return { ok: true, migrated, tableReady: true };
   }
 
   async function getJson(key, defaultValue) {
