@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const versionEl = document.getElementById('app-version');
 
   let currentTab = 'overview';
+  let serverOnline = false;
+
+  // Ensure confirm-modal is hidden on startup
+  const confirmModal = document.getElementById('confirm-modal');
+  if (confirmModal) confirmModal.classList.add('hidden');
 
   // Mobile navigation drawer toggle
   if (menuToggle && sidebar) {
@@ -22,6 +27,15 @@ document.addEventListener('DOMContentLoaded', () => {
       sidebar.classList.toggle('open');
     });
   }
+
+  // Close mobile sidebar when clicking outside
+  document.addEventListener('click', (e) => {
+    if (sidebar && sidebar.classList.contains('open')) {
+      if (!sidebar.contains(e.target) && e.target !== menuToggle) {
+        sidebar.classList.remove('open');
+      }
+    }
+  });
 
   // Close mobile sidebar when a nav item is clicked
   navItems.forEach(item => {
@@ -32,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
         navItems.forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
         window.location.hash = `#${tab}`;
-        sidebar.classList.remove('open');
+        if (sidebar) sidebar.classList.remove('open');
       }
     });
   });
@@ -98,32 +112,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // Check server health and update login view state alerts
+  const checkServerAndUpdateLoginUI = async () => {
+    const warningAlert = document.getElementById('login-status-warning');
+    const disabledAlert = document.getElementById('login-status-disabled');
+    const offlineAlert = document.getElementById('login-status-offline');
+
+    // Hide all alerts first
+    if (warningAlert) warningAlert.classList.add('hidden');
+    if (disabledAlert) disabledAlert.classList.add('hidden');
+    if (offlineAlert) offlineAlert.classList.add('hidden');
+
+    const res = await Api.getHealth();
+
+    if (!res.ok || res.error === 'NETWORK_ERROR') {
+      // Server unreachable (running from file://, server offline, or network issue)
+      serverOnline = false;
+      if (offlineAlert) offlineAlert.classList.remove('hidden');
+      return;
+    }
+
+    serverOnline = true;
+    const info = res.data;
+
+    if (versionEl) versionEl.textContent = info.version || 'v1.0.0';
+    localStorage.setItem('server_dashboard_enabled', info.dashboardEnabled ? 'ENABLED' : 'DISABLED');
+
+    if (!info.dashboardEnabled) {
+      if (disabledAlert) disabledAlert.classList.remove('hidden');
+    } else if (!info.adminTokenSet) {
+      if (warningAlert) warningAlert.classList.remove('hidden');
+    }
+    // else: server is OK, no alerts needed
+  };
+
   // Switch display container to login view
   const showLoginView = async () => {
     loginContainer.classList.remove('hidden');
     appContainer.classList.add('hidden');
-    
-    // Check health endpoint for warning flags
-    const res = await Api.getHealth();
-    if (res.ok) {
-      const info = res.data;
-      if (versionEl) versionEl.textContent = info.version || 'v1.0.0';
-      localStorage.setItem('server_dashboard_enabled', info.dashboardEnabled ? 'ENABLED' : 'DISABLED');
-      
-      const warningAlert = document.getElementById('login-status-warning');
-      const disabledAlert = document.getElementById('login-status-disabled');
-
-      if (!info.dashboardEnabled) {
-        disabledAlert.classList.remove('hidden');
-        warningAlert.classList.add('hidden');
-      } else if (!info.adminTokenSet) {
-        warningAlert.classList.remove('hidden');
-        disabledAlert.classList.add('hidden');
-      } else {
-        warningAlert.classList.add('hidden');
-        disabledAlert.classList.add('hidden');
-      }
-    }
+    await checkServerAndUpdateLoginUI();
   };
 
   // Switch display container to app view
@@ -136,20 +163,25 @@ document.addEventListener('DOMContentLoaded', () => {
   // Periodic Public Health indicator updates
   const updatePublicHealth = async () => {
     const res = await Api.getHealth();
-    if (res.ok) {
+    if (res.ok && res.data) {
       const data = res.data;
-      if (versionEl) versionEl.textContent = data.version || 'v1.0.0';
+      serverOnline = true;
 
-      healthIndicator.className = 'public-health-badge healthy';
-      healthIndicator.querySelector('.status-text').textContent = 'Healthy';
+      if (versionEl && data.version) {
+        versionEl.textContent = data.version;
+      }
+
       localStorage.setItem('server_dashboard_enabled', data.dashboardEnabled ? 'ENABLED' : 'DISABLED');
 
-      // Update status class if degradations are present in public response
       if (!data.ok) {
         healthIndicator.className = 'public-health-badge degraded';
         healthIndicator.querySelector('.status-text').textContent = 'Degraded';
+      } else {
+        healthIndicator.className = 'public-health-badge healthy';
+        healthIndicator.querySelector('.status-text').textContent = 'Healthy';
       }
     } else {
+      serverOnline = false;
       healthIndicator.className = 'public-health-badge critical';
       healthIndicator.querySelector('.status-text').textContent = 'Offline';
     }
@@ -158,8 +190,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Run Auth system initialization
   Auth.init(
     async () => {
-      // Auth Success - verify token with server
+      // Auth Success callback - verify token with server
       const verifyRes = await Api.getSummary();
+
       if (verifyRes.ok) {
         Utils.showToast('Login berhasil!', 'success');
         showAppView();
@@ -167,13 +200,17 @@ document.addEventListener('DOMContentLoaded', () => {
         Auth.handleUnauthorized(() => {
           showLoginView();
         });
-      } else {
-        // Network error / offline but logged in
+      } else if (verifyRes.error === 'NETWORK_ERROR' || verifyRes.status === 0) {
+        // Server offline — still show the app but with a warning
+        Utils.showToast('Server tidak dapat dijangkau. Beberapa fitur mungkin terbatas.', 'warning');
         showAppView();
+      } else {
+        // Other error - show login again
+        showLoginView();
       }
     },
     () => {
-      // Auth required / invalid token
+      // Auth required / no token stored
       showLoginView();
     }
   );

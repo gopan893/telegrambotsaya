@@ -30,21 +30,31 @@
         <h2>Telegram AI OS</h2>
         <p>Admin Control Panel</p>
       </div>
+
+      <!-- Server status alerts — toggled by app.js dynamically -->
+      <div id="login-status-offline" class="alert alert-info hidden">
+        🔌 <strong>Server tidak terhubung.</strong> Pastikan bot sudah berjalan di
+        <code>localhost:10000</code> atau di Render, lalu akses via URL server — bukan membuka
+        file HTML secara langsung.
+      </div>
       <div id="login-status-warning" class="alert alert-warning hidden">
-        DASHBOARD_ENABLED=true tapi token admin belum diset pada server.
+        ⚠️ <strong>Token belum dikonfigurasi.</strong> Set <code>DASHBOARD_ADMIN_TOKEN</code>
+        di file <code>.env</code> atau environment variables Render, lalu restart server.
       </div>
       <div id="login-status-disabled" class="alert alert-danger hidden">
-        Dashboard dinonaktifkan di server (DASHBOARD_ENABLED=false).
+        🚫 Dashboard dinonaktifkan di server. Set <code>DASHBOARD_ENABLED=true</code> di
+        environment variables server.
       </div>
+
       <form id="login-form">
         <div class="form-group">
           <label for="admin-token">DASHBOARD_ADMIN_TOKEN</label>
           <input type="password" id="admin-token" placeholder="Masukkan token admin..." required autocomplete="current-password">
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Masuk ke Dashboard</button>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-login-submit">Masuk ke Dashboard</button>
       </form>
       <div class="login-footer">
-        <p>Gunakan DASHBOARD_ADMIN_TOKEN yang diset di .env atau Render.</p>
+        <p>Gunakan <code>DASHBOARD_ADMIN_TOKEN</code> yang diset di <code>.env</code> atau Render.</p>
         <p class="security-warning">⚠️ Token disimpan secara lokal di browser Anda.</p>
       </div>
     </div>

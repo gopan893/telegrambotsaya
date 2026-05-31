@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node telebot.js",
     "dev": "node --watch telebot.js",
+    "dev:local": "node --watch start-local.js",
+    "start:local": "node start-local.js",
     "check": "node --check telebot.js",
     "push": "bash scripts/push-code.sh",
     "push:msg": "bash scripts/push-code.sh"
