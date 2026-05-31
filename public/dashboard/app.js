@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!info.dashboardEnabled) {
       if (disabledAlert) disabledAlert.classList.remove('hidden');
-    } else if (!info.adminTokenSet) {
+    } else if (!(info.tokenConfigured ?? info.adminTokenSet)) {
       if (warningAlert) warningAlert.classList.remove('hidden');
     }
     // else: server is OK, no alerts needed

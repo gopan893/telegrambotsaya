@@ -3117,7 +3117,8 @@ function getDashboardStatusText() {
   return {
     enabled,
     tokenSet,
-    protectedStatus: enabled && tokenSet ? 'active' : 'disabled'
+    protectedStatus: enabled && tokenSet ? 'active' : 'disabled',
+    staticAssets: 'configured'
   };
 }
 
@@ -3125,11 +3126,12 @@ function buildDashboardInfoText() {
   const base = getDashboardBaseUrl();
   const status = getDashboardStatusText();
   return [
-    'Dashboard/API Foundation',
+    'Dashboard Web UI + API',
     '',
     `Dashboard: ${status.enabled ? 'enabled' : 'disabled'}`,
     `Admin token: ${status.tokenSet ? 'set' : 'missing'}`,
     `Protected endpoints: ${status.protectedStatus}`,
+    `Static UI: ${status.staticAssets}`,
     '',
     `Dashboard URL: ${base ? `${base}/dashboard` : 'WEBHOOK_URL belum diset'}`,
     `API health: ${base ? `${base}/api/dashboard/health` : '/api/dashboard/health'}`,
@@ -7000,6 +7002,7 @@ await withUserActionLock(userId, async () => {
 DASHBOARD_ENABLED: ${status.enabled ? 'true' : 'false'}
 DASHBOARD_ADMIN_TOKEN: ${status.tokenSet ? 'set' : 'missing'}
 Protected endpoints: ${status.protectedStatus}
+Static UI: ${status.staticAssets}
 
 Health public: /api/dashboard/health
 Data endpoint membutuhkan Authorization Bearer token.`;

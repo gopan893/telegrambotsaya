@@ -113,7 +113,11 @@ function sanitizeOpsData(data = {}) {
     health: data.health || data.status || null,
     telemetry: data.telemetry || null,
     incidents: Array.isArray(data.incidents) ? data.incidents.slice(0, 20) : data.incidents || null,
-    reliability: data.reliability || null
+    recentIncidents: Array.isArray(data.recentIncidents) ? data.recentIncidents.slice(0, 20).map(sanitizeIncident) : [],
+    reliability: data.reliability ? sanitizeReliability(data.reliability) : null,
+    performance: data.performance ? sanitizePerformance(data.performance) : null,
+    benchmarkSummary: data.benchmarkSummary || null,
+    modules: Array.isArray(data.modules) ? data.modules.slice(0, 40) : []
   });
 }
 
@@ -150,6 +154,8 @@ function sanitizeHealth(data = {}) {
     uptime: Number(data.uptime || 0),
     timestamp: data.timestamp || null,
     version: data.version || 'unknown',
+    dashboardEnabled: Boolean(data.dashboardEnabled),
+    tokenConfigured: Boolean(data.tokenConfigured ?? data.adminTokenSet),
     storageDriver: data.storageDriver || 'unknown',
     redisAvailable: Boolean(data.redisAvailable)
   });
@@ -163,8 +169,12 @@ function sanitizeReliability(data = {}) {
   if (!data) return null;
   return guards.preventSecretLeak({
     score: Number(data.score ?? 0),
+    overallScore: Number(data.overallScore ?? data.overall ?? data.score ?? 0),
     status: data.status || 'unknown',
-    lastUpdated: data.lastUpdated || null
+    strongestArea: data.strongestArea || null,
+    weakestArea: data.weakestArea || null,
+    recommendedFixes: Array.isArray(data.recommendedFixes) ? data.recommendedFixes.slice(0, 8).map(item => truncateText(item, 180)) : [],
+    lastUpdated: data.lastUpdated || data.generatedAt || null
   });
 }
 
@@ -204,6 +214,17 @@ function sanitizeIncident(inc = {}) {
     recommendedFixes: Array.isArray(inc.recommendedFixes) ? inc.recommendedFixes.slice(0, 5).map(f => truncateText(f, 200)) : [],
     createdAt: inc.createdAt,
     resolvedAt: inc.resolvedAt
+  });
+}
+
+function sanitizePerformance(data = {}) {
+  return guards.preventSecretLeak({
+    sampleCount: Number(data.sampleCount || 0),
+    slowOperations: Array.isArray(data.slowOperations) ? data.slowOperations.slice(0, 10) : [],
+    scopes: Array.isArray(data.scopes) ? data.scopes.slice(0, 12) : [],
+    latency: data.latency || null,
+    bottleneck: truncateText(data.bottleneck || '', 80),
+    generatedAt: data.generatedAt || null
   });
 }
 
@@ -253,6 +274,7 @@ module.exports = {
   sanitizeReliability,
   sanitizeBenchmark,
   sanitizeIncident,
+  sanitizePerformance,
   sanitizeCommandList,
   sanitizeUserOverview,
   sanitizeGraph

@@ -46,18 +46,21 @@ GOOGLE_REDIRECT_URI=
 - `RUN_MIGRATIONS=true` untuk membuat schema PostgreSQL saat database tersedia.
 - `DASHBOARD_ENABLED=true` jika ingin membuka endpoint protected dashboard.
 - `DASHBOARD_ADMIN_TOKEN` wajib diisi token panjang acak sebelum memakai endpoint data dashboard.
+- Dashboard UI tersedia di `/dashboard`; static assets harus terbuka di `/dashboard/styles.css`, `/dashboard/app.js`, dan `/dashboard/api.js`.
 - Tidak ada secret ditulis di log.
 
 ## Smoke Test Setelah Deploy
 
 1. Buka `/health`.
 2. Buka `/api/dashboard/health`.
-3. Cek Render logs untuk:
+3. Buka `/dashboard`.
+4. Buka `/dashboard/styles.css`.
+5. Cek Render logs untuk:
    - storage driver aktif;
    - Redis tersedia atau fallback;
    - webhook terpasang;
    - tidak ada crash startup.
-4. Di Telegram jalankan:
+6. Di Telegram jalankan:
    - `/ping`
    - `/help`
    - `/dashboard`
@@ -98,5 +101,6 @@ Jika deploy gagal:
 - File JSON fallback di free tier tidak cocok untuk data jangka sangat panjang.
 - Jika memakai PostgreSQL hosted, aktifkan SSL via `PGSSL=true` jika provider butuh.
 - `/api/dashboard/health` public-safe.
+- `/dashboard` public-safe sebagai halaman login/status; data admin tetap protected.
 - Endpoint seperti `/api/dashboard/summary`, `/api/dashboard/env-check`, dan `/api/dashboard/user/:userId/*` membutuhkan `Authorization: Bearer <DASHBOARD_ADMIN_TOKEN>`.
 - `/api/dashboard/env-check` hanya menampilkan `set`/`missing`, bukan value secret.

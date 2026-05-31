@@ -160,39 +160,46 @@ function ensureUserState(userId, services) {
   return services.ensureUser(userId) || {};
 }
 
+function getOpsRuntimeServices(services, rawServices = {}) {
+  return typeof services.getOpsServices === 'function' ? services.getOpsServices() : rawServices;
+}
+
+function setDashboardSecurityHeaders(res) {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer'
+  });
+}
+
 function registerDashboardRoutes(app, rawServices = {}) {
   const services = getDashboardServices(rawServices);
   const router = express.Router();
   const dashboardAuth = auth.createDashboardAuth(services.env);
+  const dashboardDir = path.join(process.cwd(), 'public', 'dashboard');
 
   app.locals.dashboardEnv = services.env;
 
-  // Serve public/dashboard/index.html on GET /dashboard
-  app.get('/dashboard', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../public/dashboard/index.html'), {
-      headers: {
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        'Referrer-Policy': 'no-referrer'
-      }
-    });
+  app.use('/dashboard', (req, res, next) => {
+    setDashboardSecurityHeaders(res);
+    next();
   });
 
-  // Serve static assets from public/dashboard
-  app.use('/dashboard', express.static(path.join(__dirname, '../../public/dashboard'), {
-    setHeaders: (res) => {
-      res.set({
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-        'Referrer-Policy': 'no-referrer'
-      });
-    }
+  app.get(['/dashboard', '/dashboard/'], (req, res) => {
+    res.sendFile(path.join(dashboardDir, 'index.html'));
+  });
+
+  app.use('/dashboard', express.static(dashboardDir, {
+    index: false,
+    fallthrough: true,
+    extensions: false,
+    setHeaders: setDashboardSecurityHeaders
   }));
 
   router.get('/health', (req, res) => {
     const storage = getStorageStatus(services.storageManager);
     const dashboardStatus = auth.getDashboardStatus(services.env);
-    return res.json({
+    return guards.safeDashboardResponse(res, serializers.sanitizeHealth({
       ok: true,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
@@ -200,8 +207,8 @@ function registerDashboardRoutes(app, rawServices = {}) {
       storageDriver: storage.driver || storage.persistentType || 'unknown',
       redisAvailable: Boolean(storage.redisAvailable || storage.cache?.redisAvailable),
       dashboardEnabled: dashboardStatus.enabled,
-      adminTokenSet: dashboardStatus.adminTokenSet
-    });
+      tokenConfigured: dashboardStatus.tokenConfigured
+    }));
   });
 
   // Authenticate other API routes
@@ -212,7 +219,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
     const counts = countAiosUserData(services);
     let opsStatus = null;
     try {
-      opsStatus = services.opsSystem?.getStatus?.(typeof services.getOpsServices === 'function' ? services.getOpsServices() : rawServices) || null;
+      opsStatus = services.opsSystem?.getStatus?.(getOpsRuntimeServices(services, rawServices)) || null;
     } catch (err) {
       opsStatus = { status: 'unavailable', error: err.message };
     }
@@ -309,18 +316,30 @@ function registerDashboardRoutes(app, rawServices = {}) {
   });
 
   router.get('/ops', async (req, res) => {
+    const opsServices = getOpsRuntimeServices(services, rawServices);
     let ops = null;
+    let performance = null;
+    let incidents = [];
+    let benchmark = null;
     try {
-      ops = services.opsSystem?.getStatus?.(typeof services.getOpsServices === 'function' ? services.getOpsServices() : rawServices) || null;
+      ops = services.opsSystem?.getStatus?.(opsServices) || null;
+      performance = services.opsSystem?.performanceProfiler?.summarizePerformance?.(opsServices) || null;
+      incidents = services.opsSystem?.incidentHandler?.listRecentIncidents?.(opsServices, 8) || [];
+      benchmark = services.opsSystem?.benchmarkEngine?.getBenchmarkSummary?.(opsServices) || null;
     } catch (err) {
       ops = { status: 'unavailable', error: err.message };
     }
-    return guards.safeDashboardResponse(res, serializers.sanitizeOps(ops || {}));
+    return guards.safeDashboardResponse(res, serializers.sanitizeOps({
+      ...(ops || {}),
+      performance,
+      recentIncidents: incidents,
+      benchmarkSummary: benchmark
+    }));
   });
 
   router.get('/reliability', async (req, res) => {
     try {
-      const scoreObj = services.opsSystem?.reliabilityScorer?.calculateReliabilityScore?.(services) || { score: 0, status: 'unknown' };
+      const scoreObj = services.opsSystem?.reliabilityScorer?.calculateReliabilityScore?.(getOpsRuntimeServices(services, rawServices)) || { score: 0, status: 'unknown' };
       return guards.safeDashboardResponse(res, serializers.sanitizeReliability(scoreObj));
     } catch (err) {
       return guards.safeDashboardResponse(res, { score: 0, status: 'unavailable', error: err.message });
@@ -328,9 +347,10 @@ function registerDashboardRoutes(app, rawServices = {}) {
   });
 
   router.get('/benchmarks', async (req, res) => {
+    const opsServices = getOpsRuntimeServices(services, rawServices);
     try {
-      const history = services.opsSystem?.benchmarkEngine?.getBenchmarkHistory?.({}, services) || [];
-      const summary = services.opsSystem?.benchmarkEngine?.getBenchmarkSummary?.(services) || { totalRuns: 0 };
+      const history = services.opsSystem?.benchmarkEngine?.getBenchmarkHistory?.(opsServices, 20) || [];
+      const summary = services.opsSystem?.benchmarkEngine?.getBenchmarkSummary?.(opsServices) || { totalRuns: 0 };
       return guards.safeDashboardResponse(res, {
         summary,
         history: history.map(serializers.sanitizeBenchmark)
@@ -341,8 +361,11 @@ function registerDashboardRoutes(app, rawServices = {}) {
   });
 
   router.get('/incidents', async (req, res) => {
+    const opsServices = getOpsRuntimeServices(services, rawServices);
     try {
-      const incidents = services.opsSystem?.incidentHandler?.listIncidents?.(services) || [];
+      const incidents = services.opsSystem?.incidentHandler?.listIncidents?.(opsServices, { limit: 20 })
+        || services.opsSystem?.incidentHandler?.listRecentIncidents?.(opsServices, 20)
+        || [];
       return guards.safeDashboardResponse(res, {
         items: incidents.map(serializers.sanitizeIncident)
       });

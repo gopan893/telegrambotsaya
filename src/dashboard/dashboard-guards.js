@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const auth = require('./dashboard-auth');
 
 const SECRET_PATTERNS = [
@@ -71,7 +72,7 @@ function safeDashboardJson(res, data, statusCode = 200) {
 function requireDashboardEnabled(req, res, next) {
   const env = req.app?.locals?.dashboardEnv || process.env;
   if (!auth.isDashboardEnabled(env)) {
-    return res.status(401).json({ ok: false, error: 'DASHBOARD_DISABLED' });
+    return res.status(403).json({ ok: false, error: 'DASHBOARD_DISABLED' });
   }
   next();
 }
@@ -81,10 +82,15 @@ function requireDashboardAuth(req, res, next) {
 }
 
 const actionRateLimitDb = new Map();
+
+function hashIdentifier(value = '') {
+  return crypto.createHash('sha256').update(String(value || 'anonymous')).digest('hex').slice(0, 18);
+}
+
 function rateLimitDashboardAction(req, res, next) {
   const header = String(req.headers?.authorization || '');
-  const token = header.replace(/^Bearer\s+/i, '').trim() || String(req.query?.token || '').trim();
-  const identifier = req.ip || token || 'anonymous';
+  const token = header.replace(/^Bearer\s+/i, '').trim();
+  const identifier = req.ip || (token ? hashIdentifier(token) : 'anonymous');
   const now = Date.now();
   const records = actionRateLimitDb.get(identifier) || [];
   

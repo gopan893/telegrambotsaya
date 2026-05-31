@@ -31,7 +31,8 @@ function buildCommandCatalog() {
     collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],
     graph: ['/graph', '/graph <konsep>', '/concepts', '/relate', '/graphsearch', '/graphrisks', '/graphdeps', '/graphprune', '/graphstats'],
     ops: ['/ops', '/health', '/diag', '/reliability', '/perf', '/tokens', '/benchmark'],
-    tools: ['/hitung', '/jam', '/tanggal', '/cuaca', '/cari', '/lokasi', '/image']
+    tools: ['/hitung', '/jam', '/tanggal', '/cuaca', '/cari', '/lokasi', '/image'],
+    dashboard: ['/dashboard', '/dashboardstatus']
   };
 }
 
@@ -39,7 +40,7 @@ function buildDashboardHtml(status = {}, env = {}) {
   const baseUrl = getBaseUrl(env);
   const healthUrl = `${baseUrl || ''}/api/dashboard/health`;
   const enabled = status.enabled ? 'enabled' : 'disabled';
-  const token = status.adminTokenSet ? 'set' : 'missing';
+  const token = (status.tokenConfigured ?? status.adminTokenSet) ? 'set' : 'missing';
 
   return `<!doctype html>
 <html lang="id">

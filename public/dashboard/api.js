@@ -4,27 +4,29 @@
    =========================================
 */
 
-const Api = {
-  BASE_URL: '/api/dashboard',
+const API_BASE = '/api/dashboard';
 
-  async request(path, method = 'GET', body = null) {
+const Api = {
+  BASE_URL: API_BASE,
+
+  async request(path, method = 'GET', body = null, options = {}) {
     const url = `${this.BASE_URL}${path}`;
     const headers = {
-      'Content-Type': 'application/json',
-      ...Auth.getAuthHeaders()
+      'Content-Type': 'application/json'
     };
+    if (options.auth !== false) Object.assign(headers, Auth.getAuthHeaders());
 
-    const options = {
+    const fetchOptions = {
       method,
       headers
     };
 
     if (body) {
-      options.body = JSON.stringify(body);
+      fetchOptions.body = JSON.stringify(body);
     }
 
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, fetchOptions);
       
       // Auto logout if 401 unauthorized is received on non-public endpoints
       if (response.status === 401 && path !== '/health') {
@@ -44,6 +46,11 @@ const Api = {
         return { ok: false, status: 429, error: 'RATE_LIMITED' };
       }
 
+      if (response.status === 403) {
+        const data = await response.json().catch(() => ({}));
+        return { ok: false, status: 403, error: data.error || 'DASHBOARD_DISABLED', data };
+      }
+
       const data = await response.json();
       return { ok: response.ok, status: response.status, data };
     } catch (err) {
@@ -52,16 +59,16 @@ const Api = {
     }
   },
 
-  async apiGet(path) {
-    return this.request(path, 'GET');
+  async apiGet(path, options = {}) {
+    return this.request(path, 'GET', null, options);
   },
 
-  async apiPost(path, body) {
-    return this.request(path, 'POST', body);
+  async apiPost(path, body, options = {}) {
+    return this.request(path, 'POST', body, options);
   },
 
   async getHealth() {
-    return this.apiGet('/health');
+    return this.apiGet('/health', { auth: false });
   },
 
   async getSummary() {
@@ -147,3 +154,6 @@ const Api = {
     return this.apiPost('/actions/ops/refresh');
   }
 };
+
+const apiGet = (path, options) => Api.apiGet(path, options);
+const apiPost = (path, body, options) => Api.apiPost(path, body, options);

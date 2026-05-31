@@ -7,8 +7,62 @@
 const UI = {
   // --- Standard Component Renderers ---
   renderBadge(status) {
-    const clean = String(status || '').toLowerCase();
+    const clean = String(status || 'unknown').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
     return `<span class="badge badge-${clean}">${Utils.escapeHtml(status || 'unknown')}</span>`;
+  },
+
+  formatScore(value) {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '0%';
+    return `${Math.round(n <= 1 ? n * 100 : n)}%`;
+  },
+
+  renderCard(title, body, footer = '') {
+    return `
+      <div class="card">
+        <div class="card-title">${Utils.escapeHtml(title)}</div>
+        <div>${body}</div>
+        ${footer ? `<div class="card-subtitle">${footer}</div>` : ''}
+      </div>
+    `;
+  },
+
+  renderMetric(label, value, subtitle = '') {
+    return UI.renderCard(label, `<div class="card-value">${Utils.escapeHtml(String(value ?? '-'))}</div>`, Utils.escapeHtml(subtitle || ''));
+  },
+
+  renderTable(headers = [], rows = []) {
+    return `
+      <div class="table-responsive">
+        <table>
+          <thead><tr>${headers.map(header => `<th>${Utils.escapeHtml(header)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${rows.length ? rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length || 1}" class="text-center text-muted">Tidak ada data.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+  },
+
+  renderKeyValueList(items = []) {
+    return `
+      <div class="kv-list">
+        ${items.map(item => `
+          <div class="kv-item">
+            <span class="kv-key">${Utils.escapeHtml(item.key || item.label || '')}</span>
+            <span class="kv-value">${item.html || Utils.escapeHtml(String(item.value ?? '-'))}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  },
+
+  renderToast(message, type = 'info') {
+    return Utils.showToast(message, type);
+  },
+
+  confirmAction(title, message, onConfirm) {
+    return Utils.confirmAction(title, message, onConfirm);
   },
 
   renderProgressBar(percentage) {
@@ -118,7 +172,7 @@ const UI = {
         <div class="card-grid">
           <div class="card">
             <div class="card-title">Reliability Score</div>
-            <div class="card-value" id="overview-reliability-val">${reliability.score ? (reliability.score * 100).toFixed(0) : '0'}%</div>
+            <div class="card-value" id="overview-reliability-val">${UI.formatScore(reliability.score)}</div>
             <div class="card-subtitle">Status: ${UI.renderBadge(reliability.status)}</div>
           </div>
           <div class="card">
@@ -191,7 +245,7 @@ const UI = {
           Utils.showToast('Menjalankan benchmark...', 'info');
           const res = await Api.runBenchmarkLight();
           if (res.ok && res.data.ok) {
-            Utils.showToast(`Benchmark selesai! Score: ${(res.data.result.score * 100).toFixed(0)}%`, 'success');
+            Utils.showToast(`Benchmark selesai! Score: ${UI.formatScore(res.data.result.score)}`, 'success');
             this.renderOverview(targetEl);
           } else {
             Utils.showToast('Gagal menjalankan benchmark.', 'danger');
@@ -234,6 +288,7 @@ const UI = {
     let html = UI.renderSectionHeader('Ops Viewer', `
       <button class="btn btn-outline" id="btn-refresh-ops">🔄 Refresh</button>
       <button class="btn btn-primary" id="btn-run-diagnostics">🩺 Run Diagnostics</button>
+      <button class="btn btn-outline" id="btn-prune-ops">🧹 Prune Telemetry</button>
     `);
 
     // Top Stats grid
@@ -251,7 +306,7 @@ const UI = {
         </div>
         <div class="card">
           <div class="card-title">Reliability Score</div>
-          <div class="card-value">${reliability.score ? (reliability.score * 100).toFixed(0) : '0'}%</div>
+          <div class="card-value">${UI.formatScore(reliability.score)}</div>
           <div class="card-subtitle">Status: ${UI.renderBadge(reliability.status)}</div>
         </div>
       </div>
@@ -333,6 +388,18 @@ const UI = {
           this.renderOps(targetEl);
         } else {
           Utils.showToast('Gagal memicu diagnosa.', 'danger');
+        }
+      });
+    });
+    document.getElementById('btn-prune-ops').addEventListener('click', () => {
+      Utils.confirmAction('Prune Telemetry', 'Prune telemetry lama? Ini tidak menghapus memory user.', async () => {
+        Utils.showToast('Membersihkan telemetry...', 'info');
+        const res = await Api.pruneTelemetry();
+        if (res.ok && res.data.ok) {
+          Utils.showToast('Telemetry dipangkas.', 'success');
+          this.renderOps(targetEl);
+        } else {
+          Utils.showToast('Gagal prune telemetry.', 'danger');
         }
       });
     });
@@ -834,7 +901,7 @@ const UI = {
         <div class="card">
           <div class="card-title">Latest Score</div>
           <div class="card-value" style="color: ${latest && latest.passed ? 'var(--color-success)' : 'var(--color-warning)'}">
-            ${latest ? (latest.score * 100).toFixed(0) + '%' : '0%'}
+            ${latest ? UI.formatScore(latest.score) : '0%'}
           </div>
           <div class="card-subtitle">Status: ${latest ? UI.renderBadge(latest.status) : 'none'}</div>
         </div>
@@ -876,7 +943,7 @@ const UI = {
                   <td>${Utils.formatDate(run.createdAt)}</td>
                   <td><code>${Utils.escapeHtml(run.type)}</code></td>
                   <td>${run.caseCount} cases</td>
-                  <td style="font-family:var(--font-mono); font-weight:bold; color: var(--color-accent);">${(run.score * 100).toFixed(0)}%</td>
+                  <td style="font-family:var(--font-mono); font-weight:bold; color: var(--color-accent);">${UI.formatScore(run.score)}</td>
                   <td>${UI.renderBadge(run.status)}</td>
                 </tr>
               `).join('')}

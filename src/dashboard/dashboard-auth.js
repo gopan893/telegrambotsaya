@@ -7,15 +7,27 @@ function getEnv(reqOrEnv) {
   return reqOrEnv && !reqOrEnv.headers ? reqOrEnv : process.env;
 }
 
+function getDashboardToken(env = process.env) {
+  return env.dashboard?.adminToken || env.DASHBOARD_ADMIN_TOKEN || '';
+}
+
 function isDashboardEnabled(env = process.env) {
+  if (typeof env.dashboard?.enabled === 'boolean') return env.dashboard.enabled;
   return isTruthy(env.DASHBOARD_ENABLED);
 }
 
+function isDashboardTokenConfigured(env = process.env) {
+  return Boolean(getDashboardToken(env));
+}
+
 function getDashboardStatus(env = process.env) {
+  const enabled = isDashboardEnabled(env);
+  const tokenConfigured = isDashboardTokenConfigured(env);
   return {
-    enabled: isDashboardEnabled(env),
-    adminTokenSet: Boolean(env.DASHBOARD_ADMIN_TOKEN),
-    protectedEndpoints: isDashboardEnabled(env) && Boolean(env.DASHBOARD_ADMIN_TOKEN) ? 'active' : 'disabled'
+    enabled,
+    tokenConfigured,
+    adminTokenSet: tokenConfigured,
+    protectedEndpoints: enabled && tokenConfigured ? 'active' : 'disabled'
   };
 }
 
@@ -23,21 +35,21 @@ function extractBearerToken(req) {
   const header = String(req.headers?.authorization || '');
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (match) return match[1].trim();
-  return String(req.query?.token || '').trim();
+  return '';
 }
 
 function requireDashboardAuth(req, res, next) {
   const env = getEnv(req);
   const status = getDashboardStatus(env);
   if (!status.enabled) {
-    return res.status(401).json({ ok: false, error: 'DASHBOARD_DISABLED' });
+    return res.status(403).json({ ok: false, error: 'DASHBOARD_DISABLED' });
   }
-  if (!status.adminTokenSet) {
+  if (!status.tokenConfigured) {
     return res.status(401).json({ ok: false, error: 'DASHBOARD_TOKEN_NOT_CONFIGURED' });
   }
 
   const token = extractBearerToken(req);
-  if (!token || token !== env.DASHBOARD_ADMIN_TOKEN) {
+  if (!token || token !== getDashboardToken(env)) {
     return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
   }
   return next();
@@ -54,5 +66,6 @@ module.exports = {
   createDashboardAuth,
   getDashboardStatus,
   isDashboardEnabled,
+  isDashboardTokenConfigured,
   requireDashboardAuth
 };

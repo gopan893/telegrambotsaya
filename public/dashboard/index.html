@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Telegram AI OS - Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/dashboard/styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
 </head>
 <body class="dark-mode">
@@ -34,7 +34,7 @@
       <!-- Server status alerts — toggled by app.js dynamically -->
       <div id="login-status-offline" class="alert alert-info hidden">
         🔌 <strong>Server tidak terhubung.</strong> Pastikan bot sudah berjalan di
-        <code>localhost:10000</code> atau di Render, lalu akses via URL server — bukan membuka
+        URL server Render, lalu akses lewat <code>/dashboard</code> — bukan membuka
         file HTML secara langsung.
       </div>
       <div id="login-status-warning" class="alert alert-warning hidden">
@@ -111,11 +111,11 @@
   </div>
 
   <!-- Scripts -->
-  <script src="utils.js"></script>
-  <script src="auth.js"></script>
-  <script src="api.js"></script>
-  <script src="ui.js"></script>
-  <script src="charts.js"></script>
-  <script src="app.js"></script>
+  <script src="/dashboard/api.js" defer></script>
+  <script src="/dashboard/auth.js" defer></script>
+  <script src="/dashboard/ui.js" defer></script>
+  <script src="/dashboard/charts.js" defer></script>
+  <script src="/dashboard/utils.js" defer></script>
+  <script src="/dashboard/app.js" defer></script>
 </body>
 </html>
