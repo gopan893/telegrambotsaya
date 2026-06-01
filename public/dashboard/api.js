@@ -299,6 +299,57 @@ const Api = {
     return this.apiGet(`/executor/runs${query ? `?${query}` : ''}`);
   },
 
+  async listTools(filters = {}) {
+    const params = new URLSearchParams();
+    ['category', 'riskLevel', 'source', 'enabled', 'q', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/tools${query ? `?${query}` : ''}`);
+  },
+
+  async getTool(toolId) {
+    return this.apiGet(`/tools/${encodeURIComponent(toolId)}`);
+  },
+
+  async enableTool(toolId, payload = {}) {
+    return this.apiPost(`/tools/${encodeURIComponent(toolId)}/enable`, payload);
+  },
+
+  async disableTool(toolId, payload = {}) {
+    return this.apiPost(`/tools/${encodeURIComponent(toolId)}/disable`, payload);
+  },
+
+  async previewTool(toolId, payload = {}) {
+    return this.apiPost(`/tools/${encodeURIComponent(toolId)}/preview`, payload);
+  },
+
+  async runTool(toolId, payload = {}) {
+    return this.apiPost(`/tools/${encodeURIComponent(toolId)}/run`, payload);
+  },
+
+  async proposeTool(toolId, payload = {}) {
+    return this.apiPost(`/tools/${encodeURIComponent(toolId)}/propose`, payload);
+  },
+
+  async listToolRuns(filters = {}) {
+    const params = new URLSearchParams();
+    ['toolId', 'workspaceId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/tools/runs${query ? `?${query}` : ''}`);
+  },
+
+  async listToolAudit(filters = {}) {
+    const params = new URLSearchParams();
+    ['toolId', 'workspaceId', 'action', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/tools/audit${query ? `?${query}` : ''}`);
+  },
+
   async searchUserGraph(userId, q, workspaceId = '') {
     const encodedUser = encodeURIComponent(userId);
     const encodedQ = encodeURIComponent(q);

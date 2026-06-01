@@ -209,6 +209,17 @@ registerExecutor('memory.suggest_archive', async (action) => ({
   permissionsRequired: ['write']
 });
 
+registerExecutor('tool.run', async (action, services) => {
+  const tools = require('../tools');
+  const result = await tools.toolRunner.runApprovedToolAction(action, services);
+  return { ok: result.ok, result };
+}, {
+  description: 'Run a registered tool after explicit human approval.',
+  riskLevel: 'medium',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
 module.exports = {
   getExecutor,
   listExecutors,

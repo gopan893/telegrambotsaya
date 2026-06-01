@@ -114,6 +114,26 @@ executor/permission_denied
 
 Audit executor menyertakan `workspaceId`, `actorRole`, `proposalId`/`targetId`, risk/action summary, `decision`, dan ringkasan hasil yang sudah disanitasi. Proposal creation tidak menjalankan action; approval dan run dicatat sebagai event terpisah.
 
+## Tool Registry Audit Events
+
+Phase 17 mencatat governance tool:
+
+```text
+tool/registered
+tool/enabled
+tool/disabled
+tool/previewed
+tool/run_attempted
+tool/run_completed
+tool/run_failed
+tool/proposal_created
+tool/permission_denied
+tool/approval_required
+tool/rate_limited
+```
+
+Audit tool menyertakan `workspaceId`, `actorRole`, `toolId`, `actionType`, `riskLevel`, `decision`, dan summary input/output yang sudah disanitasi. Direct run untuk write/external/danger tidak dieksekusi; event-nya dicatat sebagai `approval_required` dan diarahkan ke executor proposal.
+
 ## Known Limits
 
 - Belum ada export audit terpisah.

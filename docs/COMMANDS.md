@@ -83,6 +83,20 @@ Natural chat yang diarahkan ke planner: `apa prioritas saya?`, `langkah berikutn
 
 Natural chat seperti `jalankan task ini`, `eksekusi langkah berikutnya`, dan `buatkan proposal eksekusi` diarahkan ke executor. Bot hanya membuat proposal atau menjelaskan alur approval; tidak ada aksi write/eksternal yang berjalan tanpa `/approve` dan `/runexec`.
 
+## Tool Registry
+
+| Command | Fungsi |
+| --- | --- |
+| `/tools` | Daftar tool terdaftar per kategori dan risk. |
+| `/tool <toolId>` | Detail metadata tool, risk, permission, dan approval requirement. |
+| `/toolpreview <toolId> | <input>` | Preview aman tanpa menjalankan handler/mutasi data. |
+| `/toolrun <toolId> | <input>` | Jalankan hanya tool read-only low risk yang permitted. |
+| `/toolpropose <toolId> | <input>` | Buat proposal executor untuk write/external/danger tool. |
+| `/toolenable <toolId>` | Enable tool, admin-only. |
+| `/tooldisable <toolId>` | Disable tool, admin-only. |
+
+Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropose`, lalu flow `/approve` dan `/runexec`. Tidak ada shell executor, dynamic plugin loading, atau arbitrary code execution.
+
 ## Knowledge Graph
 
 | Command | Fungsi |

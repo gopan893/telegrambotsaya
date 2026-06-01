@@ -31,6 +31,7 @@ const dashboard = require('../dashboard');
 const workspaceSystem = require('../workspace');
 const plannerSystem = require('../planner');
 const executorSystem = require('../executor');
+const toolsSystem = require('../tools');
 const {
   formatDashboardStorageStatus,
   formatDbStatus,
@@ -3354,6 +3355,18 @@ function getExecutorServices(actorId = '') {
   };
 }
 
+function getToolServices(actorId = '') {
+  return {
+    ...getExecutorServices(actorId),
+    env: {
+      ...process.env,
+      OWNER_CHAT_ID,
+      OPENWEATHER_API_KEY,
+      TAVILY_API_KEY
+    }
+  };
+}
+
 function formatPermissionFlags(summary = {}) {
   const flags = [
     summary.canRead ? 'read' : '',
@@ -3384,6 +3397,18 @@ function formatExecutionProposalLine(proposal, index) {
 
 function formatExecutionActionLine(action, index) {
   return `${index + 1}. ${action.type} -> ${action.description || action.targetId || '-'} [${action.riskLevel || 'low'}]`;
+}
+
+function formatToolLine(tool, index) {
+  return `${index + 1}. ${tool.id} - ${tool.name} [${tool.category}, ${tool.riskLevel}, ${tool.enabled ? 'enabled' : 'disabled'}${tool.requiresApproval ? ', approval' : ''}]`;
+}
+
+function formatToolResult(result) {
+  if (!result) return '-';
+  if (typeof result === 'string') return result;
+  if (result.text) return result.text;
+  if (result.answer) return result.answer;
+  return JSON.stringify(result, null, 2).slice(0, 1800);
 }
 
 function buildPlannerCommandText(title, lines, emptyText) {
@@ -3465,6 +3490,129 @@ async function buildWorkspacesText(userId) {
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
+
+  if (cmd === '/tools') {
+    const toolServices = getToolServices(userId);
+    await toolsSystem.builtinTools.registerBuiltInTools(toolServices);
+    const tools = await toolsSystem.toolRegistry.listTools({ enabled: true, limit: 100 }, toolServices);
+    const byCategory = tools.reduce((acc, tool) => {
+      if (!acc[tool.category]) acc[tool.category] = [];
+      acc[tool.category].push(tool);
+      return acc;
+    }, {});
+    const lines = Object.entries(byCategory).flatMap(([category, items]) => [
+      '',
+      category.toUpperCase(),
+      ...items.slice(0, 15).map(formatToolLine)
+    ]);
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Tool Registry',
+      lines,
+      'Belum ada tool enabled. Cek dashboard Tool Registry.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/tool') {
+    const toolId = String(args || '').trim();
+    if (!toolId) {
+      await safeSendMessage(chatId, 'Format: /tool <toolId>', replyOpt);
+      return true;
+    }
+    const toolServices = getToolServices(userId);
+    await toolsSystem.builtinTools.registerBuiltInTools(toolServices);
+    const tool = await toolsSystem.toolRegistry.getTool(toolId, toolServices);
+    await sendChunkedMessage(chatId, tool ? [
+      `Tool: ${tool.id}`,
+      `Name: ${tool.name}`,
+      `Category: ${tool.category}`,
+      `Risk: ${tool.riskLevel}`,
+      `Enabled: ${tool.enabled ? 'yes' : 'no'}`,
+      `Approval: ${tool.requiresApproval ? 'required' : 'direct if permitted'}`,
+      `Permissions: ${(tool.permissionsRequired || []).join(', ') || 'read'}`,
+      '',
+      tool.description || '-'
+    ].join('\n') : `Tool tidak ditemukan: ${toolId}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/toolpreview') {
+    const [toolId, rawInput = ''] = splitPipeArgs(args);
+    if (!toolId) {
+      await safeSendMessage(chatId, 'Format: /toolpreview <toolId> | <input JSON atau teks>', replyOpt);
+      return true;
+    }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await toolsSystem.toolRunner.previewToolRun(toolId, toolsSystem.toolUtils.parseToolInput(rawInput), {
+      actorId: userId,
+      userId,
+      workspaceId
+    }, getToolServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? `Preview tool:\n${formatToolResult(result.preview)}` : `Preview gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/toolrun') {
+    const [toolId, rawInput = ''] = splitPipeArgs(args);
+    if (!toolId) {
+      await safeSendMessage(chatId, 'Format: /toolrun <toolId> | <input JSON atau teks>', replyOpt);
+      return true;
+    }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await toolsSystem.toolRunner.runTool(toolId, toolsSystem.toolUtils.parseToolInput(rawInput), {
+      actorId: userId,
+      userId,
+      workspaceId
+    }, getToolServices(userId));
+    if (result.requiresApproval) {
+      await safeSendMessage(chatId, `Tool ini butuh approval. Buat proposal dengan:\n/toolpropose ${toolId} | ${rawInput || '{}'}`, replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, result.ok ? `Tool result:\n${formatToolResult(result.result)}` : `Tool gagal: ${result.reason || result.error}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/toolpropose') {
+    const [toolId, rawInput = ''] = splitPipeArgs(args);
+    if (!toolId) {
+      await safeSendMessage(chatId, 'Format: /toolpropose <toolId> | <input JSON atau teks>', replyOpt);
+      return true;
+    }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await toolsSystem.toolRunner.buildToolExecutionProposal(toolId, toolsSystem.toolUtils.parseToolInput(rawInput), {
+      actorId: userId,
+      userId,
+      workspaceId,
+      sourceType: 'manual',
+      sourceId: toolId
+    }, getToolServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Proposal tool dibuat.',
+      '',
+      formatExecutionProposalLine(result.proposal, 0),
+      '',
+      `Approve: /approve ${result.proposal.id}`,
+      `Run: /runexec ${result.proposal.id}`
+    ].join('\n') : `Gagal membuat proposal tool: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/toolenable' || cmd === '/tooldisable') {
+    const toolId = String(args || '').trim();
+    if (!toolId) {
+      await safeSendMessage(chatId, `Format: ${cmd} <toolId>`, replyOpt);
+      return true;
+    }
+    if (!isAdmin(userId)) {
+      await safeSendMessage(chatId, 'Hanya admin bot yang boleh enable/disable tool global.', replyOpt);
+      return true;
+    }
+    const result = cmd === '/toolenable'
+      ? await toolsSystem.toolRegistry.enableTool(toolId, getToolServices(userId))
+      : await toolsSystem.toolRegistry.disableTool(toolId, getToolServices(userId));
+    await safeSendMessage(chatId, result.ok ? `Tool ${cmd === '/toolenable' ? 'enabled' : 'disabled'}: ${result.tool.id}` : `Gagal update tool: ${result.error}`, replyOpt);
+    return true;
+  }
 
   if (cmd === '/executions') {
     const workspaceId = await getDefaultWorkspaceIdForUser(userId);
@@ -6036,6 +6184,13 @@ async function handleHelp(chatId, msg) {
 /runexec proposalId - jalankan proposal yang sudah approved
 /reject proposalId | reason
 /cancel_exec proposalId
+/tools - daftar tool registry
+/tool toolId - metadata tool
+/toolpreview toolId | input
+/toolrun toolId | input
+/toolpropose toolId | input
+/toolenable toolId [admin]
+/tooldisable toolId [admin]
 /graph [konsep] - knowledge graph / relasi konsep
 /concepts - konsep terpenting
 /relate konsep A | konsep B | relationship | evidence
@@ -6202,6 +6357,13 @@ function isUnknownCommand(cmd) {
     '/reject',
     '/runexec',
     '/cancel_exec',
+    '/tools',
+    '/tool',
+    '/toolpreview',
+    '/toolrun',
+    '/toolpropose',
+    '/toolenable',
+    '/tooldisable',
     '/graph',
     '/concepts',
     '/relate',

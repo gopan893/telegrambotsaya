@@ -12,6 +12,7 @@ const softDelete = require('./soft-delete');
 const workspaceRoutes = require('./workspace-routes');
 const plannerRoutes = require('./planner-routes');
 const executorRoutes = require('./executor-routes');
+const toolRoutes = require('./tool-routes');
 
 module.exports = {
   registerDashboardRoutes,
@@ -24,6 +25,7 @@ module.exports = {
   softDelete,
   plannerRoutes,
   executorRoutes,
+  toolRoutes,
   workspaceRoutes,
   utils,
   actions: require('./dashboard-actions')

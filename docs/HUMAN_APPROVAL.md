@@ -13,6 +13,16 @@ planner task / goal / workflow / dashboard request
 -> audit result
 ```
 
+Tool Registry Phase 17 memakai flow yang sama:
+
+```text
+toolpropose / dashboard tool propose
+-> execution proposal dengan action tool.run
+-> pending_approval
+-> approve
+-> runexec
+```
+
 Approval dan run sengaja dipisah:
 
 - `approve` hanya mengubah status menjadi `approved`.
@@ -46,6 +56,7 @@ Semua permission dievaluasi terhadap `workspaceId`. Jika tidak ada workspaceId, 
 - Env/config mutation.
 - External messaging otomatis.
 - Menyimpan atau menampilkan token/API key/DATABASE_URL/REDIS_URL.
+- Menjalankan tool write/external/danger tanpa proposal dan approval.
 
 ## Audit
 
@@ -62,5 +73,7 @@ Event yang dicatat:
 - run completed
 - run failed
 - permission denied
+- tool proposal created
+- tool approval required
 
 Audit output disanitasi agar secret tidak bocor.

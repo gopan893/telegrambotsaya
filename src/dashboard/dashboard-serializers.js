@@ -178,6 +178,67 @@ function sanitizeExecutionRun(run = {}) {
   });
 }
 
+function sanitizeToolMetadata(tool = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(tool.id || '', 120),
+    name: truncateText(tool.name || '', 140),
+    description: truncateText(tool.description || '', 700),
+    category: tool.category || 'utility',
+    version: truncateText(tool.version || '', 40),
+    enabled: tool.enabled !== false,
+    unavailableReason: truncateText(tool.unavailableReason || '', 180),
+    source: tool.source || 'builtin',
+    actionType: truncateText(tool.actionType || tool.id || '', 120),
+    riskLevel: tool.riskLevel || 'low',
+    permissionsRequired: Array.isArray(tool.permissionsRequired) ? tool.permissionsRequired.slice(0, 10).map(item => truncateText(item, 40)) : [],
+    requiresApproval: Boolean(tool.requiresApproval),
+    workspaceAware: tool.workspaceAware !== false,
+    inputSchema: guards.preventSecretLeak(tool.inputSchema || {}),
+    outputSchema: guards.preventSecretLeak(tool.outputSchema || {}),
+    rateLimit: guards.preventSecretLeak(tool.rateLimit || {}),
+    timeoutMs: Number(tool.timeoutMs || 0),
+    createdAt: tool.createdAt || null,
+    updatedAt: tool.updatedAt || null
+  });
+}
+
+function sanitizeToolRun(run = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(run.id || '', 120),
+    toolId: truncateText(run.toolId || '', 120),
+    actionType: truncateText(run.actionType || '', 120),
+    userId: truncateText(run.userId || '', 80),
+    workspaceId: truncateText(run.workspaceId || '', 120),
+    status: run.status || 'unknown',
+    success: Boolean(run.success),
+    latencyMs: Number(run.latencyMs || 0),
+    riskLevel: run.riskLevel || 'low',
+    requiresApproval: Boolean(run.requiresApproval),
+    resultSummary: truncateText(run.resultSummary || '', 500),
+    error: truncateText(run.error || '', 260),
+    createdAt: run.createdAt || null
+  });
+}
+
+function sanitizeToolAudit(entry = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(entry.id || '', 120),
+    action: truncateText(entry.action || '', 120),
+    toolId: truncateText(entry.toolId || '', 120),
+    actionType: truncateText(entry.actionType || '', 120),
+    riskLevel: entry.riskLevel || 'low',
+    userId: truncateText(entry.userId || '', 80),
+    workspaceId: truncateText(entry.workspaceId || '', 120),
+    actorRole: truncateText(entry.actorRole || '', 40),
+    permission: truncateText(entry.permission || '', 40),
+    decision: entry.decision || 'allowed',
+    status: entry.status || 'ok',
+    summary: guards.preventSecretLeak(entry.summary || {}),
+    reason: truncateText(entry.reason || '', 240),
+    createdAt: entry.createdAt || null
+  });
+}
+
 function sanitizeInsight(insight = {}) {
   return {
     ...pickBase(insight),
@@ -542,6 +603,9 @@ module.exports = {
   sanitizeOpsData,
   sanitizePlan,
   sanitizeTask,
+  sanitizeToolAudit,
+  sanitizeToolMetadata,
+  sanitizeToolRun,
   sanitizeWorkflow,
   truncateText,
   sanitizeDashboardSummary,

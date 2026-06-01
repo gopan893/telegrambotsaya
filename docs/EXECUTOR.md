@@ -40,7 +40,7 @@ executor_runs
 
 ## Safe Action Types
 
-Phase 16 hanya mendaftarkan action aman berikut:
+Phase 16 mendaftarkan action aman berikut:
 
 - `planner.task.mark_done`
 - `planner.task.mark_blocked`
@@ -54,6 +54,12 @@ Phase 16 hanya mendaftarkan action aman berikut:
 - `memory.suggest_archive`
 
 `memory.suggest_archive` hanya membuat rekomendasi, bukan archive otomatis.
+
+Phase 17 menambahkan action bridge:
+
+- `tool.run`
+
+`tool.run` hanya menjalankan tool yang sudah terdaftar di Tool Registry, enabled, workspace-aware, permission-valid, dan sudah punya approval eksplisit jika risk/write/external/danger. Proposal tool tetap tidak menjalankan aksi saat dibuat.
 
 ## Telegram Commands
 
@@ -121,4 +127,5 @@ GET  /api/dashboard/executor/runs
 - Belum ada rollback otomatis.
 - Belum ada scheduler/daemon execution.
 - Tidak ada shell/API eksternal bebas.
-- Phase 17 direkomendasikan untuk plugin/tool registry yang tetap human-approved.
+- Tool write/external/danger tetap harus melalui approval dan run terpisah.
+- Phase 18 direkomendasikan untuk backup/export/import registry dan audit.

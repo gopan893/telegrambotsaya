@@ -1,0 +1,239 @@
+'use strict';
+
+const axios = require('axios');
+const registry = require('./tool-registry');
+const utils = require('./tool-utils');
+
+const registeredServices = new WeakSet();
+
+function env(services = {}) {
+  return services.env || process.env;
+}
+
+function hasFn(value) {
+  return typeof value === 'function';
+}
+
+async function weatherLookup(input = {}, context = {}, services = {}) {
+  const city = utils.compactText(input.city || input.query || input.text || '', 120);
+  if (!city) return { ok: false, error: 'CITY_REQUIRED' };
+  const key = env(services).OPENWEATHER_API_KEY;
+  if (!key) return { ok: false, error: 'OPENWEATHER_API_KEY_MISSING' };
+  const res = await axios.get('https://api.openweathermap.org/data/2.5/weather', {
+    params: { q: city, appid: key, units: 'metric', lang: 'id' },
+    timeout: 8000
+  });
+  const data = res.data || {};
+  return {
+    ok: true,
+    result: {
+      city: data.name || city,
+      temperatureC: data.main?.temp,
+      description: data.weather?.[0]?.description || '',
+      humidity: data.main?.humidity,
+      windSpeed: data.wind?.speed,
+      text: `Cuaca ${data.name || city}: ${data.main?.temp ?? '-'}°C, ${data.weather?.[0]?.description || 'tidak tersedia'}`
+    }
+  };
+}
+
+async function searchWeb(input = {}, context = {}, services = {}) {
+  const query = utils.compactText(input.query || input.text || '', 240);
+  if (!query) return { ok: false, error: 'QUERY_REQUIRED' };
+  const key = env(services).TAVILY_API_KEY;
+  if (!key) return { ok: false, error: 'TAVILY_API_KEY_MISSING' };
+  const res = await axios.post('https://api.tavily.com/search', {
+    api_key: key,
+    query,
+    max_results: Math.min(Number(input.maxResults || 5), 8),
+    search_depth: 'basic',
+    include_answer: true
+  }, { timeout: 10000 });
+  return {
+    ok: true,
+    result: {
+      query,
+      answer: res.data?.answer || '',
+      results: (res.data?.results || []).slice(0, 5).map(item => ({
+        title: item.title,
+        url: item.url,
+        content: utils.compactText(item.content || '', 500)
+      }))
+    }
+  };
+}
+
+async function dashboardAction(input = {}, context = {}, services = {}, actionName) {
+  const actions = require('../dashboard/dashboard-actions');
+  const result = await actions.handleAction(actionName, services, input || {});
+  return { ok: result?.ok !== false, result };
+}
+
+async function plannerMarkDone(input = {}, context = {}, services = {}) {
+  const planner = require('../planner');
+  const result = await planner.taskOrchestrator.markTaskDone(input.taskId || context.targetId, {
+    ...services,
+    actorId: context.actorId || services.actorId || context.userId
+  });
+  return { ok: result.ok, result };
+}
+
+async function plannerMarkBlocked(input = {}, context = {}, services = {}) {
+  const planner = require('../planner');
+  const result = await planner.taskOrchestrator.markTaskBlocked(input.taskId || context.targetId, input.reason || 'Blocked via tool registry.', {
+    ...services,
+    actorId: context.actorId || services.actorId || context.userId
+  });
+  return { ok: result.ok, result };
+}
+
+async function workflowStepAdd(input = {}, context = {}, services = {}) {
+  const repos = services.storageManager?.getRepositories?.();
+  const userId = context.userId || services.actorId || input.userId || '';
+  const workflowId = input.workflowId || context.targetId;
+  if (!workflowId) return { ok: false, error: 'WORKFLOW_ID_REQUIRED' };
+  if (repos?.workflows?.addWorkflowStep) {
+    const step = await repos.workflows.addWorkflowStep({
+      userId,
+      workflowId,
+      title: input.title || input.text || 'Tool registry workflow step',
+      description: input.description || '',
+      metadata: { workspaceId: context.workspaceId || input.workspaceId || '' }
+    });
+    return { ok: Boolean(step), result: step };
+  }
+  return { ok: false, error: 'WORKFLOW_REPOSITORY_UNAVAILABLE' };
+}
+
+async function workflowStepDone(input = {}, context = {}, services = {}) {
+  const repos = services.storageManager?.getRepositories?.();
+  const userId = context.userId || services.actorId || input.userId || '';
+  const workflowId = input.workflowId || context.targetId;
+  const stepNumber = input.stepNumber || input.step || input.stepId;
+  if (!workflowId || !stepNumber) return { ok: false, error: 'WORKFLOW_STEP_REQUIRED' };
+  if (repos?.workflows?.completeWorkflowStep) {
+    const step = await repos.workflows.completeWorkflowStep(userId, workflowId, stepNumber);
+    return { ok: Boolean(step), result: step };
+  }
+  return { ok: false, error: 'WORKFLOW_REPOSITORY_UNAVAILABLE' };
+}
+
+async function goalProgressUpdate(input = {}, context = {}, services = {}) {
+  const repos = services.storageManager?.getRepositories?.();
+  const userId = context.userId || services.actorId || input.userId || '';
+  const goalId = input.goalId || context.targetId;
+  const progress = Number(input.progress);
+  if (!goalId || !Number.isFinite(progress)) return { ok: false, error: 'GOAL_PROGRESS_REQUIRED' };
+  if (repos?.goals?.updateGoal) {
+    const goal = await repos.goals.updateGoal(userId, goalId, { progress });
+    return { ok: Boolean(goal), result: goal };
+  }
+  return { ok: false, error: 'GOAL_REPOSITORY_UNAVAILABLE' };
+}
+
+async function memorySuggestArchive(input = {}) {
+  return {
+    ok: true,
+    result: {
+      recommendation: 'Archive suggestion only. No memory was archived automatically.',
+      memoryId: input.memoryId || ''
+    }
+  };
+}
+
+async function graphSearch(input = {}, context = {}, services = {}) {
+  const userId = context.userId || services.actorId || input.userId || '';
+  const query = input.query || input.text || '';
+  const graph = services.aiOS?.knowledgeGraph;
+  if (!graph?.searchGraph && !graph?.listNodes) return { ok: false, error: 'GRAPH_UNAVAILABLE' };
+  const result = graph.searchGraph
+    ? graph.searchGraph(userId, query, services, Math.min(Number(input.limit || 8), 12))
+    : graph.listNodes(userId, { query, limit: Math.min(Number(input.limit || 8), 12) }, services);
+  return { ok: true, result };
+}
+
+async function graphSummarize(input = {}, context = {}, services = {}) {
+  const userId = context.userId || services.actorId || input.userId || '';
+  const summarizer = services.aiOS?.graphSummarizer;
+  if (summarizer?.summarizeProjectGraph) return { ok: true, result: summarizer.summarizeProjectGraph(userId, {}, services) };
+  if (services.aiOS?.knowledgeGraph?.getGraphStats) return { ok: true, result: services.aiOS.knowledgeGraph.getGraphStats(userId, services) };
+  return { ok: false, error: 'GRAPH_SUMMARIZER_UNAVAILABLE' };
+}
+
+function tool(id, patch = {}) {
+  return {
+    id,
+    name: patch.name || id,
+    description: patch.description || id,
+    category: patch.category || 'utility',
+    source: 'builtin',
+    actionType: patch.actionType || id,
+    riskLevel: patch.riskLevel || 'low',
+    permissionsRequired: patch.permissionsRequired || ['read'],
+    requiresApproval: patch.requiresApproval ?? false,
+    workspaceAware: true,
+    inputSchema: patch.inputSchema || {},
+    outputSchema: patch.outputSchema || {},
+    enabled: patch.enabled !== false,
+    unavailableReason: patch.unavailableReason || '',
+    rateLimit: patch.rateLimit || { windowMs: 60000, max: 20 },
+    timeoutMs: patch.timeoutMs || 10000
+  };
+}
+
+async function registerBuiltInTools(services = {}, options = {}) {
+  const marker = services.storageManager && typeof services.storageManager === 'object' ? services.storageManager : services;
+  if (!options.force && marker && typeof marker === 'object' && registeredServices.has(marker)) return { ok: true, skipped: true };
+  const e = env(services);
+  const items = [
+    [tool('weather.lookup', {
+      name: 'Weather Lookup',
+      description: 'Lookup current weather by city using OpenWeather when configured.',
+      category: 'weather',
+      enabled: Boolean(e.OPENWEATHER_API_KEY),
+      unavailableReason: e.OPENWEATHER_API_KEY ? '' : 'OPENWEATHER_API_KEY_MISSING',
+      inputSchema: { type: 'object', required: ['city'], properties: { city: { type: 'string' } } }
+    }), weatherLookup],
+    [tool('search.web', {
+      name: 'Web Search',
+      description: 'Search the web using Tavily when configured.',
+      category: 'search',
+      enabled: Boolean(e.TAVILY_API_KEY),
+      unavailableReason: e.TAVILY_API_KEY ? '' : 'TAVILY_API_KEY_MISSING',
+      inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } } },
+      rateLimit: { windowMs: 60000, max: 10 }
+    }), searchWeb],
+    [tool('ops.diagnostics.run', { category: 'ops', description: 'Run diagnostics.', permissionsRequired: ['read'], requiresApproval: false }), (input, context, svc) => dashboardAction(input, context, svc, 'diagnostics/run')],
+    [tool('ops.benchmark.light', { category: 'ops', description: 'Run light benchmark.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), (input, context, svc) => dashboardAction(input, context, svc, 'benchmark/run-light')],
+    [tool('report.health.export', { category: 'report', description: 'Build sanitized health report.' }), (input, context, svc) => dashboardAction(input, context, svc, 'report/export-health')],
+    [tool('report.user_summary.export', { category: 'report', description: 'Build sanitized user summary.', inputSchema: { type: 'object', properties: { userId: { type: 'string' } } } }), (input, context, svc) => dashboardAction(input, context, svc, 'report/export-user-summary')],
+    [tool('planner.task.mark_done', { category: 'planner', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['taskId'] } }), plannerMarkDone],
+    [tool('planner.task.mark_blocked', { category: 'planner', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['taskId'] } }), plannerMarkBlocked],
+    [tool('workflow.step.add', { category: 'workflow', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), workflowStepAdd],
+    [tool('workflow.step.done', { category: 'workflow', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), workflowStepDone],
+    [tool('goal.progress.update', { category: 'goal', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['goalId', 'progress'] } }), goalProgressUpdate],
+    [tool('memory.suggest_archive', { category: 'memory', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), memorySuggestArchive],
+    [tool('graph.search', { category: 'graph', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), graphSearch],
+    [tool('graph.summarize', { category: 'graph', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), graphSummarize]
+  ];
+
+  for (const [meta, handler] of items) {
+    const available = typeof handler === 'function';
+    await registry.registerTool({
+      ...meta,
+      enabled: meta.enabled !== false && available,
+      unavailableReason: available ? meta.unavailableReason : 'HANDLER_UNAVAILABLE'
+    }, handler, services);
+  }
+  if (marker && typeof marker === 'object') registeredServices.add(marker);
+  return { ok: true, count: items.length };
+}
+
+function resetBuiltInRegistrationForTests() {
+  // WeakSet cannot be cleared; tests can call registerBuiltInTools with { force: true }.
+}
+
+module.exports = {
+  registerBuiltInTools,
+  resetBuiltInRegistrationForTests
+};

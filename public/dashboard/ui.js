@@ -1499,6 +1499,154 @@ const UI = {
     document.getElementById('btn-executor-propose-task').addEventListener('click', proposeTask);
   },
 
+  async renderTools(targetEl) {
+    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
+
+    const getFilters = () => {
+      const userId = document.getElementById('tools-user-id').value.trim();
+      const workspaceId = document.getElementById('tools-workspace-id').value.trim();
+      const category = document.getElementById('tools-category-filter').value;
+      const riskLevel = document.getElementById('tools-risk-filter').value;
+      const enabled = document.getElementById('tools-enabled-filter').value;
+      if (userId) localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
+      return { userId, actorId: userId, workspaceId, category, riskLevel, enabled };
+    };
+
+    const parseInputPrompt = () => {
+      const text = prompt('Input tool (JSON atau teks):', '{}') || '{}';
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        return { text, query: text, city: text };
+      }
+    };
+
+    const renderToolCard = (tool = {}) => `
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <h3 style="font-size:16px; font-weight:700;">${Utils.escapeHtml(tool.name || tool.id)}</h3>
+            <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(tool.id || '-')}</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${UI.renderBadge(tool.enabled ? 'enabled' : 'disabled')}
+            <span class="badge badge-none">${Utils.escapeHtml(tool.riskLevel || 'low')}</span>
+          </div>
+        </div>
+        <p style="font-size:13px; color:var(--text-secondary); margin:12px 0;">${Utils.escapeHtml(tool.description || '-')}</p>
+        <div class="kv-list">
+          <div class="kv-item"><span class="kv-key">Category</span><span>${Utils.escapeHtml(tool.category || '-')}</span></div>
+          <div class="kv-item"><span class="kv-key">Action</span><span>${Utils.escapeHtml(tool.actionType || '-')}</span></div>
+          <div class="kv-item"><span class="kv-key">Approval</span><span>${tool.requiresApproval ? 'required' : 'direct if permitted'}</span></div>
+          <div class="kv-item"><span class="kv-key">Permissions</span><span>${Utils.escapeHtml((tool.permissionsRequired || []).join(', ') || 'read')}</span></div>
+          ${tool.unavailableReason ? `<div class="kv-item"><span class="kv-key">Unavailable</span><span>${Utils.escapeHtml(tool.unavailableReason)}</span></div>` : ''}
+        </div>
+        <details style="margin-top:10px;">
+          <summary>Input schema</summary>
+          <pre style="white-space:pre-wrap; font-size:11px;">${Utils.escapeHtml(JSON.stringify(tool.inputSchema || {}, null, 2))}</pre>
+        </details>
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn btn-outline" data-tool-action="preview" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px;">Preview</button>
+          <button class="btn btn-primary" data-tool-action="run" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px;">Run Safe</button>
+          <button class="btn btn-outline" data-tool-action="propose" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px;">Propose</button>
+          <button class="btn btn-outline" data-tool-action="${tool.enabled ? 'disable' : 'enable'}" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px; color:${tool.enabled ? 'var(--color-danger)' : 'var(--color-success)'};">${tool.enabled ? 'Disable' : 'Enable'}</button>
+        </div>
+      </div>
+    `;
+
+    const bindToolButtons = (container) => {
+      container.querySelectorAll('[data-tool-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-tool-action');
+          const toolId = btn.getAttribute('data-id');
+          const filters = getFilters();
+          let res;
+          const payload = { userId: filters.userId, actorId: filters.actorId, workspaceId: filters.workspaceId };
+          if (action === 'preview') res = await Api.previewTool(toolId, { ...payload, input: parseInputPrompt() });
+          if (action === 'run') res = await Api.runTool(toolId, { ...payload, input: parseInputPrompt() });
+          if (action === 'propose') res = await Api.proposeTool(toolId, { ...payload, input: parseInputPrompt() });
+          if (action === 'enable' || action === 'disable') {
+            return Utils.confirmAction(`${action} tool`, `Lanjutkan ${action} untuk ${toolId}?`, async () => {
+              const r = action === 'enable' ? await Api.enableTool(toolId, payload) : await Api.disableTool(toolId, payload);
+              Utils.showToast(r?.ok && r.data?.ok ? `Tool ${action} sukses.` : `Tool ${action} gagal.`, r?.ok && r.data?.ok ? 'success' : 'danger');
+              await loadTools();
+            });
+          }
+          const ok = res?.ok && res.data?.ok;
+          if (ok && action === 'preview') {
+            document.getElementById('tools-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data.preview, null, 2))}</pre>`;
+          } else if (ok && action === 'run') {
+            document.getElementById('tools-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data.result, null, 2))}</pre>`;
+          } else if (ok && action === 'propose') {
+            document.getElementById('tools-result').innerHTML = `<div class="alert alert-success">Proposal dibuat: <code>${Utils.escapeHtml(res.data.proposal.id)}</code>. Approve/run dari tab Executor.</div>`;
+          }
+          Utils.showToast(ok ? `Tool ${action} sukses.` : `Tool ${action} gagal.`, ok ? 'success' : 'danger');
+          await loadRuns();
+        });
+      });
+    };
+
+    const loadRuns = async () => {
+      const filters = getFilters();
+      const [runs, audit] = await Promise.all([
+        Api.listToolRuns({ workspaceId: filters.workspaceId, limit: 10 }),
+        Api.listToolAudit({ workspaceId: filters.workspaceId, limit: 10 })
+      ]);
+      const runItems = runs.data?.items || [];
+      const auditItems = audit.data?.items || [];
+      document.getElementById('tools-runs').innerHTML = `
+        <div class="card">
+          <div class="card-title">Recent Tool Runs</div>
+          ${runItems.length ? runItems.map(item => `<div style="padding:8px 0; border-bottom:1px solid var(--border-color);"><strong>${Utils.escapeHtml(item.toolId)}</strong> ${UI.renderBadge(item.status || 'unknown')}<div style="font-size:12px; color:var(--text-secondary);">${Number(item.latencyMs || 0)}ms · ${Utils.escapeHtml(item.error || item.resultSummary || '-')}</div></div>`).join('') : '<p class="text-muted">Belum ada run.</p>'}
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <div class="card-title">Tool Audit</div>
+          ${auditItems.length ? auditItems.map(item => `<div style="padding:8px 0; border-bottom:1px solid var(--border-color);"><code>${Utils.escapeHtml(item.action)}</code><div style="font-size:12px; color:var(--text-secondary);">${Utils.escapeHtml(item.toolId || '-')} · ${Utils.escapeHtml(item.reason || item.status || '-')}</div></div>`).join('') : '<p class="text-muted">Belum ada audit.</p>'}
+        </div>
+      `;
+    };
+
+    const loadTools = async () => {
+      const filters = getFilters();
+      const panel = document.getElementById('tools-list');
+      panel.innerHTML = UI.renderLoading('Memuat tool registry...');
+      const res = await Api.listTools(filters);
+      if (!res.ok || !res.data?.ok) {
+        panel.innerHTML = UI.renderError('Gagal memuat tool registry');
+        return;
+      }
+      const items = res.data.items || [];
+      panel.innerHTML = items.length
+        ? `<div class="card-grid-wide">${items.map(renderToolCard).join('')}</div>`
+        : UI.renderEmptyState('🧰', 'Belum Ada Tool', 'Built-in tools akan terdaftar saat API dipanggil.');
+      bindToolButtons(panel);
+      await loadRuns();
+    };
+
+    let html = UI.renderSectionHeader('Tool Registry');
+    html += `
+      <div class="alert alert-warning" style="margin-bottom:16px;">Write, external, dan danger tools harus lewat proposal executor. Tidak ada shell atau dynamic plugin execution.</div>
+      <div class="filter-bar">
+        <div class="filter-group"><label>User ID Telegram</label><input id="tools-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
+        ${UI.renderWorkspaceInput('tools')}
+        <div class="filter-group"><label>Category</label><select id="tools-category-filter"><option value="">all</option><option>weather</option><option>search</option><option>ops</option><option>report</option><option>planner</option><option>workflow</option><option>goal</option><option>memory</option><option>graph</option></select></div>
+        <div class="filter-group"><label>Risk</label><select id="tools-risk-filter"><option value="">all</option><option>low</option><option>medium</option><option>high</option><option>danger</option></select></div>
+        <div class="filter-group"><label>Enabled</label><select id="tools-enabled-filter"><option value="">all</option><option value="true">true</option><option value="false">false</option></select></div>
+        <button class="btn btn-primary" id="btn-load-tools" style="height:40px;">Load Tools</button>
+      </div>
+      <div class="grid grid-2" style="gap:18px; align-items:start;">
+        <div>
+          <div id="tools-list">${UI.renderEmptyState('🧰', 'Load Tools', 'Klik Load Tools untuk melihat registry.')}</div>
+          <div class="card" style="margin-top:12px;"><div class="card-title">Tool Result</div><div id="tools-result"><p class="text-muted">Preview/run output akan muncul di sini.</p></div></div>
+        </div>
+        <div id="tools-runs">${UI.renderEmptyState('📋', 'Tool Runs', 'Riwayat tool akan muncul di sini.')}</div>
+      </div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-load-tools').addEventListener('click', loadTools);
+  },
+
   async renderInsights(targetEl) {
     let currentUserId = localStorage.getItem('last_user_id') || '123456789';
 
