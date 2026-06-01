@@ -100,6 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'planner':
         await UI.renderPlanner(tabContent);
         break;
+      case 'executor':
+        await UI.renderExecutor(tabContent);
+        break;
       case 'insights':
         await UI.renderInsights(tabContent);
         break;

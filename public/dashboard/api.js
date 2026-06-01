@@ -233,6 +233,72 @@ const Api = {
     return this.apiPost('/planner/from-text', payload);
   },
 
+  async listExecutionProposals(filters = {}) {
+    const params = new URLSearchParams();
+    ['userId', 'actorId', 'workspaceId', 'status', 'riskLevel', 'sourceType', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/executor${query ? `?${query}` : ''}`);
+  },
+
+  async listPendingExecutions(filters = {}) {
+    const params = new URLSearchParams();
+    ['userId', 'actorId', 'workspaceId', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/executor/pending${query ? `?${query}` : ''}`);
+  },
+
+  async getExecutionProposal(proposalId, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.actorId) params.set('actorId', filters.actorId);
+    const query = params.toString();
+    return this.apiGet(`/executor/${encodeURIComponent(proposalId)}${query ? `?${query}` : ''}`);
+  },
+
+  async createExecutionProposal(payload) {
+    return this.apiPost('/executor/propose', payload);
+  },
+
+  async proposeExecutionFromTask(payload) {
+    return this.apiPost('/executor/propose/from-task', payload);
+  },
+
+  async proposeExecutionFromGoal(payload) {
+    return this.apiPost('/executor/propose/from-goal', payload);
+  },
+
+  async proposeExecutionFromWorkflow(payload) {
+    return this.apiPost('/executor/propose/from-workflow', payload);
+  },
+
+  async approveExecution(proposalId, payload = {}) {
+    return this.apiPost(`/executor/${encodeURIComponent(proposalId)}/approve`, payload);
+  },
+
+  async rejectExecution(proposalId, payload = {}) {
+    return this.apiPost(`/executor/${encodeURIComponent(proposalId)}/reject`, payload);
+  },
+
+  async cancelExecution(proposalId, payload = {}) {
+    return this.apiPost(`/executor/${encodeURIComponent(proposalId)}/cancel`, payload);
+  },
+
+  async runExecution(proposalId, payload = {}) {
+    return this.apiPost(`/executor/${encodeURIComponent(proposalId)}/run`, payload);
+  },
+
+  async listExecutionRuns(filters = {}) {
+    const params = new URLSearchParams();
+    ['userId', 'actorId', 'workspaceId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/executor/runs${query ? `?${query}` : ''}`);
+  },
+
   async searchUserGraph(userId, q, workspaceId = '') {
     const encodedUser = encodeURIComponent(userId);
     const encodedQ = encodeURIComponent(q);

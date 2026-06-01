@@ -1087,6 +1087,7 @@ const UI = {
                   <div style="display:flex; gap:6px; flex-wrap:wrap;">
                     <button class="btn btn-outline" data-planner-task="done" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Done</button>
                     <button class="btn btn-outline" data-planner-task="blocked" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Block</button>
+                    <button class="btn btn-outline" data-planner-task="propose" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Propose Exec</button>
                     <button class="btn btn-outline" data-planner-task="archive" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px; color:var(--color-danger);">Archive</button>
                   </div>
                 </td>
@@ -1109,6 +1110,10 @@ const UI = {
             const reason = prompt('Alasan blocked:') || '';
             if (!reason) return;
             res = await Api.markTaskBlocked(taskId, { userId, workspaceId, reason });
+          } else if (action === 'propose') {
+            res = await Api.proposeExecutionFromTask({ userId, actorId: userId, workspaceId, taskId });
+            Utils.showToast(res?.ok && res.data?.ok ? 'Proposal eksekusi dibuat. Buka tab Executor untuk approve/run.' : 'Gagal membuat proposal eksekusi.', res?.ok && res.data?.ok ? 'success' : 'danger');
+            return;
           } else if (action === 'archive') {
             return Utils.confirmAction('Archive Task', 'Task akan disembunyikan dari daftar aktif, tetapi tidak dihapus permanen.', async () => {
               const res = await Api.archiveTask(taskId, { userId, workspaceId });
@@ -1303,6 +1308,195 @@ const UI = {
     });
     document.getElementById('btn-create-plan').addEventListener('click', createPlan);
     document.getElementById('btn-generate-plan-text').addEventListener('click', generateFromText);
+  },
+
+  async renderExecutor(targetEl) {
+    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
+
+    const renderActions = (actions = []) => {
+      if (!actions.length) return '<p class="text-muted">Tidak ada action.</p>';
+      return actions.map((action, index) => `
+        <div style="border:1px solid var(--border-color); border-radius:6px; padding:10px; margin-top:8px;">
+          <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <strong>${index + 1}. ${Utils.escapeHtml(action.type || '-')}</strong>
+            <span class="badge badge-${Utils.escapeHtml(action.riskLevel || 'low')}">${Utils.escapeHtml(action.riskLevel || 'low')}</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">${Utils.escapeHtml(action.description || '')}</div>
+          <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted); margin-top:6px;">${Utils.escapeHtml(action.targetType || '-')}:${Utils.escapeHtml(action.targetId || '-')}</div>
+        </div>
+      `).join('');
+    };
+
+    const renderProposalCard = (proposal = {}) => `
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <h3 style="font-size:16px; font-weight:700;">${Utils.escapeHtml(proposal.title || '-')}</h3>
+            <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(proposal.id || '-')}</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">${UI.renderBadge(proposal.status || 'unknown')}<span class="badge badge-none">${Utils.escapeHtml(proposal.riskLevel || 'low')}</span></div>
+        </div>
+        <p style="font-size:13px; color:var(--text-secondary); margin:12px 0;">${Utils.escapeHtml(proposal.description || 'Tidak ada deskripsi.')}</p>
+        <div class="kv-list" style="margin-bottom:10px;">
+          <div class="kv-item"><span class="kv-key">Source</span><span>${Utils.escapeHtml(proposal.sourceType || '-')} ${Utils.escapeHtml(proposal.sourceId || '')}</span></div>
+          <div class="kv-item"><span class="kv-key">Approval</span><span>${proposal.requiresApproval ? 'required' : 'not required'}</span></div>
+          <div class="kv-item"><span class="kv-key">Expires</span><span>${Utils.escapeHtml(proposal.expiresAt ? Utils.formatDate(proposal.expiresAt) : '-')}</span></div>
+        </div>
+        ${renderActions(proposal.proposedActions || [])}
+        ${proposal.resultSummary ? `<div class="alert alert-success" style="margin-top:10px;">${Utils.escapeHtml(proposal.resultSummary)}</div>` : ''}
+        ${proposal.errorSummary ? `<div class="alert alert-warning" style="margin-top:10px;">${Utils.escapeHtml(proposal.errorSummary)}</div>` : ''}
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn btn-outline" data-exec-action="approve" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px;">Approve</button>
+          <button class="btn btn-primary" data-exec-action="run" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px;">Run Approved</button>
+          <button class="btn btn-outline" data-exec-action="reject" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px;">Reject</button>
+          <button class="btn btn-outline" data-exec-action="cancel" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const getFilters = () => {
+      const userId = document.getElementById('executor-user-id').value.trim();
+      const workspaceId = document.getElementById('executor-workspace-id').value.trim();
+      const status = document.getElementById('executor-status-filter').value;
+      const riskLevel = document.getElementById('executor-risk-filter').value;
+      if (userId) localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
+      return { userId, actorId: userId, workspaceId, status, riskLevel };
+    };
+
+    const bindProposalButtons = (container) => {
+      container.querySelectorAll('[data-exec-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-exec-action');
+          const proposalId = btn.getAttribute('data-id');
+          const filters = getFilters();
+          const run = async () => {
+            let res;
+            if (action === 'approve') res = await Api.approveExecution(proposalId, filters);
+            if (action === 'run') res = await Api.runExecution(proposalId, filters);
+            if (action === 'reject') res = await Api.rejectExecution(proposalId, { ...filters, reason: prompt('Alasan reject:', '') || 'Rejected from dashboard.' });
+            if (action === 'cancel') res = await Api.cancelExecution(proposalId, filters);
+            Utils.showToast(res?.ok && res.data?.ok ? `Executor ${action} sukses.` : `Executor ${action} gagal.`, res?.ok && res.data?.ok ? 'success' : 'danger');
+            await loadExecutor();
+          };
+          const labels = {
+            approve: 'Approve proposal ini? Approval belum menjalankan aksi.',
+            run: 'Run proposal yang sudah approved? Action akan dieksekusi sesuai registry aman.',
+            reject: 'Reject proposal ini?',
+            cancel: 'Cancel proposal ini?'
+          };
+          return Utils.confirmAction(`Executor ${action}`, labels[action] || 'Lanjutkan action?', run);
+        });
+      });
+    };
+
+    const loadExecutor = async () => {
+      const filters = getFilters();
+      const panel = document.getElementById('executor-list');
+      const runsPanel = document.getElementById('executor-runs');
+      if (!filters.userId) return;
+      panel.innerHTML = UI.renderLoading('Memuat proposal executor...');
+      const res = await Api.listExecutionProposals(filters);
+      if (!res.ok || !res.data?.ok) {
+        panel.innerHTML = UI.renderError('Gagal memuat proposal executor');
+      } else {
+        const items = res.data.items || [];
+        panel.innerHTML = items.length
+          ? `<div class="card-grid-wide">${items.map(renderProposalCard).join('')}</div>`
+          : UI.renderEmptyState('✅', 'Belum Ada Proposal', 'Buat proposal dari task planner atau manual.');
+        bindProposalButtons(panel);
+      }
+      const runs = await Api.listExecutionRuns({ userId: filters.userId, actorId: filters.actorId, workspaceId: filters.workspaceId, limit: 10 });
+      const runItems = runs.data?.items || [];
+      runsPanel.innerHTML = `
+        <div class="card">
+          <div class="card-title">Recent Executions</div>
+          ${runItems.length ? runItems.map(run => `
+            <div style="padding:8px 0; border-bottom:1px solid var(--border-color);">
+              <strong>${Utils.escapeHtml(run.id)}</strong> ${UI.renderBadge(run.status || 'unknown')}
+              <div style="font-size:12px; color:var(--text-secondary);">${Utils.escapeHtml(run.resultSummary || run.errorSummary || '-')}</div>
+            </div>
+          `).join('') : '<p class="text-muted">Belum ada execution run.</p>'}
+        </div>
+      `;
+    };
+
+    const createManualProposal = async () => {
+      const filters = getFilters();
+      const title = prompt('Judul proposal eksekusi:');
+      if (!title) return;
+      const description = prompt('Deskripsi:', '') || '';
+      const actionType = prompt('Action type aman:', 'report.health.export') || 'report.health.export';
+      const res = await Api.createExecutionProposal({
+        ...filters,
+        title,
+        description,
+        sourceType: 'dashboard',
+        proposedActions: [{
+          type: actionType,
+          targetType: 'dashboard',
+          description: description || title,
+          payload: {},
+          riskLevel: actionType.includes('benchmark') ? 'medium' : 'low'
+        }]
+      });
+      Utils.showToast(res?.ok && res.data?.ok ? 'Proposal manual dibuat.' : 'Gagal membuat proposal manual.', res?.ok && res.data?.ok ? 'success' : 'danger');
+      await loadExecutor();
+    };
+
+    const proposeTask = async () => {
+      const filters = getFilters();
+      const taskId = prompt('Planner task ID:');
+      if (!taskId) return;
+      const res = await Api.proposeExecutionFromTask({ ...filters, taskId });
+      Utils.showToast(res?.ok && res.data?.ok ? 'Proposal dari task dibuat.' : 'Gagal membuat proposal dari task.', res?.ok && res.data?.ok ? 'success' : 'danger');
+      await loadExecutor();
+    };
+
+    let html = UI.renderSectionHeader('Human-Approved Executor');
+    html += `
+      <div class="alert alert-warning" style="margin-bottom:16px;">No action runs without approval. Proposal creation only prepares a preview; use Approve, then Run Approved.</div>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label for="executor-user-id">User ID Telegram</label>
+          <input type="text" id="executor-user-id" value="${Utils.escapeHtml(currentUserId)}">
+        </div>
+        ${UI.renderWorkspaceInput('executor')}
+        <div class="filter-group">
+          <label>Status</label>
+          <select id="executor-status-filter">
+            <option value="">all</option>
+            <option value="pending_approval">pending_approval</option>
+            <option value="approved">approved</option>
+            <option value="completed">completed</option>
+            <option value="failed">failed</option>
+            <option value="rejected">rejected</option>
+            <option value="cancelled">cancelled</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Risk</label>
+          <select id="executor-risk-filter">
+            <option value="">all</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="danger">danger</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="btn-load-executor" style="height:40px;">Load</button>
+        <button class="btn btn-outline" id="btn-executor-propose-task" style="height:40px;">Propose From Task</button>
+        <button class="btn btn-outline" id="btn-executor-create" style="height:40px;">Create Manual Proposal</button>
+      </div>
+      <div class="grid grid-2" style="gap:18px; align-items:start;">
+        <div id="executor-list">${UI.renderEmptyState('✅', 'Load Executor', 'Masukkan User ID untuk melihat proposal.')}</div>
+        <div id="executor-runs">${UI.renderEmptyState('📋', 'Recent Runs', 'Run executor akan muncul di sini.')}</div>
+      </div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-load-executor').addEventListener('click', loadExecutor);
+    document.getElementById('btn-executor-create').addEventListener('click', createManualProposal);
+    document.getElementById('btn-executor-propose-task').addEventListener('click', proposeTask);
   },
 
   async renderInsights(targetEl) {

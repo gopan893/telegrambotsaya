@@ -118,6 +118,66 @@ function sanitizeTask(task = {}) {
   });
 }
 
+function sanitizeExecutionAction(action = {}) {
+  return guards.preventSecretLeak({
+    id: action.id,
+    type: truncateText(action.type || '', 120),
+    targetType: truncateText(action.targetType || '', 80),
+    targetId: truncateText(action.targetId || '', 120),
+    workspaceId: truncateText(action.workspaceId || '', 120),
+    userId: truncateText(action.userId || '', 80),
+    description: truncateText(action.description || '', 360),
+    payload: guards.preventSecretLeak(action.payload || {}),
+    riskLevel: action.riskLevel || 'medium',
+    requiresApproval: action.requiresApproval !== false,
+    status: action.status || 'pending_approval'
+  });
+}
+
+function sanitizeExecutionProposal(proposal = {}) {
+  return guards.preventSecretLeak({
+    ...pickBase(proposal),
+    sourceType: proposal.sourceType || 'manual',
+    sourceId: truncateText(proposal.sourceId || '', 120),
+    title: truncateText(proposal.title || '', 180),
+    description: truncateText(proposal.description || '', 700),
+    proposedActions: Array.isArray(proposal.proposedActions) ? proposal.proposedActions.slice(0, 30).map(sanitizeExecutionAction) : [],
+    riskLevel: proposal.riskLevel || 'medium',
+    requiresApproval: proposal.requiresApproval !== false,
+    approvedBy: truncateText(proposal.approvedBy || '', 80),
+    approvedAt: proposal.approvedAt || null,
+    rejectedBy: truncateText(proposal.rejectedBy || '', 80),
+    rejectedAt: proposal.rejectedAt || null,
+    expiresAt: proposal.expiresAt || null,
+    resultSummary: truncateText(proposal.resultSummary || '', 500),
+    errorSummary: truncateText(proposal.errorSummary || '', 500)
+  });
+}
+
+function sanitizeExecutionRun(run = {}) {
+  return guards.preventSecretLeak({
+    id: run.id,
+    proposalId: truncateText(run.proposalId || '', 120),
+    workspaceId: truncateText(run.workspaceId || '', 120),
+    userId: truncateText(run.userId || '', 80),
+    status: run.status || 'unknown',
+    actionResults: Array.isArray(run.actionResults) ? run.actionResults.slice(0, 30).map(item => guards.preventSecretLeak({
+      ok: Boolean(item.ok),
+      actionId: truncateText(item.actionId || '', 120),
+      actionType: truncateText(item.actionType || '', 120),
+      result: item.result || null,
+      error: truncateText(item.error || '', 240),
+      rollback: truncateText(item.rollback || '', 240)
+    })) : [],
+    resultSummary: truncateText(run.resultSummary || '', 500),
+    errorSummary: truncateText(run.errorSummary || '', 500),
+    startedAt: run.startedAt || null,
+    completedAt: run.completedAt || null,
+    createdAt: run.createdAt || null,
+    updatedAt: run.updatedAt || null
+  });
+}
+
 function sanitizeInsight(insight = {}) {
   return {
     ...pickBase(insight),
@@ -470,6 +530,9 @@ function sanitizeActionResult(result = {}) {
 
 module.exports = {
   sanitizeEnvStatus,
+  sanitizeExecutionAction,
+  sanitizeExecutionProposal,
+  sanitizeExecutionRun,
   sanitizeGoal,
   sanitizeGraphEdge,
   sanitizeGraphNode,

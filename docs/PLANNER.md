@@ -67,7 +67,7 @@ POST /api/dashboard/planner/from-goal
 POST /api/dashboard/planner/from-text
 ```
 
-Dashboard UI punya tab `Planner` untuk load plans, create plan, generate plan from text, add task, mark done, block, archive, dan next actions.
+Dashboard UI punya tab `Planner` untuk load plans, create plan, generate plan from text, add task, mark done, block, archive, dan next actions. Phase 16 menambahkan tombol `Propose Exec` di task planner untuk membuat proposal eksekusi human-approved tanpa menjalankan task otomatis.
 
 ## Telegram
 
@@ -98,4 +98,4 @@ Sapaan, hitungan sederhana, dan chat umum tidak memicu planner.
 - Planner tidak menjalankan shell/API/action eksternal.
 - Jika storage gagal, fallback memory/JSON dari storage manager tetap dipakai.
 
-Phase 16 dapat menambahkan human-approved autonomous executor, tetapi Phase 15 hanya membuat rencana dan task.
+Phase 16 menambahkan human-approved executor. Planner tetap hanya membuat rencana dan task; eksekusi task harus lewat proposal, approval eksplisit, lalu run terpisah.

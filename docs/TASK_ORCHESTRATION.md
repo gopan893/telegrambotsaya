@@ -94,7 +94,7 @@ Semua command workspace-aware dan audited.
 ## Security
 
 - Tidak ada hard delete.
-- Tidak ada executor otomatis.
+- Tidak ada executor otomatis penuh. Phase 16 hanya mendukung human-approved executor: task bisa dibuat menjadi proposal dengan `/propose <taskId>`, lalu harus `/approve` dan `/runexec` secara eksplisit.
 - Payload token/API key/connection string ditolak atau dimask.
 - Cross-workspace access ditolak/hidden.
 - Write action dicatat di audit log.

@@ -30,6 +30,7 @@ const naturalToolRouter = require('../natural-language/natural-tool-router');
 const dashboard = require('../dashboard');
 const workspaceSystem = require('../workspace');
 const plannerSystem = require('../planner');
+const executorSystem = require('../executor');
 const {
   formatDashboardStorageStatus,
   formatDbStatus,
@@ -3340,6 +3341,19 @@ function getPlannerServices(actorId = '') {
   };
 }
 
+function getExecutorServices(actorId = '') {
+  return {
+    ...getWorkspaceServices(),
+    actorId: actorId || '',
+    actorType: 'telegram',
+    aiOS,
+    opsSystem,
+    getOpsServices,
+    getUsersSnapshot,
+    log
+  };
+}
+
 function formatPermissionFlags(summary = {}) {
   const flags = [
     summary.canRead ? 'read' : '',
@@ -3361,6 +3375,15 @@ function formatTaskLine(task, index) {
   const score = Number(task.priorityScore || 0);
   const blocked = task.status === 'blocked' && task.blockedReason ? ` Blocked: ${task.blockedReason}` : '';
   return `${index + 1}. ${task.id} - ${task.title} [${task.status}, ${task.priority}, score ${score}]${blocked}`;
+}
+
+function formatExecutionProposalLine(proposal, index) {
+  const actions = Array.isArray(proposal.proposedActions) ? proposal.proposedActions.length : 0;
+  return `${index + 1}. ${proposal.id} - ${proposal.title} [${proposal.status}, risk ${proposal.riskLevel}, actions ${actions}]`;
+}
+
+function formatExecutionActionLine(action, index) {
+  return `${index + 1}. ${action.type} -> ${action.description || action.targetId || '-'} [${action.riskLevel || 'low'}]`;
 }
 
 function buildPlannerCommandText(title, lines, emptyText) {
@@ -3442,6 +3465,129 @@ async function buildWorkspacesText(userId) {
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
+
+  if (cmd === '/executions') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const proposals = await executorSystem.executionStore.listExecutionItems(executorSystem.executionStore.EXECUTOR_PROPOSALS_KEY, {
+      userId,
+      workspaceId,
+      limit: 20,
+      includeExpired: true
+    }, getExecutorServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Execution proposals',
+      proposals.map(formatExecutionProposalLine),
+      'Belum ada proposal eksekusi. Buat dari task dengan /propose <taskId>.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/pending') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const proposals = await executorSystem.executionQueue.listPendingApprovals({
+      userId,
+      actorId: userId,
+      workspaceId,
+      limit: 20
+    }, getExecutorServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Pending approvals',
+      proposals.map(formatExecutionProposalLine),
+      'Tidak ada approval yang menunggu.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, 'Format: /propose <taskId>\nProposal dibuat saja, tidak akan dijalankan sebelum /approve lalu /runexec.', replyOpt);
+      return true;
+    }
+    const result = await executorSystem.executionPlanner.proposeFromPlannerTask(taskId, {
+      actorId: userId
+    }, getExecutorServices(userId));
+    if (!result.ok) {
+      await safeSendMessage(chatId, `Gagal membuat proposal: ${result.reason}`, replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, [
+      'Proposal eksekusi dibuat.',
+      '',
+      formatExecutionProposalLine(result.proposal, 0),
+      '',
+      'Actions:',
+      ...(result.proposal.proposedActions || []).map(formatExecutionActionLine),
+      '',
+      `Approve: /approve ${result.proposal.id}`,
+      `Run setelah approved: /runexec ${result.proposal.id}`,
+      'Catatan: approval tidak menjalankan aksi otomatis.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/approve') {
+    const proposalId = String(args || '').trim();
+    if (!proposalId) {
+      await safeSendMessage(chatId, 'Format: /approve <proposalId>\nApprove hanya menyetujui; jalankan dengan /runexec <proposalId>.', replyOpt);
+      return true;
+    }
+    const result = await executorSystem.executionQueue.approveExecution(proposalId, userId, getExecutorServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Proposal approved:\n${formatExecutionProposalLine(result.proposal, 0)}\n\nJalankan dengan /runexec ${proposalId}` : `Gagal approve: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/reject') {
+    const [proposalId, reason = 'Rejected by Telegram user.'] = splitPipeArgs(args);
+    if (!proposalId) {
+      await safeSendMessage(chatId, 'Format: /reject <proposalId> | <reason>', replyOpt);
+      return true;
+    }
+    const result = await executorSystem.executionQueue.rejectExecution(proposalId, userId, reason, getExecutorServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Proposal rejected:\n${formatExecutionProposalLine(result.proposal, 0)}` : `Gagal reject: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/cancel_exec') {
+    const proposalId = String(args || '').trim();
+    if (!proposalId) {
+      await safeSendMessage(chatId, 'Format: /cancel_exec <proposalId>', replyOpt);
+      return true;
+    }
+    const result = await executorSystem.executionQueue.cancelExecution(proposalId, userId, getExecutorServices(userId));
+    await safeSendMessage(
+      chatId,
+      result.ok ? `Proposal cancelled:\n${formatExecutionProposalLine(result.proposal, 0)}` : `Gagal cancel: ${result.reason}`,
+      replyOpt
+    );
+    return true;
+  }
+
+  if (cmd === '/runexec') {
+    const proposalId = String(args || '').trim();
+    if (!proposalId) {
+      await safeSendMessage(chatId, 'Format: /runexec <proposalId>\nProposal harus approved dulu dengan /approve <proposalId>.', replyOpt);
+      return true;
+    }
+    const result = await executorSystem.approvedRunner.runApprovedExecution(proposalId, getExecutorServices(userId));
+    const actionLines = (result.actionResults || []).map((item, index) => `${index + 1}. ${item.actionType} - ${item.ok ? 'ok' : `failed: ${item.error}`}`);
+    await sendChunkedMessage(chatId, [
+      result.ok ? 'Execution selesai.' : `Execution gagal: ${result.reason || result.proposal?.errorSummary || 'ACTION_FAILED'}`,
+      '',
+      result.proposal ? formatExecutionProposalLine(result.proposal, 0) : `Proposal: ${proposalId}`,
+      '',
+      ...(actionLines.length ? actionLines : ['Tidak ada action result.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
 
   if (cmd === '/plans') {
     const workspaceId = await getDefaultWorkspaceIdForUser(userId);
@@ -5883,6 +6029,13 @@ async function handleHelp(chatId, msg) {
 /taskblock taskId | reason
 /next - next action planner
 /priorities - prioritas task planner
+/executions - daftar proposal eksekusi
+/pending - approval eksekusi yang menunggu
+/propose taskId - buat proposal dari task planner
+/approve proposalId - approve tanpa menjalankan
+/runexec proposalId - jalankan proposal yang sudah approved
+/reject proposalId | reason
+/cancel_exec proposalId
 /graph [konsep] - knowledge graph / relasi konsep
 /concepts - konsep terpenting
 /relate konsep A | konsep B | relationship | evidence
@@ -6042,6 +6195,13 @@ function isUnknownCommand(cmd) {
     '/taskblock',
     '/next',
     '/priorities',
+    '/executions',
+    '/pending',
+    '/propose',
+    '/approve',
+    '/reject',
+    '/runexec',
+    '/cancel_exec',
     '/graph',
     '/concepts',
     '/relate',
@@ -7534,6 +7694,38 @@ Data endpoint membutuhkan Authorization Bearer token.`;
 
   const adaptiveDecision = detectAdaptiveModeForMessage(userId, userText, resolvedCmd, msg, conversationState);
   await hydrateAIOSForMessageSafe(userId, userText, adaptiveDecision);
+  const naturalExecutorResult = await executorSystem.executionPlanner.answerWithExecutorContext(userId, chatId, userText, msg, {
+    ...getExecutorServices(userId),
+    adaptiveDecision,
+    safeSendMessage,
+    sendChunkedMessage
+  });
+  if (naturalExecutorResult?.handled) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_executor',
+      processed: true,
+      answerPreview: naturalExecutorResult.answer
+    });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: naturalExecutorResult.answer,
+      intent: `natural_executor:${naturalExecutorResult.type || adaptiveDecision?.mode || 'executor'}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: naturalExecutorResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, naturalExecutorResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
+    return;
+  }
   const naturalPlannerResult = await plannerSystem.plannerEngine.answerWithPlannerContext(userId, chatId, userText, msg, {
     ...getPlannerServices(userId),
     adaptiveDecision,

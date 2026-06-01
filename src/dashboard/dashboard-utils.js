@@ -30,6 +30,7 @@ function buildCommandCatalog() {
     goals: ['/goals', '/goaladd', '/goalupdate'],
     workflows: ['/workflows', '/workflowadd', '/workflowstep', '/workflowdone', '/workflowdecision', '/workflowblocker', '/workflownext'],
     planner: ['/plans', '/plan <id>', '/planadd <title>', '/plantasks <planId>', '/taskadd <planId> | <task title>', '/taskdone <taskId>', '/taskblock <taskId> | <reason>', '/next', '/priorities'],
+    executor: ['/executions', '/pending', '/propose <taskId>', '/approve <proposalId>', '/reject <proposalId> | <reason>', '/runexec <proposalId>', '/cancel_exec <proposalId>'],
     collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],
     graph: ['/graph', '/graph <konsep>', '/concepts', '/relate', '/graphsearch', '/graphrisks', '/graphdeps', '/graphprune', '/graphstats'],
     ops: ['/ops', '/health', '/diag', '/reliability', '/perf', '/tokens', '/benchmark'],

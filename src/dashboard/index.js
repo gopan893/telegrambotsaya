@@ -11,6 +11,7 @@ const safeActions = require('./safe-actions');
 const softDelete = require('./soft-delete');
 const workspaceRoutes = require('./workspace-routes');
 const plannerRoutes = require('./planner-routes');
+const executorRoutes = require('./executor-routes');
 
 module.exports = {
   registerDashboardRoutes,
@@ -22,6 +23,7 @@ module.exports = {
   serializers,
   softDelete,
   plannerRoutes,
+  executorRoutes,
   workspaceRoutes,
   utils,
   actions: require('./dashboard-actions')

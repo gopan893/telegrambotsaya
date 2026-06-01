@@ -94,6 +94,26 @@ planner/permission_denied/<permission>
 
 Entry menyertakan `workspaceId`, `actorRole`, `permission`, `decision`, dan ringkasan `beforeSummary`/`afterSummary` yang sudah disanitasi.
 
+## Executor Audit Events
+
+Phase 16 mencatat semua perubahan executor:
+
+```text
+executor/proposal_created
+executor/approval_requested
+executor/approved
+executor/rejected
+executor/cancelled
+executor/run_started
+executor/action_completed
+executor/action_failed
+executor/run_completed
+executor/run_failed
+executor/permission_denied
+```
+
+Audit executor menyertakan `workspaceId`, `actorRole`, `proposalId`/`targetId`, risk/action summary, `decision`, dan ringkasan hasil yang sudah disanitasi. Proposal creation tidak menjalankan action; approval dan run dicatat sebagai event terpisah.
+
 ## Known Limits
 
 - Belum ada export audit terpisah.

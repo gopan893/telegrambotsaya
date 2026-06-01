@@ -69,6 +69,20 @@ Dokumen ini merangkum command utama bot setelah Phase 7. Semua output panjang ha
 
 Natural chat yang diarahkan ke planner: `apa prioritas saya?`, `langkah berikutnya apa?`, `buat roadmap`, `pecah goal ini jadi task`, dan `apa yang harus saya kerjakan minggu ini?`.
 
+## Human-Approved Executor
+
+| Command | Fungsi |
+| --- | --- |
+| `/executions` | Daftar proposal eksekusi terbaru untuk workspace user. |
+| `/pending` | Daftar proposal yang menunggu approval. |
+| `/propose <taskId>` | Buat proposal eksekusi dari planner task. Tidak menjalankan aksi. |
+| `/approve <proposalId>` | Approve proposal. Approval tidak otomatis menjalankan aksi. |
+| `/runexec <proposalId>` | Jalankan proposal yang sudah approved. |
+| `/reject <proposalId> | <reason>` | Reject proposal. |
+| `/cancel_exec <proposalId>` | Cancel proposal pending/approved. |
+
+Natural chat seperti `jalankan task ini`, `eksekusi langkah berikutnya`, dan `buatkan proposal eksekusi` diarahkan ke executor. Bot hanya membuat proposal atau menjelaskan alur approval; tidak ada aksi write/eksternal yang berjalan tanpa `/approve` dan `/runexec`.
+
 ## Knowledge Graph
 
 | Command | Fungsi |

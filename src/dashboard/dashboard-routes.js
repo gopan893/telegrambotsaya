@@ -13,6 +13,7 @@ const safeActions = require('./safe-actions');
 const workspace = require('../workspace');
 const workspaceRoutes = require('./workspace-routes');
 const plannerRoutes = require('./planner-routes');
+const executorRoutes = require('./executor-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -305,6 +306,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
   router.use(dashboardAuth);
   workspaceRoutes.registerWorkspaceRoutes(router, services);
   plannerRoutes.registerPlannerRoutes(router, services);
+  executorRoutes.registerExecutorRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
