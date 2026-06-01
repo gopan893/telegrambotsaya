@@ -149,3 +149,18 @@ Tab `Tools` menampilkan:
 - Handler tool tetap perlu tersedia dari kode internal.
 - Tool external yang aman tetap tergantung API key terkait.
 - Backup/import/restore tools mengikuti governance Phase 18: restore/import wajib proposal dan approval.
+
+## Phase 19 Backup/PWA Tools
+
+Tool tambahan:
+
+- `pwa.status`
+- `backup.schedule.create`
+- `backup.schedule.preview`
+- `backup.schedule.request_run`
+- `backup.schedule.approve_run`
+- `backup.schedule.run_approved`
+- `backup.download.prepare`
+- `import.preview`
+
+Write/scheduler run tetap mengikuti governance dan approval flow. Restore/import danger tetap tidak berjalan langsung.

@@ -209,6 +209,70 @@ async function integrityCheck(input = {}, context = {}, services = {}) {
   }, services);
 }
 
+async function pwaStatus(input = {}, context = {}, services = {}) {
+  return {
+    ok: true,
+    result: {
+      manifestUrl: '/dashboard/manifest.webmanifest',
+      serviceWorkerScope: '/dashboard',
+      staticAssetsOnly: true,
+      cachesApiResponses: false
+    }
+  };
+}
+
+async function backupScheduleCreate(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.backupScheduler.createBackupSchedule({
+    ...input,
+    actorId: context.actorId || services.actorId || input.actorId || '',
+    userId: context.userId || input.userId || '',
+    workspaceId: context.workspaceId || input.workspaceId || ''
+  }, services);
+}
+
+async function backupSchedulePreview(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.backupScheduler.previewScheduleRun(input.scheduleId || context.targetId, services);
+}
+
+async function backupScheduleRequestRun(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.backupScheduler.requestScheduleRunApproval(input.scheduleId || context.targetId, services);
+}
+
+async function backupScheduleApproveRun(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.backupScheduler.approveScheduleRun(input.runId || context.targetId, {
+    actorId: context.actorId || services.actorId || input.actorId || ''
+  }, services);
+}
+
+async function backupScheduleRunApproved(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.backupScheduler.runApprovedSchedule(input.runId || context.targetId, services);
+}
+
+async function backupDownloadPrepare(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  const result = await backup.exportEngine.exportBackupJson(input.backupId || context.targetId, services);
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    result: {
+      fileName: result.fileName,
+      manifest: result.payload?.manifest || {},
+      sizeEstimateBytes: Buffer.byteLength(JSON.stringify(result.payload || {}), 'utf8'),
+      secretsExcluded: true
+    }
+  };
+}
+
+async function importPreview(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return { ok: true, result: await backup.importValidator.buildImportPreview(input.payload || input, services) };
+}
+
 function tool(id, patch = {}) {
   return {
     id,
@@ -270,7 +334,15 @@ async function registerBuiltInTools(services = {}, options = {}) {
     [tool('import.validate', { category: 'utility', description: 'Validate import payload.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), importValidate],
     [tool('restore.plan', { category: 'utility', description: 'Create restore plan. Does not restore automatically.', riskLevel: 'danger', permissionsRequired: ['danger'], requiresApproval: true }), restorePlan],
     [tool('recovery.check', { category: 'ops', description: 'Run disaster recovery readiness check.', permissionsRequired: ['read'], requiresApproval: false }), recoveryCheck],
-    [tool('integrity.check', { category: 'ops', description: 'Run data integrity check.', permissionsRequired: ['read'], requiresApproval: false }), integrityCheck]
+    [tool('integrity.check', { category: 'ops', description: 'Run data integrity check.', permissionsRequired: ['read'], requiresApproval: false }), integrityCheck],
+    [tool('pwa.status', { category: 'dashboard', description: 'Show PWA cache and install status.', permissionsRequired: ['read'], requiresApproval: false }), pwaStatus],
+    [tool('backup.schedule.create', { category: 'utility', description: 'Create approved backup schedule.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), backupScheduleCreate],
+    [tool('backup.schedule.preview', { category: 'utility', description: 'Preview schedule run without creating backup.', permissionsRequired: ['read'], requiresApproval: false, inputSchema: { type: 'object', required: ['scheduleId'] } }), backupSchedulePreview],
+    [tool('backup.schedule.request_run', { category: 'utility', description: 'Request approval for backup schedule run.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['scheduleId'] } }), backupScheduleRequestRun],
+    [tool('backup.schedule.approve_run', { category: 'utility', description: 'Approve pending backup schedule run.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['runId'] } }), backupScheduleApproveRun],
+    [tool('backup.schedule.run_approved', { category: 'utility', description: 'Run an approved backup schedule.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['runId'] } }), backupScheduleRunApproved],
+    [tool('backup.download.prepare', { category: 'utility', description: 'Prepare sanitized backup download metadata.', permissionsRequired: ['read'], requiresApproval: false, inputSchema: { type: 'object', required: ['backupId'] } }), backupDownloadPrepare],
+    [tool('import.preview', { category: 'utility', description: 'Preview sanitized backup import payload.', permissionsRequired: ['read'], requiresApproval: false }), importPreview]
   ];
 
   for (const [meta, handler] of items) {

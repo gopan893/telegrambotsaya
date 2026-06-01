@@ -1,0 +1,19 @@
+{
+  "name": "Telegram AI OS Dashboard",
+  "short_name": "AI OS",
+  "description": "Mobile dashboard untuk Telegram AI OS, backup, ops, workspace, dan recovery.",
+  "start_url": "/dashboard",
+  "scope": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0e121b",
+  "theme_color": "#1f8fff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/dashboard/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -23,6 +23,14 @@ function workspaceFromReq(req) {
   return String(req.body?.workspaceId || req.query?.workspaceId || '').trim();
 }
 
+function scheduleIdFromReq(req) {
+  return String(req.params?.scheduleId || req.body?.scheduleId || req.query?.scheduleId || '').trim();
+}
+
+function runIdFromReq(req) {
+  return String(req.params?.runId || req.body?.runId || req.query?.runId || '').trim();
+}
+
 function userFromReq(req, services = {}) {
   return guards.validateUserId(req.body?.userId || req.query?.userId || services.env?.OWNER_CHAT_ID || process.env.OWNER_CHAT_ID || '') || '';
 }
@@ -57,6 +65,35 @@ function registerBackupRoutes(router, services = {}) {
         ? await backup.backupEngine.createSystemSafeBackup(payload, svc)
         : await backup.backupEngine.createWorkspaceBackup(payload.workspaceId, payload, svc);
     return guards.safeDashboardResponse(res, result.ok ? { ok: true, manifest: serializers.sanitizeBackupManifest(result.manifest) } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.get('/backup/schedules', async (req, res) => {
+    if (req.query.requestDue === 'true') {
+      await backup.backupScheduler.requestDueScheduleApprovals({
+        workspaceId: req.query.workspaceId || '',
+        userId: req.query.userId || '',
+        limit: guards.validateLimit(req.query.limit, 30, 100)
+      }, buildServices(req, services));
+    }
+    const items = await backup.backupScheduler.listBackupSchedules({
+      workspaceId: req.query.workspaceId || '',
+      userId: req.query.userId || '',
+      scope: req.query.scope || '',
+      includeArchived: req.query.includeArchived === 'true',
+      limit: guards.validateLimit(req.query.limit, 30, 100)
+    }, buildServices(req, services));
+    return guards.safeDashboardResponse(res, { ok: true, items: items.map(serializers.sanitizeBackupSchedule) });
+  });
+
+  router.get('/backup/schedule-runs', async (req, res) => {
+    const items = await backup.backupScheduler.listScheduleRuns({
+      scheduleId: req.query.scheduleId || '',
+      workspaceId: req.query.workspaceId || '',
+      userId: req.query.userId || '',
+      status: req.query.status || '',
+      limit: guards.validateLimit(req.query.limit, 30, 100)
+    }, buildServices(req, services));
+    return guards.safeDashboardResponse(res, { ok: true, items: items.map(serializers.sanitizeBackupScheduleRun) });
   });
 
   router.get('/backup/:backupId', async (req, res) => {
@@ -130,6 +167,65 @@ function registerBackupRoutes(router, services = {}) {
       userId: userFromReq(req, services)
     }, buildServices(req, services));
     return guards.safeDashboardResponse(res, { ok: true, report: result });
+  });
+
+  router.post('/backup/schedules/create', async (req, res) => {
+    const svc = buildServices(req, services);
+    const result = await backup.backupScheduler.createBackupSchedule({
+      ...req.body,
+      actorId: req.body?.actorId || svc.actorId,
+      createdBy: req.body?.actorId || svc.actorId,
+      userId: userFromReq(req, services),
+      workspaceId: workspaceFromReq(req)
+    }, svc);
+    return guards.safeDashboardResponse(res, result.ok ? { ok: true, schedule: serializers.sanitizeBackupSchedule(result.schedule) } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.get('/backup/schedules/:scheduleId', async (req, res) => {
+    const item = await backup.backupScheduler.getBackupSchedule(scheduleIdFromReq(req), buildServices(req, services));
+    if (!item) return guards.safeDashboardResponse(res, { ok: false, error: 'BACKUP_SCHEDULE_NOT_FOUND' }, 404);
+    return guards.safeDashboardResponse(res, { ok: true, schedule: serializers.sanitizeBackupSchedule(item) });
+  });
+
+  router.post('/backup/schedules/:scheduleId/update', async (req, res) => {
+    const svc = buildServices(req, services);
+    const result = await backup.backupScheduler.updateBackupSchedule(scheduleIdFromReq(req), {
+      ...req.body,
+      actorId: req.body?.actorId || svc.actorId
+    }, svc);
+    return guards.safeDashboardResponse(res, result.ok ? { ok: true, schedule: serializers.sanitizeBackupSchedule(result.schedule) } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.post('/backup/schedules/:scheduleId/archive', async (req, res) => {
+    const result = await backup.backupScheduler.archiveBackupSchedule(scheduleIdFromReq(req), buildServices(req, services));
+    return guards.safeDashboardResponse(res, result.ok ? { ok: true, schedule: serializers.sanitizeBackupSchedule(result.schedule) } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.post('/backup/schedules/:scheduleId/preview', async (req, res) => {
+    const result = await backup.backupScheduler.previewScheduleRun(scheduleIdFromReq(req), buildServices(req, services));
+    return guards.safeDashboardResponse(res, result.ok ? { ok: true, preview: result.preview } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.post('/backup/schedules/:scheduleId/request-run', async (req, res) => {
+    const result = await backup.backupScheduler.requestScheduleRunApproval(scheduleIdFromReq(req), buildServices(req, services));
+    return guards.safeDashboardResponse(res, result.ok ? { ok: true, run: serializers.sanitizeBackupScheduleRun(result.run) } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.post('/backup/schedule-runs/:runId/approve', async (req, res) => {
+    const svc = buildServices(req, services);
+    const result = await backup.backupScheduler.approveScheduleRun(runIdFromReq(req), {
+      actorId: req.body?.actorId || svc.actorId
+    }, svc);
+    return guards.safeDashboardResponse(res, result.ok ? { ok: true, run: serializers.sanitizeBackupScheduleRun(result.run) } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
+  });
+
+  router.post('/backup/schedule-runs/:runId/run', async (req, res) => {
+    const result = await backup.backupScheduler.runApprovedSchedule(runIdFromReq(req), buildServices(req, services));
+    return guards.safeDashboardResponse(res, result.ok ? {
+      ok: true,
+      run: serializers.sanitizeBackupScheduleRun(result.run),
+      backup: serializers.sanitizeBackupManifest(result.backup)
+    } : { ok: false, error: result.reason }, result.ok ? 200 : (result.status || 400));
   });
 }
 

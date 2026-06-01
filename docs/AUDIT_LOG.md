@@ -159,3 +159,21 @@ Entry menyertakan `workspaceId`, `actorRole`, `backupId` atau `restorePlanId`, s
 - Belum ada tamper-proof log chain.
 - Belum ada retention policy berbasis umur, baru limit jumlah entry.
 - Belum ada export audit terpisah per workspace.
+
+## Phase 19 PWA/Scheduler Audit Events
+
+```text
+pwa/cache_clear_requested
+backup_schedule/created
+backup_schedule/updated
+backup_schedule/archived
+backup_schedule/permission_denied
+backup_schedule_run/approval_requested
+backup_schedule_run/approved
+backup_schedule_run/started
+backup_schedule_run/completed
+backup_schedule_run/failed
+backup_schedule_run/permission_denied
+```
+
+Semua entry tetap disanitasi dan tidak menyimpan token, API key, `DATABASE_URL`, `REDIS_URL`, atau credential.

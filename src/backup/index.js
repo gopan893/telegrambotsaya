@@ -3,6 +3,7 @@
 module.exports = {
   backupEngine: require('./backup-engine'),
   backupGuards: require('./backup-guards'),
+  backupScheduler: require('./backup-scheduler'),
   backupStore: require('./backup-store'),
   backupUtils: require('./backup-utils'),
   disasterRecovery: require('./disaster-recovery'),

@@ -291,6 +291,49 @@ function sanitizeRestorePlan(plan = {}) {
   });
 }
 
+function sanitizeBackupSchedule(schedule = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(schedule.id || '', 120),
+    workspaceId: truncateText(schedule.workspaceId || '', 120),
+    userId: truncateText(schedule.userId || '', 80),
+    name: truncateText(schedule.name || '', 160),
+    scope: schedule.scope || 'workspace',
+    frequency: schedule.frequency || 'manual',
+    enabled: schedule.enabled !== false,
+    requiresApproval: schedule.requiresApproval !== false,
+    nextRunAt: schedule.nextRunAt || null,
+    lastRunAt: schedule.lastRunAt || null,
+    lastStatus: truncateText(schedule.lastStatus || '', 80),
+    due: Boolean(schedule.due),
+    createdBy: truncateText(schedule.createdBy || '', 80),
+    approvedBy: truncateText(schedule.approvedBy || '', 80),
+    approvedAt: schedule.approvedAt || null,
+    createdAt: schedule.createdAt || null,
+    updatedAt: schedule.updatedAt || null,
+    archivedAt: schedule.archivedAt || null
+  });
+}
+
+function sanitizeBackupScheduleRun(run = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(run.id || '', 120),
+    scheduleId: truncateText(run.scheduleId || '', 120),
+    workspaceId: truncateText(run.workspaceId || '', 120),
+    userId: truncateText(run.userId || '', 80),
+    scope: run.scope || 'workspace',
+    status: run.status || 'pending_approval',
+    requiresApproval: run.requiresApproval !== false,
+    requestedBy: truncateText(run.requestedBy || '', 80),
+    approvedBy: truncateText(run.approvedBy || '', 80),
+    approvedAt: run.approvedAt || null,
+    backupId: truncateText(run.backupId || '', 120),
+    errorSummary: truncateText(run.errorSummary || '', 300),
+    createdAt: run.createdAt || null,
+    updatedAt: run.updatedAt || null,
+    completedAt: run.completedAt || null
+  });
+}
+
 function sanitizeInsight(insight = {}) {
   return {
     ...pickBase(insight),
@@ -667,6 +710,8 @@ module.exports = {
   sanitizeReliability,
   sanitizeBenchmark,
   sanitizeBackupManifest,
+  sanitizeBackupSchedule,
+  sanitizeBackupScheduleRun,
   sanitizeBackupSnapshot,
   sanitizeIncident,
   sanitizePerformance,

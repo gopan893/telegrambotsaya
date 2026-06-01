@@ -16,6 +16,7 @@ const plannerRoutes = require('./planner-routes');
 const executorRoutes = require('./executor-routes');
 const toolRoutes = require('./tool-routes');
 const backupRoutes = require('./backup-routes');
+const pwaRoutes = require('./pwa-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -291,6 +292,8 @@ function registerDashboardRoutes(app, rawServices = {}) {
     res.sendFile(path.join(dashboardDir, 'index.html'));
   });
 
+  pwaRoutes.registerPwaStaticRoutes(app, dashboardDir);
+
   app.use('/dashboard', express.static(dashboardDir, {
     index: false,
     fallthrough: true,
@@ -311,6 +314,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
   executorRoutes.registerExecutorRoutes(router, services);
   toolRoutes.registerToolRoutes(router, services);
   backupRoutes.registerBackupRoutes(router, services);
+  pwaRoutes.registerPwaApiRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

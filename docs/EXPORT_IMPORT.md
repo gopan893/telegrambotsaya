@@ -58,3 +58,7 @@ Import payload dibatasi agar cocok untuk Render free tier. Jika backup terlalu b
 ## Reject Rules
 
 Import ditolak jika mengandung token/API key/secret/password, Authorization/Bearer token, `DATABASE_URL`, `REDIS_URL`, connection string, atau provider key pattern seperti `sk-`, `gsk_`, `tvly_`, `ghp_`.
+
+## Phase 19 Import UX
+
+Dashboard mendukung drag/drop JSON, paste JSON, validasi ukuran file, schema/version summary, diff preview, dan restore plan. Restore tetap butuh role owner/admin dan confirmation text `RESTORE`.

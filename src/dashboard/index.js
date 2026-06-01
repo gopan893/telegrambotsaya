@@ -14,6 +14,7 @@ const plannerRoutes = require('./planner-routes');
 const executorRoutes = require('./executor-routes');
 const toolRoutes = require('./tool-routes');
 const backupRoutes = require('./backup-routes');
+const pwaRoutes = require('./pwa-routes');
 
 module.exports = {
   registerDashboardRoutes,
@@ -27,6 +28,7 @@ module.exports = {
   plannerRoutes,
   executorRoutes,
   backupRoutes,
+  pwaRoutes,
   toolRoutes,
   workspaceRoutes,
   utils,

@@ -32,11 +32,12 @@ function buildCommandCatalog() {
     planner: ['/plans', '/plan <id>', '/planadd <title>', '/plantasks <planId>', '/taskadd <planId> | <task title>', '/taskdone <taskId>', '/taskblock <taskId> | <reason>', '/next', '/priorities'],
     executor: ['/executions', '/pending', '/propose <taskId>', '/approve <proposalId>', '/reject <proposalId> | <reason>', '/runexec <proposalId>', '/cancel_exec <proposalId>'],
     tools: ['/tools', '/tool <toolId>', '/toolpreview <toolId> | <input>', '/toolrun <toolId> | <input>', '/toolpropose <toolId> | <input>', '/toolenable <toolId>', '/tooldisable <toolId>'],
+    backup: ['/backup', '/backupcreate', '/backups', '/backupstatus', '/backupdownload', '/importhelp', '/backupschedule', '/backupscheduleadd <name> | <scope> | <frequency>', '/backupschedules', '/backupdue', '/backupapprove <runId>', '/backuprun <runId>', '/recovery', '/integrity', '/exportsummary'],
     collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],
     graph: ['/graph', '/graph <konsep>', '/concepts', '/relate', '/graphsearch', '/graphrisks', '/graphdeps', '/graphprune', '/graphstats'],
     ops: ['/ops', '/health', '/diag', '/reliability', '/perf', '/tokens', '/benchmark'],
     utility: ['/hitung', '/jam', '/tanggal', '/cuaca', '/cari', '/lokasi', '/image'],
-    dashboard: ['/dashboard', '/dashboardstatus', '/dbstatus', '/redisstatus', '/audit', '/audit recent']
+    dashboard: ['/dashboard', '/dashboardstatus', '/pwa', '/dbstatus', '/redisstatus', '/audit', '/audit recent']
   };
 }
 

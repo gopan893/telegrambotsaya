@@ -30,6 +30,8 @@ const SAFE_DATA_KEYS = [
   'tool_registry',
   'tool_runs',
   'tool_audit',
+  'backup_schedules',
+  'backup_schedule_runs',
   'dashboard_audit_logs'
 ];
 

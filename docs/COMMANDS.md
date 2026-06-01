@@ -105,11 +105,21 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/backupcreate` | Buat backup workspace aman. |
 | `/backups` | Daftar backup terbaru. |
 | `/backupstatus` | Status latest backup, storage, dan fallback. |
+| `/pwa` | URL dashboard dan instruksi install PWA di HP. |
+| `/backupdownload` | Panduan download backup JSON dari dashboard. |
+| `/importhelp` | Panduan import, preview, dan restore aman. |
+| `/backupschedule` | Bantuan backup scheduler manual/approved. |
+| `/backupscheduleadd <nama> | <scope> | <frequency>` | Buat schedule backup tanpa menjalankan backup langsung. |
+| `/backupschedules` | Daftar schedule backup. |
+| `/backupdue` | Lihat due schedule dan pending run approval. |
+| `/backupapprove <runId>` | Approve scheduled backup run. |
+| `/backuprun <runId>` | Jalankan backup run yang sudah approved. |
 | `/recovery` | Jalankan disaster recovery check ringan. |
 | `/integrity` | Jalankan integrity check ringan. |
 | `/exportsummary` | Export summary aman; JSON penuh lewat dashboard. |
 
 Restore/import raw dijaga via dashboard karena butuh validation, preview, permission owner/admin, dan confirmation text `RESTORE`.
+Scheduled backup juga tidak berjalan otomatis; flow-nya request approval, approve, lalu run.
 
 ## Knowledge Graph
 

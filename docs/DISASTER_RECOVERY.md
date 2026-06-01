@@ -47,3 +47,11 @@ Tab `Backup` menampilkan latest backup, backup count, storage driver, fallback a
 ```
 
 Output Telegram dibuat ringkas. Detail dan export penuh tetap di dashboard.
+
+## PWA dan Mobile Recovery
+
+Dashboard dapat dipasang sebagai PWA. Service worker hanya cache static shell dashboard, bukan data API, backup JSON, atau header Authorization.
+
+## Scheduler Check
+
+Tidak ada daemon berat. Due schedule dicek saat dashboard dibuka, `/backupstatus`, `/backupdue`, atau refresh manual.

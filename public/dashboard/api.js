@@ -412,6 +412,66 @@ const Api = {
     return this.apiPost('/integrity/check', payload);
   },
 
+  async getPwaStatus() {
+    return this.apiGet('/pwa/status');
+  },
+
+  async notePwaCacheClear(payload = {}) {
+    return this.apiPost('/pwa/cache-clear-note', payload);
+  },
+
+  async listBackupSchedules(filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'userId', 'scope', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    if (filters.includeArchived) params.set('includeArchived', 'true');
+    if (filters.requestDue) params.set('requestDue', 'true');
+    const query = params.toString();
+    return this.apiGet(`/backup/schedules${query ? `?${query}` : ''}`);
+  },
+
+  async createBackupSchedule(payload = {}) {
+    return this.apiPost('/backup/schedules/create', payload);
+  },
+
+  async getBackupSchedule(scheduleId) {
+    return this.apiGet(`/backup/schedules/${encodeURIComponent(scheduleId)}`);
+  },
+
+  async updateBackupSchedule(scheduleId, payload = {}) {
+    return this.apiPost(`/backup/schedules/${encodeURIComponent(scheduleId)}/update`, payload);
+  },
+
+  async archiveBackupSchedule(scheduleId, payload = {}) {
+    return this.apiPost(`/backup/schedules/${encodeURIComponent(scheduleId)}/archive`, payload);
+  },
+
+  async previewBackupSchedule(scheduleId, payload = {}) {
+    return this.apiPost(`/backup/schedules/${encodeURIComponent(scheduleId)}/preview`, payload);
+  },
+
+  async requestBackupScheduleRun(scheduleId, payload = {}) {
+    return this.apiPost(`/backup/schedules/${encodeURIComponent(scheduleId)}/request-run`, payload);
+  },
+
+  async listBackupScheduleRuns(filters = {}) {
+    const params = new URLSearchParams();
+    ['scheduleId', 'workspaceId', 'userId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/backup/schedule-runs${query ? `?${query}` : ''}`);
+  },
+
+  async approveBackupScheduleRun(runId, payload = {}) {
+    return this.apiPost(`/backup/schedule-runs/${encodeURIComponent(runId)}/approve`, payload);
+  },
+
+  async runApprovedBackupSchedule(runId, payload = {}) {
+    return this.apiPost(`/backup/schedule-runs/${encodeURIComponent(runId)}/run`, payload);
+  },
+
   async searchUserGraph(userId, q, workspaceId = '') {
     const encodedUser = encodeURIComponent(userId);
     const encodedQ = encodeURIComponent(q);

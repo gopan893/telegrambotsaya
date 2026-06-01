@@ -1630,7 +1630,7 @@ const UI = {
       <div class="filter-bar">
         <div class="filter-group"><label>User ID Telegram</label><input id="tools-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
         ${UI.renderWorkspaceInput('tools')}
-        <div class="filter-group"><label>Category</label><select id="tools-category-filter"><option value="">all</option><option>weather</option><option>search</option><option>ops</option><option>report</option><option>planner</option><option>workflow</option><option>goal</option><option>memory</option><option>graph</option></select></div>
+        <div class="filter-group"><label>Category</label><select id="tools-category-filter"><option value="">all</option><option>weather</option><option>search</option><option>ops</option><option>report</option><option>planner</option><option>workflow</option><option>goal</option><option>memory</option><option>graph</option><option>utility</option><option>dashboard</option></select></div>
         <div class="filter-group"><label>Risk</label><select id="tools-risk-filter"><option value="">all</option><option>low</option><option>medium</option><option>high</option><option>danger</option></select></div>
         <div class="filter-group"><label>Enabled</label><select id="tools-enabled-filter"><option value="">all</option><option value="true">true</option><option value="false">false</option></select></div>
         <button class="btn btn-primary" id="btn-load-tools" style="height:40px;">Load Tools</button>
@@ -1807,6 +1807,313 @@ const UI = {
       try { payload = JSON.parse(document.getElementById('import-json').value || '{}'); } catch (_) { return Utils.showToast('JSON tidak valid.', 'danger'); }
       const res = await Api.previewImport(payload);
       document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
+    });
+    await loadBackups();
+  },
+
+  async renderBackupRecovery(targetEl) {
+    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
+
+    const getFilters = () => {
+      const userId = document.getElementById('backup-user-id').value.trim();
+      const workspaceId = document.getElementById('backup-workspace-id').value.trim();
+      if (userId) localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
+      return { userId, actorId: userId, workspaceId };
+    };
+
+    const writeResult = (value) => {
+      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+    };
+
+    const renderBackupRow = (item = {}) => {
+      const total = Object.values(item.itemCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+      return `
+        <div class="card" style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <strong>${Utils.escapeHtml(item.id || '-')}</strong>
+              <div class="text-muted" style="font-size:12px;">${Utils.escapeHtml(item.type || '-')} · ${Utils.escapeHtml(item.createdAt || '-')}</div>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              ${UI.renderBadge(item.status || 'created')}
+              <span class="badge badge-none">${total} items</span>
+            </div>
+          </div>
+          <div class="kv-list" style="margin-top:10px;">
+            <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(item.workspaceId || '-')}</span></div>
+            <div class="kv-item"><span class="kv-key">Includes</span><span>${(item.includes || []).slice(0, 4).map(Utils.escapeHtml).join(', ') || '-'}</span></div>
+            <div class="kv-item"><span class="kv-key">Checksum</span><span style="font-family:var(--font-mono);">${Utils.escapeHtml(item.checksum || '-')}</span></div>
+          </div>
+          <div class="backup-action-row" style="margin-top:12px;">
+            <button class="btn btn-outline" data-backup-action="validate" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Validate</button>
+            <button class="btn btn-primary" data-backup-action="export" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Export JSON</button>
+            <button class="btn btn-outline" data-backup-action="plan" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Restore Plan</button>
+            <button class="btn btn-outline" data-backup-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
+          </div>
+        </div>
+      `;
+    };
+
+    const renderScheduleRow = (item = {}) => `
+      <div class="card" style="margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <div>
+            <strong>${Utils.escapeHtml(item.name || item.id || '-')}</strong>
+            <div class="text-muted" style="font-size:12px;">${Utils.escapeHtml(item.id || '-')} · ${Utils.escapeHtml(item.frequency || 'manual')} · ${Utils.escapeHtml(item.scope || 'workspace')}</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${UI.renderBadge(item.enabled ? 'enabled' : 'disabled')}
+            ${item.due ? UI.renderBadge('due') : UI.renderBadge('not due')}
+          </div>
+        </div>
+        <div class="kv-list" style="margin-top:10px;">
+          <div class="kv-item"><span class="kv-key">Next run</span><span>${Utils.escapeHtml(item.nextRunAt || '-')}</span></div>
+          <div class="kv-item"><span class="kv-key">Last run</span><span>${Utils.escapeHtml(item.lastRunAt || '-')}</span></div>
+          <div class="kv-item"><span class="kv-key">Status</span><span>${Utils.escapeHtml(item.lastStatus || '-')}</span></div>
+        </div>
+        <div class="backup-action-row" style="margin-top:12px;">
+          <button class="btn btn-outline" data-schedule-action="preview" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Preview</button>
+          <button class="btn btn-outline" data-schedule-action="request" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Request Approval</button>
+          <button class="btn btn-outline" data-schedule-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
+        </div>
+      </div>
+    `;
+
+    const renderRunRow = (item = {}) => `
+      <div style="padding:10px 0; border-bottom:1px solid var(--border-color);">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong>${Utils.escapeHtml(item.id || '-')}</strong>
+          ${UI.renderBadge(item.status || 'pending_approval')}
+        </div>
+        <div class="text-muted" style="font-size:12px;">Schedule: ${Utils.escapeHtml(item.scheduleId || '-')} · Backup: ${Utils.escapeHtml(item.backupId || '-')}</div>
+        <div class="backup-action-row" style="margin-top:8px;">
+          <button class="btn btn-outline" data-run-action="approve" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Approve</button>
+          <button class="btn btn-primary" data-run-action="run" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Run Approved</button>
+        </div>
+      </div>
+    `;
+
+    const bindBackupButtons = () => {
+      document.querySelectorAll('[data-backup-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-backup-action');
+          const id = btn.getAttribute('data-id');
+          const filters = getFilters();
+          let res;
+          if (action === 'validate') res = await Api.validateBackup(id, filters);
+          if (action === 'plan') res = await Api.createRestorePlan({ ...filters, backupId: id });
+          if (action === 'export') {
+            BackupDownloads.showDownloadProgress('backup-result');
+            res = await Api.exportBackup(id);
+            if (res?.ok && res.data) {
+              const payload = res.data || {};
+              const manifest = payload.manifest || {};
+              const filename = BackupDownloads.buildSafeFilename('telegram-aios', `${manifest.type || 'workspace'}-backup`, manifest.createdAt || new Date());
+              const download = BackupDownloads.downloadJsonFile(filename, payload);
+              BackupDownloads.showDownloadResult('backup-result', download, manifest);
+              Utils.showToast('Backup JSON diunduh. Secrets dikecualikan.', 'success');
+              return;
+            }
+          }
+          if (action === 'archive') {
+            return Utils.confirmAction('Archive backup', `Archive backup ${id}?`, async () => {
+              const r = await Api.archiveBackup(id, filters);
+              Utils.showToast(r?.ok && r.data?.ok ? 'Backup archived.' : 'Archive gagal.', r?.ok && r.data?.ok ? 'success' : 'danger');
+              await loadBackups();
+            });
+          }
+          const ok = res?.ok && res.data?.ok;
+          writeResult(res?.data || res);
+          Utils.showToast(ok ? `Backup ${action} sukses.` : `Backup ${action} gagal.`, ok ? 'success' : 'danger');
+          if (action === 'validate') await loadBackups();
+        });
+      });
+    };
+
+    const bindScheduleButtons = () => {
+      document.querySelectorAll('[data-schedule-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-schedule-action');
+          const id = btn.getAttribute('data-id');
+          let res;
+          if (action === 'preview') res = await Api.previewBackupSchedule(id, getFilters());
+          if (action === 'request') res = await Api.requestBackupScheduleRun(id, getFilters());
+          if (action === 'archive') {
+            return Utils.confirmAction('Archive schedule', `Archive schedule ${id}?`, async () => {
+              const r = await Api.archiveBackupSchedule(id, getFilters());
+              Utils.showToast(r?.ok && r.data?.ok ? 'Schedule diarsipkan.' : 'Archive schedule gagal.', r?.ok && r.data?.ok ? 'success' : 'danger');
+              await loadSchedules();
+            });
+          }
+          writeResult(res?.data || res);
+          Utils.showToast(res?.ok && res.data?.ok ? `Schedule ${action} sukses.` : `Schedule ${action} gagal.`, res?.ok && res.data?.ok ? 'success' : 'danger');
+          await loadSchedules();
+        });
+      });
+    };
+
+    const bindRunButtons = () => {
+      document.querySelectorAll('[data-run-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-run-action');
+          const id = btn.getAttribute('data-id');
+          const run = async () => {
+            const res = action === 'approve'
+              ? await Api.approveBackupScheduleRun(id, getFilters())
+              : await Api.runApprovedBackupSchedule(id, getFilters());
+            writeResult(res?.data || res);
+            Utils.showToast(res?.ok && res.data?.ok ? `Schedule run ${action} sukses.` : `Schedule run ${action} gagal.`, res?.ok && res.data?.ok ? 'success' : 'danger');
+            await loadBackups();
+          };
+          if (action === 'run') return Utils.confirmAction('Run approved backup', 'Backup schedule yang sudah approved akan membuat snapshot baru. Lanjutkan?', run);
+          return run();
+        });
+      });
+    };
+
+    const loadSchedules = async () => {
+      const filters = getFilters();
+      const scheduleRes = await Api.listBackupSchedules({ ...filters, limit: 30, includeArchived: false, requestDue: true });
+      const schedules = scheduleRes.data?.items || [];
+      document.getElementById('backup-schedule-list').innerHTML = schedules.length
+        ? schedules.map(renderScheduleRow).join('')
+        : UI.renderEmptyState('⏱️', 'Belum Ada Schedule', 'Buat schedule manual/daily/weekly/monthly yang tetap butuh approval.');
+
+      const runRes = await Api.listBackupScheduleRuns({ ...filters, limit: 20 });
+      const runs = runRes.data?.items || [];
+      document.getElementById('backup-schedule-runs').innerHTML = runs.length ? runs.map(renderRunRow).join('') : '<p class="text-muted">Belum ada pending run.</p>';
+      bindScheduleButtons();
+      bindRunButtons();
+    };
+
+    const loadBackups = async () => {
+      const filters = getFilters();
+      const listEl = document.getElementById('backup-list');
+      listEl.innerHTML = UI.renderLoading('Memuat backup...');
+      const res = await Api.listBackups({ ...filters, limit: 30, includeArchived: true });
+      const items = res.data?.items || [];
+      listEl.innerHTML = items.length ? items.map(renderBackupRow).join('') : UI.renderEmptyState('💾', 'Belum Ada Backup', 'Buat backup workspace atau safe system backup.');
+      bindBackupButtons();
+      const recovery = res.data?.recovery || {};
+      document.getElementById('backup-cards').innerHTML = `
+        <div class="metric-card"><span class="metric-label">Recovery</span><span class="metric-value">${Utils.escapeHtml(recovery.status || '-')}</span></div>
+        <div class="metric-card"><span class="metric-label">Backup Count</span><span class="metric-value">${Number(recovery.backup?.backupCount || items.length)}</span></div>
+        <div class="metric-card"><span class="metric-label">Storage</span><span class="metric-value">${Utils.escapeHtml(recovery.storage?.activeDriver || '-')}</span></div>
+        <div class="metric-card"><span class="metric-label">Fallback</span><span class="metric-value">${recovery.storage?.fallbackActive ? 'yes' : 'no'}</span></div>
+      `;
+      await loadSchedules();
+    };
+
+    const createBackup = async (type) => {
+      const res = await Api.createBackup({ ...getFilters(), type });
+      Utils.showToast(res?.ok && res.data?.ok ? 'Backup dibuat.' : 'Backup gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
+      writeResult(res.data || res);
+      await loadBackups();
+    };
+
+    const createSchedule = async () => {
+      const payload = {
+        ...getFilters(),
+        name: document.getElementById('schedule-name').value.trim() || 'Workspace backup schedule',
+        scope: document.getElementById('schedule-scope').value,
+        frequency: document.getElementById('schedule-frequency').value,
+        enabled: document.getElementById('schedule-enabled').checked
+      };
+      const res = await Api.createBackupSchedule(payload);
+      writeResult(res.data || res);
+      Utils.showToast(res?.ok && res.data?.ok ? 'Schedule dibuat.' : 'Schedule gagal dibuat.', res?.ok && res.data?.ok ? 'success' : 'danger');
+      await loadSchedules();
+    };
+
+    let html = UI.renderSectionHeader('Backup & Recovery');
+    html += `
+      <div class="alert alert-warning" style="margin-bottom:16px;">Restore/import tidak berjalan otomatis. Restore membutuhkan role owner/admin dan confirmation text <code>RESTORE</code>. Backup tidak mengekspor secret/env/API key.</div>
+      <div class="filter-bar">
+        <div class="filter-group"><label>User ID Telegram</label><input id="backup-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
+        ${UI.renderWorkspaceInput('backup')}
+        <button class="btn btn-primary" id="btn-backup-load" style="height:40px;">Load</button>
+        <button class="btn btn-outline" id="btn-backup-workspace" style="height:40px;">Create Workspace Backup</button>
+        <button class="btn btn-outline" id="btn-backup-user" style="height:40px;">Create User Backup</button>
+        <button class="btn btn-outline" id="btn-backup-system" style="height:40px;">Create Safe System Backup</button>
+      </div>
+      <div class="metrics-grid" id="backup-cards"></div>
+      <div class="backup-section-grid">
+        <div class="card">
+          <div class="card-title">Create Backup</div>
+          <p class="text-muted" style="margin-bottom:12px;">Backup aman berisi data AI OS tanpa env, token, API key, atau connection string.</p>
+          <div id="backup-list">${UI.renderEmptyState('💾', 'Load Backups', 'Klik Load untuk melihat backup.')}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Download / Export</div>
+          <div class="alert alert-info">Klik Export JSON pada backup. File dibuat via Blob URL lokal dengan nama aman. Secrets tetap dikecualikan server-side.</div>
+          <div class="card-title" style="margin-top:16px;">Import Preview</div>
+          <div id="import-drop-zone" class="import-drop-zone">
+            Drop file JSON di sini atau pilih file.
+            <input id="import-file" type="file" accept="application/json,.json" style="display:block; margin:12px auto 0;">
+          </div>
+          <textarea id="import-json" rows="8" style="width:100%; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:6px; padding:10px;" placeholder="Paste sanitized backup JSON untuk validate/preview"></textarea>
+          <div class="backup-action-row" style="margin-top:10px;">
+            <button class="btn btn-outline" id="btn-import-validate">Validate Import</button>
+            <button class="btn btn-outline" id="btn-import-preview">Preview Import</button>
+            <button class="btn btn-outline" id="btn-restore-plan">Create Restore Plan</button>
+          </div>
+        </div>
+      </div>
+      <div class="backup-section-grid" style="margin-top:18px;">
+        <div class="card">
+          <div class="card-title">Scheduler</div>
+          <div class="filter-bar" style="margin-bottom:12px;">
+            <div class="filter-group"><label>Name</label><input id="schedule-name" placeholder="Weekly workspace backup"></div>
+            <div class="filter-group"><label>Scope</label><select id="schedule-scope"><option value="workspace">workspace</option><option value="user">user</option><option value="system_safe">system_safe</option></select></div>
+            <div class="filter-group"><label>Frequency</label><select id="schedule-frequency"><option value="manual">manual</option><option value="daily">daily</option><option value="weekly">weekly</option><option value="monthly">monthly</option></select></div>
+            <label style="display:flex; align-items:center; gap:8px; min-height:40px;"><input type="checkbox" id="schedule-enabled" checked> Enabled</label>
+            <button class="btn btn-primary" id="btn-schedule-create" style="height:40px;">Create Schedule</button>
+          </div>
+          <div id="backup-schedule-list">${UI.renderEmptyState('⏱️', 'Load Schedules', 'Schedule akan muncul di sini.')}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Due / Pending Runs</div>
+          <p class="text-muted" style="margin-bottom:12px;">Backup scheduled tidak berjalan otomatis. Request run, approve, lalu run approved.</p>
+          <div id="backup-schedule-runs"><p class="text-muted">Load backup untuk melihat pending run.</p></div>
+        </div>
+      </div>
+      <div class="backup-section-grid" style="margin-top:18px;">
+        <div class="card">
+          <div class="card-title">Disaster Recovery & Integrity</div>
+          <div class="backup-action-row" style="margin-bottom:12px;">
+            <button class="btn btn-outline" id="btn-recovery-check">Run Recovery Check</button>
+            <button class="btn btn-outline" id="btn-integrity-check">Run Integrity Check</button>
+          </div>
+          <p class="text-muted">Cek storage driver, backup age, critical keys, dan referensi data yang rusak.</p>
+        </div>
+        <div class="card"><div class="card-title">Result</div><div id="backup-result"><p class="text-muted">Output backup/recovery akan muncul di sini.</p></div></div>
+      </div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-backup-load').addEventListener('click', loadBackups);
+    document.getElementById('btn-backup-workspace').addEventListener('click', () => createBackup('workspace'));
+    document.getElementById('btn-backup-user').addEventListener('click', () => createBackup('user'));
+    document.getElementById('btn-backup-system').addEventListener('click', () => createBackup('full_safe'));
+    document.getElementById('btn-recovery-check').addEventListener('click', async () => writeResult((await Api.runRecoveryCheck(getFilters())).data || {}));
+    document.getElementById('btn-integrity-check').addEventListener('click', async () => writeResult((await Api.runIntegrityCheck(getFilters())).data || {}));
+    document.getElementById('btn-schedule-create').addEventListener('click', createSchedule);
+    BackupImportUI.bindImportDropZone();
+    document.getElementById('btn-import-validate').addEventListener('click', async () => {
+      const parsed = BackupImportUI.parseJsonSafely(document.getElementById('import-json').value || '{}');
+      if (!parsed.ok) return Utils.showToast(parsed.reason || 'JSON tidak valid.', 'danger');
+      writeResult((await Api.validateImport(parsed.payload)).data || {});
+    });
+    document.getElementById('btn-import-preview').addEventListener('click', async () => {
+      const parsed = BackupImportUI.parseJsonSafely(document.getElementById('import-json').value || '{}');
+      if (!parsed.ok) return Utils.showToast(parsed.reason || 'JSON tidak valid.', 'danger');
+      const res = await Api.previewImport(parsed.payload);
+      document.getElementById('backup-result').innerHTML = BackupImportUI.renderPreview(res.data?.preview || res.data || res);
+    });
+    document.getElementById('btn-restore-plan').addEventListener('click', async () => {
+      const parsed = BackupImportUI.parseJsonSafely(document.getElementById('import-json').value || '{}');
+      if (!parsed.ok) return Utils.showToast(parsed.reason || 'JSON tidak valid.', 'danger');
+      writeResult((await Api.createRestorePlan({ ...getFilters(), payload: parsed.payload })).data || {});
     });
     await loadBackups();
   },
@@ -2328,6 +2635,20 @@ const UI = {
       </div>
 
       <div class="panel">
+        <h3 class="panel-title">📱 PWA Mobile Dashboard</h3>
+        <div class="pwa-status-row" style="margin-bottom:16px;">
+          <span id="settings-pwa-online">${navigator.onLine ? UI.renderBadge('online') : UI.renderBadge('offline')}</span>
+          <span class="badge badge-info">Static-only cache</span>
+          <span class="badge badge-warning">API data tidak di-cache</span>
+        </div>
+        <p class="text-muted" style="margin-bottom:16px;">Dashboard bisa di-install dari browser HP. Service worker hanya cache shell statis, bukan response API, backup JSON, atau header Authorization.</p>
+        <div class="mobile-safe-actions" style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-primary hidden" id="btn-pwa-install">Install Dashboard</button>
+          <button class="btn btn-outline" id="btn-pwa-clear-cache">Clear App Cache</button>
+        </div>
+      </div>
+
+      <div class="panel">
         <h3 class="panel-title">🛡️ Checklist Peluncuran Aman (Safe Production)</h3>
         <ul style="list-style:none; display:flex; flex-direction:column; gap:12px; font-size:14px; color:var(--text-secondary);">
           <li>
@@ -2359,5 +2680,6 @@ const UI = {
         window.location.reload();
       });
     });
+    if (window.PWA) PWA.bindSettingsControls(document);
   }
 };

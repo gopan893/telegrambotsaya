@@ -3425,6 +3425,14 @@ function formatBackupLine(manifest, index) {
   return `${index + 1}. ${manifest.id} - ${manifest.type} [${manifest.status}, items ${total}, ${manifest.createdAt || '-'}]`;
 }
 
+function formatBackupScheduleLine(schedule, index) {
+  return `${index + 1}. ${schedule.id} - ${schedule.name} [${schedule.scope}, ${schedule.frequency}, ${schedule.enabled ? 'enabled' : 'disabled'}, next ${schedule.nextRunAt || '-'}]`;
+}
+
+function formatBackupScheduleRunLine(run, index) {
+  return `${index + 1}. ${run.id} - schedule=${run.scheduleId} [${run.status}, backup=${run.backupId || '-'}]`;
+}
+
 function buildPlannerCommandText(title, lines, emptyText) {
   return [
     title,
@@ -3555,7 +3563,10 @@ async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   }
 
   if (cmd === '/backupstatus') {
-    const status = await backupSystem.disasterRecovery.getDisasterRecoveryStatus(getBackupServices(userId));
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const backupServices = getBackupServices(userId);
+    await backupSystem.backupScheduler.requestDueScheduleApprovals({ workspaceId, userId, limit: 20 }, backupServices);
+    const status = await backupSystem.disasterRecovery.getDisasterRecoveryStatus(backupServices);
     await sendChunkedMessage(chatId, [
       'Backup Status',
       '',
@@ -3613,6 +3624,181 @@ async function handleAiosCommands(chatId, userId, cmd, args, msg) {
       '',
       'Raw JSON besar hanya tersedia dari dashboard agar Telegram tidak kepanjangan.'
     ].join('\n') : `Export summary gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/pwa') {
+    const base = getDashboardBaseUrl();
+    await sendChunkedMessage(chatId, [
+      'PWA Dashboard',
+      '',
+      `Dashboard URL: ${base ? `${base}/dashboard` : '/dashboard'}`,
+      'Cara install di HP:',
+      '1. Buka URL dashboard di Chrome Android.',
+      '2. Login pakai DASHBOARD_ADMIN_TOKEN.',
+      '3. Pilih menu browser > Add to Home screen jika tombol install belum muncul.',
+      '',
+      'Service worker hanya cache static dashboard shell. Data API, backup JSON, dan Authorization header tidak di-cache.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupdownload') {
+    const base = getDashboardBaseUrl();
+    await sendChunkedMessage(chatId, [
+      'Backup Download',
+      '',
+      `Buka: ${base ? `${base}/dashboard#backup` : '/dashboard#backup'}`,
+      'Gunakan tombol Export JSON pada backup.',
+      'File dibuat dari browser dengan nama aman dan checksum.',
+      '',
+      'Telegram tidak mengirim raw backup besar agar tidak bocor/terpotong. Secrets/env/API key tetap dikecualikan.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/importhelp') {
+    await sendChunkedMessage(chatId, [
+      'Import / Restore Help',
+      '',
+      'Import dilakukan dari dashboard Backup & Recovery:',
+      '1. Paste/drop JSON backup.',
+      '2. Validate import.',
+      '3. Preview diff.',
+      '4. Create restore plan.',
+      '5. Restore hanya jalan dengan konfirmasi RESTORE dan role owner/admin.',
+      '',
+      'Import yang mengandung token, API key, DATABASE_URL, REDIS_URL, atau credential akan ditolak.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupschedule') {
+    if (String(args || '').trim()) {
+      const parts = String(args || '').split('|').map(part => part.trim());
+      const [name, scope = 'workspace', frequency = 'weekly'] = parts;
+      const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+      const result = await backupSystem.backupScheduler.createBackupSchedule({
+        actorId: userId,
+        userId,
+        workspaceId,
+        name,
+        scope,
+        frequency,
+        enabled: true
+      }, getBackupServices(userId));
+      await sendChunkedMessage(chatId, result.ok ? [
+        'Backup schedule dibuat.',
+        '',
+        formatBackupScheduleLine(result.schedule, 0)
+      ].join('\n') : `Schedule gagal: ${result.reason}`, replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, [
+      'Backup Scheduler',
+      '',
+      'Format:',
+      '/backupschedule nama | scope | frequency',
+      '',
+      'Scope: workspace, user, system_safe',
+      'Frequency: manual, daily, weekly, monthly',
+      '',
+      'Contoh:',
+      '/backupschedule Weekly Backup | workspace | weekly',
+      '',
+      'Catatan: schedule tidak menjalankan backup otomatis. Buat pending run dengan /backupdue atau dashboard, approve dengan /backupapprove, lalu run dengan /backuprun.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupschedules') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const schedules = await backupSystem.backupScheduler.listBackupSchedules({ workspaceId, userId, limit: 20 }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Backup Schedules',
+      schedules.map(formatBackupScheduleLine),
+      'Belum ada schedule. Buat dengan /backupschedule nama | workspace | weekly'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupdue') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const services = getBackupServices(userId);
+    await backupSystem.backupScheduler.requestDueScheduleApprovals({ workspaceId, userId, limit: 20 }, services);
+    const schedules = await backupSystem.backupScheduler.listBackupSchedules({ workspaceId, userId, limit: 20 }, services);
+    const due = schedules.filter(item => item.due);
+    const pending = await backupSystem.backupScheduler.listScheduleRuns({ workspaceId, userId, status: 'pending_approval', limit: 20 }, services);
+    await sendChunkedMessage(chatId, [
+      'Backup Due / Pending',
+      '',
+      'Due schedules:',
+      ...(due.length ? due.map(formatBackupScheduleLine) : ['- Tidak ada due schedule.']),
+      '',
+      'Pending approvals:',
+      ...(pending.length ? pending.map(formatBackupScheduleRunLine) : ['- Tidak ada pending run.']),
+      '',
+      'Dashboard bisa request run dari schedule. Setelah ada runId: /backupapprove <runId>, lalu /backuprun <runId>.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupapprove') {
+    const runId = String(args || '').trim();
+    if (!runId) {
+      await safeSendMessage(chatId, 'Contoh: /backupapprove backup_schedule_run_xxx', replyOpt);
+      return true;
+    }
+    const result = await backupSystem.backupScheduler.approveScheduleRun(runId, { actorId: userId }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Backup schedule run approved.',
+      '',
+      formatBackupScheduleRunLine(result.run, 0),
+      '',
+      `Jalankan dengan: /backuprun ${result.run.id}`
+    ].join('\n') : `Approve gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backuprun') {
+    const runId = String(args || '').trim();
+    if (!runId) {
+      await safeSendMessage(chatId, 'Contoh: /backuprun backup_schedule_run_xxx', replyOpt);
+      return true;
+    }
+    const result = await backupSystem.backupScheduler.runApprovedSchedule(runId, getBackupServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Scheduled backup selesai.',
+      '',
+      formatBackupScheduleRunLine(result.run, 0),
+      `Backup: ${result.backup?.id || '-'}`,
+      `Checksum: ${result.backup?.checksum || '-'}`
+    ].join('\n') : `Run gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupscheduleadd') {
+    const parts = String(args || '').split('|').map(part => part.trim());
+    const [name, scope = 'workspace', frequency = 'weekly'] = parts;
+    if (!name) {
+      await safeSendMessage(chatId, 'Contoh: /backupscheduleadd Weekly Backup | workspace | weekly', replyOpt);
+      return true;
+    }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await backupSystem.backupScheduler.createBackupSchedule({
+      actorId: userId,
+      userId,
+      workspaceId,
+      name,
+      scope,
+      frequency,
+      enabled: true
+    }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Backup schedule dibuat.',
+      '',
+      formatBackupScheduleLine(result.schedule, 0)
+    ].join('\n') : `Schedule gagal: ${result.reason}`, replyOpt);
     return true;
   }
 
@@ -6323,6 +6509,15 @@ async function handleHelp(chatId, msg) {
 /recovery - disaster recovery check
 /integrity - integrity check ringan
 /exportsummary - export summary aman
+/pwa - info install dashboard PWA
+/backupdownload - instruksi download backup
+/importhelp - panduan import/restore aman
+/backupschedule - bantuan scheduler backup
+/backupscheduleadd nama | scope | frequency
+/backupschedules - daftar schedule backup
+/backupdue - due/pending scheduled backup
+/backupapprove runId
+/backuprun runId
 /graph [konsep] - knowledge graph / relasi konsep
 /concepts - konsep terpenting
 /relate konsep A | konsep B | relationship | evidence
@@ -6503,6 +6698,15 @@ function isUnknownCommand(cmd) {
     '/recovery',
     '/integrity',
     '/exportsummary',
+    '/pwa',
+    '/backupdownload',
+    '/importhelp',
+    '/backupschedule',
+    '/backupscheduleadd',
+    '/backupschedules',
+    '/backupdue',
+    '/backupapprove',
+    '/backuprun',
     '/graph',
     '/concepts',
     '/relate',

@@ -91,3 +91,31 @@ Restore memakai merge/upsert dan tidak melakukan hard delete.
 - Tidak ada encryption/KMS kompleks.
 - Tidak ada auto restore tanpa approval/confirmation.
 - Cross-workspace restore ditolak kecuali owner/admin.
+
+## Phase 19 UX
+
+Tab Backup & Recovery sekarang dipisah menjadi:
+
+- Create Backup
+- Download/Export
+- Import Preview
+- Restore Plan
+- Scheduler
+- Disaster Recovery
+- Integrity Check
+
+Export JSON memakai Blob download di browser dengan filename aman, checksum, dan item counts. Import mendukung paste JSON atau drag/drop file, lalu tetap harus validate dan preview sebelum restore plan dibuat.
+
+## Approved Backup Scheduler
+
+Scheduler tidak menjalankan backup otomatis di background. Flow aman:
+
+```text
+create schedule
+-> request run approval
+-> owner/admin approve
+-> run approved backup
+-> audit log
+```
+
+Lihat `docs/BACKUP_SCHEDULER.md`.

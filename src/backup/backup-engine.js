@@ -41,7 +41,7 @@ async function collectSafeData(scope = {}, options = {}, services = {}) {
   const data = {};
   for (const key of keys) {
     if (excludes.has(key)) continue;
-    const fallback = ['workspaces', 'planner_sessions', 'planner_tasks', 'executor_proposals', 'executor_runs', 'tool_registry', 'tool_runs', 'tool_audit', 'dashboard_audit_logs'].includes(key) ? [] : {};
+    const fallback = ['workspaces', 'planner_sessions', 'planner_tasks', 'executor_proposals', 'executor_runs', 'tool_registry', 'tool_runs', 'tool_audit', 'backup_schedules', 'backup_schedule_runs', 'dashboard_audit_logs'].includes(key) ? [] : {};
     const value = await (services.storageManager?.safeRead ? services.storageManager.safeRead(key, fallback) : readSafeKey(key, services));
     data[key] = utils.filterByScope(utils.sanitize(value ?? fallback), {
       ...scope,

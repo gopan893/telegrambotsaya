@@ -1,0 +1,150 @@
+/* Mobile-first refinements for installable PWA dashboard */
+
+.pwa-status-row,
+.backup-section-grid,
+.backup-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.backup-section-grid {
+  align-items: stretch;
+}
+
+.backup-section-grid > .card {
+  flex: 1 1 320px;
+}
+
+.import-drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 12px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.import-drop-zone.is-dragover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-glow);
+}
+
+.mobile-safe-actions .btn,
+.backup-action-row .btn {
+  min-height: 42px;
+}
+
+@media (max-width: 768px) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .app-header {
+    height: 62px;
+    padding: 0 14px;
+  }
+
+  .header-logo-text h1 {
+    font-size: 15px;
+  }
+
+  .header-right {
+    gap: 8px;
+  }
+
+  .public-health-badge {
+    padding: 5px 9px;
+  }
+
+  .main-layout {
+    display: block;
+  }
+
+  .content-area {
+    padding: 18px 12px 84px;
+  }
+
+  .tab-pane-container {
+    max-width: 100%;
+  }
+
+  .sidebar {
+    width: min(86vw, 320px);
+    padding: 14px 12px;
+  }
+
+  .nav-item {
+    min-height: 44px;
+    padding: 11px 12px;
+  }
+
+  .card,
+  .panel,
+  .filter-bar {
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .grid,
+  .grid-2,
+  .metrics-grid,
+  .card-grid,
+  .card-grid-wide {
+    grid-template-columns: 1fr !important;
+  }
+
+  .btn {
+    min-height: 44px;
+    padding: 10px 14px;
+    width: 100%;
+  }
+
+  .section-actions,
+  .backup-action-row,
+  .mobile-safe-actions {
+    width: 100%;
+  }
+
+  .section-actions .btn,
+  .backup-action-row .btn,
+  .mobile-safe-actions .btn {
+    flex: 1 1 100%;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .table-responsive {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  th,
+  td {
+    padding: 11px 10px;
+    white-space: nowrap;
+  }
+
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .toast {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .modal-card {
+    max-height: 82vh;
+    overflow-y: auto;
+  }
+}
