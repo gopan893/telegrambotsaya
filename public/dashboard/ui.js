@@ -1647,6 +1647,170 @@ const UI = {
     document.getElementById('btn-load-tools').addEventListener('click', loadTools);
   },
 
+  async renderBackupRecovery(targetEl) {
+    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
+
+    const getFilters = () => {
+      const userId = document.getElementById('backup-user-id').value.trim();
+      const workspaceId = document.getElementById('backup-workspace-id').value.trim();
+      if (userId) localStorage.setItem('last_user_id', userId);
+      UI.setActiveWorkspaceId(workspaceId);
+      return { userId, actorId: userId, workspaceId };
+    };
+
+    const renderBackupRow = (item = {}) => {
+      const total = Object.values(item.itemCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+      return `
+        <div class="card" style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <strong>${Utils.escapeHtml(item.id || '-')}</strong>
+              <div class="text-muted" style="font-size:12px;">${Utils.escapeHtml(item.type || '-')} · ${Utils.escapeHtml(item.createdAt || '-')}</div>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              ${UI.renderBadge(item.status || 'created')}
+              <span class="badge badge-none">${total} items</span>
+            </div>
+          </div>
+          <div class="kv-list" style="margin-top:10px;">
+            <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(item.workspaceId || '-')}</span></div>
+            <div class="kv-item"><span class="kv-key">Checksum</span><span style="font-family:var(--font-mono);">${Utils.escapeHtml(item.checksum || '-')}</span></div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+            <button class="btn btn-outline" data-backup-action="validate" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Validate</button>
+            <button class="btn btn-primary" data-backup-action="export" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Export JSON</button>
+            <button class="btn btn-outline" data-backup-action="plan" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Restore Plan</button>
+            <button class="btn btn-outline" data-backup-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
+          </div>
+        </div>
+      `;
+    };
+
+    const bindBackupButtons = () => {
+      document.querySelectorAll('[data-backup-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const action = btn.getAttribute('data-backup-action');
+          const id = btn.getAttribute('data-id');
+          const filters = getFilters();
+          let res;
+          if (action === 'validate') res = await Api.validateBackup(id, filters);
+          if (action === 'plan') res = await Api.createRestorePlan({ ...filters, backupId: id });
+          if (action === 'export') {
+            res = await Api.exportBackup(id);
+            if (res?.ok) {
+              const blob = new Blob([JSON.stringify(res.data || {}, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `backup_${id}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }
+          }
+          if (action === 'archive') {
+            return Utils.confirmAction('Archive backup', `Archive backup ${id}?`, async () => {
+              const r = await Api.archiveBackup(id, filters);
+              Utils.showToast(r?.ok && r.data?.ok ? 'Backup archived.' : 'Archive gagal.', r?.ok && r.data?.ok ? 'success' : 'danger');
+              await loadBackups();
+            });
+          }
+          const ok = res?.ok && res.data?.ok;
+          document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res?.data || res, null, 2))}</pre>`;
+          Utils.showToast(ok ? `Backup ${action} sukses.` : `Backup ${action} gagal.`, ok ? 'success' : 'danger');
+          if (action === 'validate') await loadBackups();
+        });
+      });
+    };
+
+    const loadBackups = async () => {
+      const filters = getFilters();
+      const listEl = document.getElementById('backup-list');
+      listEl.innerHTML = UI.renderLoading('Memuat backup...');
+      const res = await Api.listBackups({ ...filters, limit: 30, includeArchived: true });
+      const items = res.data?.items || [];
+      listEl.innerHTML = items.length ? items.map(renderBackupRow).join('') : UI.renderEmptyState('💾', 'Belum Ada Backup', 'Buat backup workspace atau safe system backup.');
+      bindBackupButtons();
+      const recovery = res.data?.recovery || {};
+      document.getElementById('backup-cards').innerHTML = `
+        <div class="metric-card"><span class="metric-label">Recovery</span><span class="metric-value">${Utils.escapeHtml(recovery.status || '-')}</span></div>
+        <div class="metric-card"><span class="metric-label">Backup Count</span><span class="metric-value">${Number(recovery.backup?.backupCount || items.length)}</span></div>
+        <div class="metric-card"><span class="metric-label">Storage</span><span class="metric-value">${Utils.escapeHtml(recovery.storage?.activeDriver || '-')}</span></div>
+        <div class="metric-card"><span class="metric-label">Fallback</span><span class="metric-value">${recovery.storage?.fallbackActive ? 'yes' : 'no'}</span></div>
+      `;
+    };
+
+    const runRecovery = async () => {
+      const res = await Api.runRecoveryCheck(getFilters());
+      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
+    };
+
+    const runIntegrity = async () => {
+      const res = await Api.runIntegrityCheck(getFilters());
+      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
+    };
+
+    const createBackup = async (type) => {
+      const res = await Api.createBackup({ ...getFilters(), type });
+      Utils.showToast(res?.ok && res.data?.ok ? 'Backup dibuat.' : 'Backup gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
+      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
+      await loadBackups();
+    };
+
+    let html = UI.renderSectionHeader('Backup & Recovery');
+    html += `
+      <div class="alert alert-warning" style="margin-bottom:16px;">Restore/import tidak berjalan otomatis. Restore membutuhkan role owner/admin dan confirmation text <code>RESTORE</code>. Backup tidak mengekspor secret/env/API key.</div>
+      <div class="filter-bar">
+        <div class="filter-group"><label>User ID Telegram</label><input id="backup-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
+        ${UI.renderWorkspaceInput('backup')}
+        <button class="btn btn-primary" id="btn-backup-load" style="height:40px;">Load</button>
+        <button class="btn btn-outline" id="btn-backup-workspace" style="height:40px;">Create Workspace Backup</button>
+        <button class="btn btn-outline" id="btn-backup-user" style="height:40px;">Create User Backup</button>
+        <button class="btn btn-outline" id="btn-backup-system" style="height:40px;">Create Safe System Backup</button>
+      </div>
+      <div class="metrics-grid" id="backup-cards"></div>
+      <div class="grid grid-2" style="gap:18px; align-items:start;">
+        <div>
+          <div id="backup-list">${UI.renderEmptyState('💾', 'Load Backups', 'Klik Load untuk melihat backup.')}</div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-title">Recovery & Integrity</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+              <button class="btn btn-outline" id="btn-recovery-check">Run Recovery Check</button>
+              <button class="btn btn-outline" id="btn-integrity-check">Run Integrity Check</button>
+            </div>
+            <textarea id="import-json" rows="8" style="width:100%; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:6px; padding:10px;" placeholder="Paste sanitized backup JSON untuk validate/preview"></textarea>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+              <button class="btn btn-outline" id="btn-import-validate">Validate Import</button>
+              <button class="btn btn-outline" id="btn-import-preview">Preview Import</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:12px;"><div class="card-title">Result</div><div id="backup-result"><p class="text-muted">Output backup/recovery akan muncul di sini.</p></div></div>
+        </div>
+      </div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-backup-load').addEventListener('click', loadBackups);
+    document.getElementById('btn-backup-workspace').addEventListener('click', () => createBackup('workspace'));
+    document.getElementById('btn-backup-user').addEventListener('click', () => createBackup('user'));
+    document.getElementById('btn-backup-system').addEventListener('click', () => createBackup('full_safe'));
+    document.getElementById('btn-recovery-check').addEventListener('click', runRecovery);
+    document.getElementById('btn-integrity-check').addEventListener('click', runIntegrity);
+    document.getElementById('btn-import-validate').addEventListener('click', async () => {
+      let payload;
+      try { payload = JSON.parse(document.getElementById('import-json').value || '{}'); } catch (_) { return Utils.showToast('JSON tidak valid.', 'danger'); }
+      const res = await Api.validateImport(payload);
+      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
+    });
+    document.getElementById('btn-import-preview').addEventListener('click', async () => {
+      let payload;
+      try { payload = JSON.parse(document.getElementById('import-json').value || '{}'); } catch (_) { return Utils.showToast('JSON tidak valid.', 'danger'); }
+      const res = await Api.previewImport(payload);
+      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
+    });
+    await loadBackups();
+  },
+
   async renderInsights(targetEl) {
     let currentUserId = localStorage.getItem('last_user_id') || '123456789';
 

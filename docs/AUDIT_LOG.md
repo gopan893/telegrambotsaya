@@ -134,6 +134,25 @@ tool/rate_limited
 
 Audit tool menyertakan `workspaceId`, `actorRole`, `toolId`, `actionType`, `riskLevel`, `decision`, dan summary input/output yang sudah disanitasi. Direct run untuk write/external/danger tidak dieksekusi; event-nya dicatat sebagai `approval_required` dan diarahkan ke executor proposal.
 
+## Backup & Recovery Audit Events
+
+Phase 18 mencatat backup/import/restore/recovery:
+
+```text
+backup/created
+backup/validated
+backup/exported
+backup/archived
+backup/permission_denied
+restore/plan_created
+restore/run_started
+restore/completed
+restore/failed
+restore/permission_denied
+```
+
+Entry menyertakan `workspaceId`, `actorRole`, `backupId` atau `restorePlanId`, scope, decision, dan summary yang sudah disanitasi. Secret/env/API key/connection string tidak disimpan di audit.
+
 ## Known Limits
 
 - Belum ada export audit terpisah.

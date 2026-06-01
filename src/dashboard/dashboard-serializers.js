@@ -239,6 +239,58 @@ function sanitizeToolAudit(entry = {}) {
   });
 }
 
+function sanitizeBackupManifest(manifest = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(manifest.id || '', 120),
+    type: manifest.type || 'workspace',
+    workspaceId: truncateText(manifest.workspaceId || '', 120),
+    userId: truncateText(manifest.userId || '', 80),
+    createdBy: truncateText(manifest.createdBy || '', 80),
+    status: manifest.status || 'created',
+    version: truncateText(manifest.version || '', 40),
+    itemCounts: manifest.itemCounts || {},
+    checksum: truncateText(manifest.checksum || '', 96),
+    sanitized: manifest.sanitized === true,
+    includes: Array.isArray(manifest.includes) ? manifest.includes.slice(0, 40).map(item => truncateText(item, 80)) : [],
+    excludes: Array.isArray(manifest.excludes) ? manifest.excludes.slice(0, 40).map(item => truncateText(item, 80)) : [],
+    createdAt: manifest.createdAt || null,
+    restoredAt: manifest.restoredAt || null,
+    errorSummary: truncateText(manifest.errorSummary || '', 300)
+  });
+}
+
+function sanitizeBackupSnapshot(snapshot = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(snapshot.id || '', 120),
+    manifestId: truncateText(snapshot.manifestId || '', 120),
+    checksum: truncateText(snapshot.checksum || '', 96),
+    createdAt: snapshot.createdAt || null,
+    itemCounts: snapshot.payload?.data ? Object.fromEntries(Object.entries(snapshot.payload.data).map(([key, value]) => [key, Array.isArray(value) ? value.length : (value && typeof value === 'object' ? Object.keys(value).length : 0)])) : {}
+  });
+}
+
+function sanitizeRestorePlan(plan = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(plan.id || '', 120),
+    backupId: truncateText(plan.backupId || '', 120),
+    status: plan.status || 'planned',
+    mode: truncateText(plan.mode || 'merge_upsert', 80),
+    workspaceId: truncateText(plan.workspaceId || '', 120),
+    userId: truncateText(plan.userId || '', 80),
+    actorRole: truncateText(plan.actorRole || '', 40),
+    requiresConfirmation: Boolean(plan.requiresConfirmation),
+    confirmationText: plan.confirmationText ? 'RESTORE' : '',
+    allowOverwrite: Boolean(plan.allowOverwrite),
+    itemCounts: plan.itemCounts || {},
+    diff: guards.preventSecretLeak(plan.diff || {}),
+    results: Array.isArray(plan.results) ? plan.results.slice(0, 60) : [],
+    createdAt: plan.createdAt || null,
+    updatedAt: plan.updatedAt || null,
+    restoredAt: plan.restoredAt || null,
+    errorSummary: truncateText(plan.errorSummary || '', 300)
+  });
+}
+
 function sanitizeInsight(insight = {}) {
   return {
     ...pickBase(insight),
@@ -614,6 +666,8 @@ module.exports = {
   sanitizeOps,
   sanitizeReliability,
   sanitizeBenchmark,
+  sanitizeBackupManifest,
+  sanitizeBackupSnapshot,
   sanitizeIncident,
   sanitizePerformance,
   sanitizeCommandList,
@@ -623,5 +677,6 @@ module.exports = {
   sanitizeActionResult,
   sanitizeMember,
   sanitizePermissionSummary,
+  sanitizeRestorePlan,
   sanitizeWorkspace
 };

@@ -160,6 +160,55 @@ async function graphSummarize(input = {}, context = {}, services = {}) {
   return { ok: false, error: 'GRAPH_SUMMARIZER_UNAVAILABLE' };
 }
 
+async function backupCreate(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  const actorId = context.actorId || services.actorId || input.actorId || '';
+  const userId = context.userId || input.userId || actorId;
+  const workspaceId = context.workspaceId || input.workspaceId || '';
+  const type = input.type || 'workspace';
+  if (type === 'user') return backup.backupEngine.createUserBackup(userId, { ...input, actorId, workspaceId }, services);
+  if (type === 'system' || type === 'full_safe') return backup.backupEngine.createSystemSafeBackup({ ...input, actorId, userId, workspaceId }, services);
+  return backup.backupEngine.createWorkspaceBackup(workspaceId, { ...input, actorId, userId }, services);
+}
+
+async function backupValidate(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.backupEngine.validateBackup(input.backupId || context.targetId, services);
+}
+
+async function backupExport(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.exportEngine.exportBackupJson(input.backupId || context.targetId, services);
+}
+
+async function importValidate(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.importValidator.validateImportPayload(input.payload || input, services);
+}
+
+async function restorePlan(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.restoreEngine.createRestorePlan(input.backupId || input.payload || input.importPayload || {}, {
+    actorId: context.actorId || services.actorId || input.actorId || '',
+    userId: context.userId || input.userId || '',
+    workspaceId: context.workspaceId || input.workspaceId || '',
+    allowOverwrite: Boolean(input.allowOverwrite)
+  }, services);
+}
+
+async function recoveryCheck(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.disasterRecovery.runDisasterRecoveryCheck(services);
+}
+
+async function integrityCheck(input = {}, context = {}, services = {}) {
+  const backup = require('../backup');
+  return backup.integrityChecker.runIntegrityCheck({
+    userId: context.userId || input.userId || '',
+    workspaceId: context.workspaceId || input.workspaceId || ''
+  }, services);
+}
+
 function tool(id, patch = {}) {
   return {
     id,
@@ -214,7 +263,14 @@ async function registerBuiltInTools(services = {}, options = {}) {
     [tool('goal.progress.update', { category: 'goal', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true, inputSchema: { type: 'object', required: ['goalId', 'progress'] } }), goalProgressUpdate],
     [tool('memory.suggest_archive', { category: 'memory', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), memorySuggestArchive],
     [tool('graph.search', { category: 'graph', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), graphSearch],
-    [tool('graph.summarize', { category: 'graph', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), graphSummarize]
+    [tool('graph.summarize', { category: 'graph', riskLevel: 'low', permissionsRequired: ['read'], requiresApproval: false }), graphSummarize],
+    [tool('backup.create', { category: 'utility', description: 'Create a sanitized backup.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), backupCreate],
+    [tool('backup.validate', { category: 'utility', description: 'Validate backup checksum and safety.', permissionsRequired: ['read'], requiresApproval: false, inputSchema: { type: 'object', required: ['backupId'] } }), backupValidate],
+    [tool('backup.export', { category: 'utility', description: 'Export sanitized backup JSON.', permissionsRequired: ['read'], requiresApproval: false, inputSchema: { type: 'object', required: ['backupId'] } }), backupExport],
+    [tool('import.validate', { category: 'utility', description: 'Validate import payload.', riskLevel: 'medium', permissionsRequired: ['write'], requiresApproval: true }), importValidate],
+    [tool('restore.plan', { category: 'utility', description: 'Create restore plan. Does not restore automatically.', riskLevel: 'danger', permissionsRequired: ['danger'], requiresApproval: true }), restorePlan],
+    [tool('recovery.check', { category: 'ops', description: 'Run disaster recovery readiness check.', permissionsRequired: ['read'], requiresApproval: false }), recoveryCheck],
+    [tool('integrity.check', { category: 'ops', description: 'Run data integrity check.', permissionsRequired: ['read'], requiresApproval: false }), integrityCheck]
   ];
 
   for (const [meta, handler] of items) {

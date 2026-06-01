@@ -68,6 +68,13 @@ Tool yang didaftarkan secara aman jika underlying module tersedia:
 - `memory.suggest_archive`
 - `graph.search`
 - `graph.summarize`
+- `backup.create`
+- `backup.validate`
+- `backup.export`
+- `import.validate`
+- `restore.plan`
+- `recovery.check`
+- `integrity.check`
 
 Jika API key atau modul tidak tersedia, tool tetap bisa muncul sebagai disabled/unavailable tanpa membuat bot crash.
 
@@ -141,3 +148,4 @@ Tab `Tools` menampilkan:
 - Belum ada registry handler linting terpisah.
 - Handler tool tetap perlu tersedia dari kode internal.
 - Tool external yang aman tetap tergantung API key terkait.
+- Backup/import/restore tools mengikuti governance Phase 18: restore/import wajib proposal dan approval.

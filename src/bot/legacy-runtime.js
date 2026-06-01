@@ -32,6 +32,7 @@ const workspaceSystem = require('../workspace');
 const plannerSystem = require('../planner');
 const executorSystem = require('../executor');
 const toolsSystem = require('../tools');
+const backupSystem = require('../backup');
 const {
   formatDashboardStorageStatus,
   formatDbStatus,
@@ -3367,6 +3368,14 @@ function getToolServices(actorId = '') {
   };
 }
 
+function getBackupServices(actorId = '') {
+  return {
+    ...getToolServices(actorId),
+    actorId: actorId || '',
+    actorType: 'telegram'
+  };
+}
+
 function formatPermissionFlags(summary = {}) {
   const flags = [
     summary.canRead ? 'read' : '',
@@ -3409,6 +3418,11 @@ function formatToolResult(result) {
   if (result.text) return result.text;
   if (result.answer) return result.answer;
   return JSON.stringify(result, null, 2).slice(0, 1800);
+}
+
+function formatBackupLine(manifest, index) {
+  const total = Object.values(manifest.itemCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  return `${index + 1}. ${manifest.id} - ${manifest.type} [${manifest.status}, items ${total}, ${manifest.createdAt || '-'}]`;
 }
 
 function buildPlannerCommandText(title, lines, emptyText) {
@@ -3490,6 +3504,117 @@ async function buildWorkspacesText(userId) {
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
+
+  if (cmd === '/backup') {
+    const status = await backupSystem.disasterRecovery.getDisasterRecoveryStatus(getBackupServices(userId));
+    await sendChunkedMessage(chatId, [
+      'Backup & Recovery',
+      '',
+      'Commands:',
+      '/backupcreate - buat backup workspace personal',
+      '/backups - daftar backup terbaru',
+      '/backupstatus - status backup dan recovery',
+      '/recovery - disaster recovery check',
+      '/integrity - integrity check ringan',
+      '/exportsummary - ringkasan export aman',
+      '',
+      `Recovery status: ${status.status}`,
+      `Latest backup: ${status.backup?.latestBackupAt || '-'}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupcreate') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await backupSystem.backupEngine.createWorkspaceBackup(workspaceId, {
+      actorId: userId,
+      userId,
+      workspaceId,
+      includeAudit: false
+    }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Backup berhasil dibuat.',
+      '',
+      formatBackupLine(result.manifest, 0),
+      `Checksum: ${result.manifest.checksum}`,
+      '',
+      'Export JSON penuh tersedia dari dashboard Backup & Recovery.'
+    ].join('\n') : `Backup gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backups') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const backups = await backupSystem.backupEngine.listBackups({ workspaceId, limit: 10, includeArchived: true }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Backup terbaru',
+      backups.map(formatBackupLine),
+      'Belum ada backup. Jalankan /backupcreate.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/backupstatus') {
+    const status = await backupSystem.disasterRecovery.getDisasterRecoveryStatus(getBackupServices(userId));
+    await sendChunkedMessage(chatId, [
+      'Backup Status',
+      '',
+      `Recovery: ${status.status}`,
+      `Backup count: ${status.backup?.backupCount || 0}`,
+      `Latest backup: ${status.backup?.latestBackupAt || '-'}`,
+      `Stale: ${status.backup?.stale ? 'yes' : 'no'}`,
+      `Storage driver: ${status.storage?.activeDriver || '-'}`,
+      `Fallback active: ${status.storage?.fallbackActive ? 'yes' : 'no'}`,
+      `Critical missing: ${(status.critical?.missing || []).join(', ') || '-'}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/recovery') {
+    const result = await backupSystem.disasterRecovery.runDisasterRecoveryCheck(getBackupServices(userId));
+    await sendChunkedMessage(chatId, [
+      'Disaster Recovery Check',
+      '',
+      `Status: ${result.status.status}`,
+      '',
+      'Recommendations:',
+      ...(result.recommendations || []).map(item => `- ${item}`)
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/integrity') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const report = await backupSystem.integrityChecker.runIntegrityCheck({ userId, workspaceId }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, [
+      'Integrity Check',
+      '',
+      `OK: ${report.ok ? 'yes' : 'no'}`,
+      `Issues: ${report.issueCount}`,
+      '',
+      ...Object.entries(report.checks || {}).map(([key, value]) => `- ${key}: ${value.ok ? 'ok' : `${value.issueCount} issue`}`),
+      '',
+      ...(report.issues || []).slice(0, 8).map(issue => `Issue: ${issue.type} ${issue.item || ''}`)
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/exportsummary') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await backupSystem.exportEngine.exportUserSummaryJson(userId, { actorId: userId, workspaceId }, getBackupServices(userId));
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Export Summary',
+      '',
+      `File name: ${result.fileName}`,
+      `Backup ID: ${result.payload.manifest?.id || '-'}`,
+      '',
+      'Item counts:',
+      ...Object.entries(result.payload.itemCounts || {}).map(([key, value]) => `- ${key}: ${value}`),
+      '',
+      'Raw JSON besar hanya tersedia dari dashboard agar Telegram tidak kepanjangan.'
+    ].join('\n') : `Export summary gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
 
   if (cmd === '/tools') {
     const toolServices = getToolServices(userId);
@@ -6191,6 +6316,13 @@ async function handleHelp(chatId, msg) {
 /toolpropose toolId | input
 /toolenable toolId [admin]
 /tooldisable toolId [admin]
+/backup - bantuan/status backup
+/backupcreate - buat backup workspace aman
+/backups - daftar backup terbaru
+/backupstatus - status backup/recovery
+/recovery - disaster recovery check
+/integrity - integrity check ringan
+/exportsummary - export summary aman
 /graph [konsep] - knowledge graph / relasi konsep
 /concepts - konsep terpenting
 /relate konsep A | konsep B | relationship | evidence
@@ -6364,6 +6496,13 @@ function isUnknownCommand(cmd) {
     '/toolpropose',
     '/toolenable',
     '/tooldisable',
+    '/backup',
+    '/backupcreate',
+    '/backups',
+    '/backupstatus',
+    '/recovery',
+    '/integrity',
+    '/exportsummary',
     '/graph',
     '/concepts',
     '/relate',

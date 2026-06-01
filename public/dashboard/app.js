@@ -106,6 +106,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'tools':
         await UI.renderTools(tabContent);
         break;
+      case 'backup':
+        await UI.renderBackupRecovery(tabContent);
+        break;
       case 'insights':
         await UI.renderInsights(tabContent);
         break;

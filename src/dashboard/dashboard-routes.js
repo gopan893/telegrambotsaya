@@ -15,6 +15,7 @@ const workspaceRoutes = require('./workspace-routes');
 const plannerRoutes = require('./planner-routes');
 const executorRoutes = require('./executor-routes');
 const toolRoutes = require('./tool-routes');
+const backupRoutes = require('./backup-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -309,6 +310,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
   plannerRoutes.registerPlannerRoutes(router, services);
   executorRoutes.registerExecutorRoutes(router, services);
   toolRoutes.registerToolRoutes(router, services);
+  backupRoutes.registerBackupRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

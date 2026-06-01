@@ -350,6 +350,68 @@ const Api = {
     return this.apiGet(`/tools/audit${query ? `?${query}` : ''}`);
   },
 
+  async listBackups(filters = {}) {
+    const params = new URLSearchParams();
+    ['type', 'workspaceId', 'userId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    if (filters.includeArchived) params.set('includeArchived', 'true');
+    const query = params.toString();
+    return this.apiGet(`/backup${query ? `?${query}` : ''}`);
+  },
+
+  async createBackup(payload = {}) {
+    return this.apiPost('/backup/create', payload);
+  },
+
+  async getBackup(backupId) {
+    return this.apiGet(`/backup/${encodeURIComponent(backupId)}`);
+  },
+
+  async validateBackup(backupId, payload = {}) {
+    return this.apiPost(`/backup/${encodeURIComponent(backupId)}/validate`, payload);
+  },
+
+  getBackupExportUrl(backupId) {
+    return `${this.BASE_URL}/backup/${encodeURIComponent(backupId)}/export`;
+  },
+
+  async exportBackup(backupId) {
+    return this.apiGet(`/backup/${encodeURIComponent(backupId)}/export`);
+  },
+
+  async archiveBackup(backupId, payload = {}) {
+    return this.apiPost(`/backup/${encodeURIComponent(backupId)}/archive`, payload);
+  },
+
+  async validateImport(payload = {}) {
+    return this.apiPost('/import/validate', { payload });
+  },
+
+  async previewImport(payload = {}) {
+    return this.apiPost('/import/preview', { payload });
+  },
+
+  async createRestorePlan(payload = {}) {
+    return this.apiPost('/restore/plan', payload);
+  },
+
+  async runRestorePlan(restorePlanId, payload = {}) {
+    return this.apiPost(`/restore/${encodeURIComponent(restorePlanId)}/run`, payload);
+  },
+
+  async getRecoveryStatus() {
+    return this.apiGet('/recovery/status');
+  },
+
+  async runRecoveryCheck(payload = {}) {
+    return this.apiPost('/recovery/check', payload);
+  },
+
+  async runIntegrityCheck(payload = {}) {
+    return this.apiPost('/integrity/check', payload);
+  },
+
   async searchUserGraph(userId, q, workspaceId = '') {
     const encodedUser = encodeURIComponent(userId);
     const encodedQ = encodeURIComponent(q);

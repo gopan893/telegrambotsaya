@@ -97,6 +97,20 @@ Natural chat seperti `jalankan task ini`, `eksekusi langkah berikutnya`, dan `bu
 
 Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropose`, lalu flow `/approve` dan `/runexec`. Tidak ada shell executor, dynamic plugin loading, atau arbitrary code execution.
 
+## Backup & Recovery
+
+| Command | Fungsi |
+| --- | --- |
+| `/backup` | Bantuan dan status backup/recovery singkat. |
+| `/backupcreate` | Buat backup workspace aman. |
+| `/backups` | Daftar backup terbaru. |
+| `/backupstatus` | Status latest backup, storage, dan fallback. |
+| `/recovery` | Jalankan disaster recovery check ringan. |
+| `/integrity` | Jalankan integrity check ringan. |
+| `/exportsummary` | Export summary aman; JSON penuh lewat dashboard. |
+
+Restore/import raw dijaga via dashboard karena butuh validation, preview, permission owner/admin, dan confirmation text `RESTORE`.
+
 ## Knowledge Graph
 
 | Command | Fungsi |
