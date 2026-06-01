@@ -31,6 +31,7 @@ function buildCommandCatalog() {
     workflows: ['/workflows', '/workflowadd', '/workflowstep', '/workflowdone', '/workflowdecision', '/workflowblocker', '/workflownext'],
     planner: ['/plans', '/plan <id>', '/planadd <title>', '/plantasks <planId>', '/taskadd <planId> | <task title>', '/taskdone <taskId>', '/taskblock <taskId> | <reason>', '/next', '/priorities'],
     executor: ['/executions', '/pending', '/propose <taskId>', '/approve <proposalId>', '/reject <proposalId> | <reason>', '/runexec <proposalId>', '/cancel_exec <proposalId>'],
+    agents: ['/bots', '/botstatus', '/botinfo <botId>', '/agents', '/agent <agentId>', '/agentstatus', '/router', '/routermode', '/quiet', '/smart', '/council <topic>', '/debate <topic>', '/allagents <topic>', '/askagents <topic>', '/riskreview <topic>'],
     tools: ['/tools', '/tool <toolId>', '/toolpreview <toolId> | <input>', '/toolrun <toolId> | <input>', '/toolpropose <toolId> | <input>', '/toolenable <toolId>', '/tooldisable <toolId>'],
     backup: ['/backup', '/backupcreate', '/backups', '/backupstatus', '/backupdownload', '/importhelp', '/backupschedule', '/backupscheduleadd <name> | <scope> | <frequency>', '/backupschedules', '/backupdue', '/backupapprove <runId>', '/backuprun <runId>', '/recovery', '/integrity', '/exportsummary'],
     collaboration: ['/think', '/strategy', '/reflect', '/learnplan', '/mentalmodel', '/decision', '/blindspot', '/assumptions', '/perspectives', '/insight', '/journal', '/collab'],

@@ -405,8 +405,128 @@ function sanitizeEnvStatus(env = {}) {
     tavilyApiKey: isSet(env.TAVILY_API_KEY),
     groqApiKey: isSet(env.GROQ_API_KEY),
     mistralApiKey: isSet(env.MISTRAL_API_KEY),
-    dashboardAdminToken: isSet(env.DASHBOARD_ADMIN_TOKEN)
+    dashboardAdminToken: isSet(env.DASHBOARD_ADMIN_TOKEN),
+    telegramTokenOrchestrator: isSet(env.TELEGRAM_TOKEN_ORCHESTRATOR),
+    telegramTokenPlanner: isSet(env.TELEGRAM_TOKEN_PLANNER),
+    telegramTokenCoder: isSet(env.TELEGRAM_TOKEN_CODER),
+    telegramTokenCritic: isSet(env.TELEGRAM_TOKEN_CRITIC),
+    telegramTokenResearch: isSet(env.TELEGRAM_TOKEN_RESEARCH),
+    telegramTokenOps: isSet(env.TELEGRAM_TOKEN_OPS),
+    telegramTokenSecurity: isSet(env.TELEGRAM_TOKEN_SECURITY),
+    telegramTokenMemory: isSet(env.TELEGRAM_TOKEN_MEMORY),
+    telegramTokenExecutor: isSet(env.TELEGRAM_TOKEN_EXECUTOR),
+    telegramTokenReflection: isSet(env.TELEGRAM_TOKEN_REFLECTION)
   };
+}
+
+function sanitizeBotConfig(bot = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(bot.id || '', 80),
+    username: truncateText(bot.username || '', 120),
+    tokenConfigured: Boolean(bot.tokenConfigured),
+    agentId: truncateText(bot.agentId || '', 80),
+    enabled: Boolean(bot.enabled),
+    webhookPath: truncateText(bot.webhookPath || '', 160),
+    webhookSecretConfigured: Boolean(bot.webhookSecretConfigured),
+    role: truncateText(bot.role || '', 80),
+    displayName: truncateText(bot.displayName || bot.role || bot.id || '', 120),
+    createdFrom: bot.createdFrom || 'env',
+    status: bot.status || 'unknown'
+  });
+}
+
+function sanitizeAgentSummary(agent = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(agent.id || '', 80),
+    displayName: truncateText(agent.displayName || '', 140),
+    botId: truncateText(agent.botId || '', 80),
+    role: truncateText(agent.role || '', 80),
+    description: truncateText(agent.description || '', 500),
+    personality: truncateText(agent.personality || '', 260),
+    specialties: Array.isArray(agent.specialties) ? agent.specialties.slice(0, 24).map(item => truncateText(item, 80)) : [],
+    tools: Array.isArray(agent.tools) ? agent.tools.slice(0, 24).map(item => truncateText(item, 80)) : [],
+    canSpeakDirectly: Boolean(agent.canSpeakDirectly),
+    canAutoRespond: Boolean(agent.canAutoRespond),
+    canProposeExecution: Boolean(agent.canProposeExecution),
+    canExecuteWithoutApproval: false,
+    defaultSilent: Boolean(agent.defaultSilent),
+    priority: Number(agent.priority || 0),
+    maxAutoReplies: Number(agent.maxAutoReplies || 1),
+    riskSensitivity: truncateText(agent.riskSensitivity || 'medium', 40),
+    enabled: agent.enabled !== false
+  });
+}
+
+function sanitizeAgentRoutingResult(route = {}) {
+  return guards.preventSecretLeak({
+    topics: Array.isArray(route.topics) ? route.topics.slice(0, 20).map(item => truncateText(item, 80)) : [],
+    mentionedAgents: Array.isArray(route.mentionedAgents) ? route.mentionedAgents.slice(0, 20).map(item => truncateText(item, 80)) : [],
+    commandMode: truncateText(route.commandMode || '', 80),
+    language: truncateText(route.language || 'id', 20),
+    intentSignals: route.intentSignals || {},
+    risk: route.risk ? {
+      level: route.risk.level || route.risk.riskLevel || 'low',
+      riskLevel: route.risk.riskLevel || route.risk.level || 'low',
+      secretDetected: Boolean(route.risk.secretDetected),
+      actionRequested: Boolean(route.risk.actionRequested),
+      writeOrExternalIntent: Boolean(route.risk.writeOrExternalIntent),
+      dangerIntent: Boolean(route.risk.dangerIntent),
+      sanitizedText: truncateText(route.risk.sanitizedText || '', 220),
+      reasons: Array.isArray(route.risk.reasons) ? route.risk.reasons.slice(0, 10).map(item => truncateText(item, 120)) : []
+    } : null,
+    scores: Array.isArray(route.scores) ? route.scores.slice(0, 12).map(item => ({
+      agentId: truncateText(item.agentId || '', 80),
+      score: Number(item.score || 0),
+      reason: truncateText(item.reason || '', 180)
+    })) : [],
+    policy: route.policy ? {
+      mode: route.policy.mode || 'natural_smart',
+      selectedAgents: Array.isArray(route.policy.selectedAgents) ? route.policy.selectedAgents.slice(0, 20) : [],
+      internalOnlyAgents: Array.isArray(route.policy.internalOnlyAgents) ? route.policy.internalOnlyAgents.slice(0, 20) : [],
+      mutedAgents: Array.isArray(route.policy.mutedAgents) ? route.policy.mutedAgents.slice(0, 30) : [],
+      maxVisibleReplies: Number(route.policy.maxVisibleReplies || 3),
+      requireOrchestratorSummary: Boolean(route.policy.requireOrchestratorSummary),
+      riskLevel: route.policy.riskLevel || 'low',
+      approvalRequired: Boolean(route.policy.approvalRequired),
+      reason: truncateText(route.policy.reason || '', 260)
+    } : null,
+    selectedAgents: Array.isArray(route.selectedAgents) ? route.selectedAgents.slice(0, 20).map(item => truncateText(item, 80)) : [],
+    internalOnlyAgents: Array.isArray(route.internalOnlyAgents) ? route.internalOnlyAgents.slice(0, 20).map(item => truncateText(item, 80)) : [],
+    mutedAgents: Array.isArray(route.mutedAgents) ? route.mutedAgents.slice(0, 30).map(item => truncateText(item, 80)) : [],
+    approvalRequired: Boolean(route.approvalRequired),
+    reason: truncateText(route.reason || '', 260)
+  });
+}
+
+function sanitizeAgentActivity(item = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(item.id || '', 120),
+    chatId: truncateText(item.chatId || '', 80),
+    userId: truncateText(item.userId || '', 80),
+    botId: truncateText(item.botId || '', 80),
+    topics: Array.isArray(item.topics) ? item.topics.slice(0, 20).map(topic => truncateText(topic, 80)) : [],
+    riskLevel: item.riskLevel || 'low',
+    mode: item.mode || 'natural_smart',
+    selectedAgents: Array.isArray(item.selectedAgents) ? item.selectedAgents.slice(0, 20).map(id => truncateText(id, 80)) : [],
+    internalOnlyAgents: Array.isArray(item.internalOnlyAgents) ? item.internalOnlyAgents.slice(0, 20).map(id => truncateText(id, 80)) : [],
+    mutedAgents: Array.isArray(item.mutedAgents) ? item.mutedAgents.slice(0, 30).map(id => truncateText(id, 80)) : [],
+    reason: truncateText(item.reason || '', 260),
+    messagePreview: truncateText(item.messagePreview || '', 220),
+    responseCount: Number(item.responseCount || 0),
+    createdAt: item.createdAt || null
+  });
+}
+
+function sanitizeAgentGroupSettings(settings = {}) {
+  return guards.preventSecretLeak({
+    chatId: truncateText(settings.chatId || '', 80),
+    mode: settings.mode || 'natural_smart',
+    maxAutoAgents: Number(settings.maxAutoAgents || 3),
+    allowAllAgents: Boolean(settings.allowAllAgents),
+    orchestratorBotId: truncateText(settings.orchestratorBotId || 'default', 80),
+    updatedBy: truncateText(settings.updatedBy || '', 80),
+    updatedAt: settings.updatedAt || null
+  });
 }
 
 function sanitizeDashboardSummary(data = {}) {
@@ -685,6 +805,11 @@ function sanitizeActionResult(result = {}) {
 }
 
 module.exports = {
+  sanitizeAgentActivity,
+  sanitizeAgentGroupSettings,
+  sanitizeAgentRoutingResult,
+  sanitizeAgentSummary,
+  sanitizeBotConfig,
   sanitizeEnvStatus,
   sanitizeExecutionAction,
   sanitizeExecutionProposal,

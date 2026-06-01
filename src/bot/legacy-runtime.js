@@ -33,6 +33,8 @@ const plannerSystem = require('../planner');
 const executorSystem = require('../executor');
 const toolsSystem = require('../tools');
 const backupSystem = require('../backup');
+const multibotSystem = require('../multibot');
+const smartAgentSystem = require('../agents');
 const {
   formatDashboardStorageStatus,
   formatDbStatus,
@@ -96,6 +98,8 @@ const {
   WEBHOOK_BASE_URL,
   WEBHOOK_PATH
 } = config;
+
+multibotSystem.botRegistry.loadBotConfigs(config);
 
 const FILE_DIR = process.cwd();
 const storageManager = createStorageManager({
@@ -3376,6 +3380,255 @@ function getBackupServices(actorId = '') {
   };
 }
 
+function getAgentServices(actorId = '') {
+  return {
+    ...getBackupServices(actorId),
+    actorId: actorId || '',
+    actorType: 'telegram',
+    env: config,
+    botRegistry: multibotSystem.botRegistry,
+    telegramClient: multibotSystem.telegramClient,
+    auditLog: dashboard.auditLog,
+    safeSendMessage,
+    sendChunkedMessage,
+    telegramPost,
+    logger: log
+  };
+}
+
+function formatBotStatusList() {
+  const status = multibotSystem.botRegistry.buildBotStatusSummary(config);
+  const lines = status.bots.map(bot => {
+    const secret = bot.webhookSecretConfigured ? 'secret:set' : 'secret:missing';
+    const token = bot.tokenConfigured ? 'token:set' : 'token:missing';
+    return `- ${bot.id} -> ${bot.agentId} [${token}, ${secret}, ${bot.enabled ? 'enabled' : 'disabled'}]`;
+  });
+  return [
+    'Multi-Bot Status',
+    `Enabled bots: ${status.enabled}/${status.total}`,
+    `Multi-bot: ${status.multiBotEnabled ? 'yes' : 'no'}`,
+    `Default bot: ${status.defaultBotId || '-'}`,
+    '',
+    ...lines
+  ].join('\n');
+}
+
+function formatAgentList() {
+  const agents = smartAgentSystem.agentRegistry.listAgents({}, getAgentServices());
+  return [
+    'Agent Registry',
+    '',
+    ...agents.map(agent => `- ${agent.id}: ${agent.displayName} (${agent.role})${agent.defaultSilent ? ' [silent default]' : ''}`)
+  ].join('\n');
+}
+
+async function formatRouterStatus(chatId) {
+  const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, getAgentServices());
+  return [
+    'Smart Agent Router',
+    `Mode: ${settings.mode}`,
+    `Max visible agents: ${settings.maxAutoAgents}`,
+    `All agents allowed: ${settings.allowAllAgents ? 'yes' : 'no'}`,
+    '',
+    'Natural chat aktif: pesan biasa akan diklasifikasi topic/risk, lalu agent relevan dipilih. Agent tidak relevan diam.'
+  ].join('\n');
+}
+
+async function renderAgentRoutePreview(text, mode, chatId, userId) {
+  const services = getAgentServices(userId);
+  const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
+  const route = smartAgentSystem.agentRouter.routeMessage(text, {
+    forceMode: mode || settings.mode || 'natural_smart',
+    chatId,
+    userId,
+    groupSettings: settings
+  }, services);
+  await smartAgentSystem.conversationBus.recordAgentActivity({
+    chatId: String(chatId),
+    userId: String(userId),
+    botId: 'default',
+    text,
+    createdAt: new Date().toISOString()
+  }, route, [], services);
+  return [
+    `Mode: ${route.policy?.mode || route.commandMode}`,
+    `Topics: ${(route.topics || []).join(', ') || '-'}`,
+    `Risk: ${route.risk?.level || 'low'}`,
+    `Selected: ${(route.selectedAgents || []).join(', ') || '-'}`,
+    `Internal: ${(route.internalOnlyAgents || []).join(', ') || '-'}`,
+    `Muted: ${(route.mutedAgents || []).slice(0, 8).join(', ') || '-'}`,
+    '',
+    route.approvalRequired
+      ? 'Aksi write/external/danger tidak dijalankan langsung. Buat proposal dan approve eksplisit sebelum run.'
+      : 'Tidak ada aksi berbahaya yang dijalankan.'
+  ].join('\n');
+}
+
+async function handleAgentCommands(chatId, userId, cmd, args, msg) {
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  const services = getAgentServices(userId);
+
+  if (cmd === '/bots') {
+    await sendChunkedMessage(chatId, formatBotStatusList(), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/botstatus') {
+    await sendChunkedMessage(chatId, formatBotStatusList(), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/botinfo') {
+    const botId = String(args || '').trim();
+    if (!botId) {
+      await safeSendMessage(chatId, 'Format: /botinfo <botId>', replyOpt);
+      return true;
+    }
+    const bot = multibotSystem.botRegistry.getBotConfig(botId, config);
+    if (!bot) {
+      await safeSendMessage(chatId, 'Bot tidak ditemukan.', replyOpt);
+      return true;
+    }
+    const safe = multibotSystem.botConfig.sanitizeBotConfig(bot);
+    await sendChunkedMessage(chatId, [
+      `Bot: ${safe.id}`,
+      `Agent: ${safe.agentId}`,
+      `Role: ${safe.role}`,
+      `Username: ${safe.username || '-'}`,
+      `Token configured: ${safe.tokenConfigured ? 'yes' : 'no'}`,
+      `Webhook secret: ${safe.webhookSecretConfigured ? 'set' : 'missing'}`,
+      `Enabled: ${safe.enabled ? 'yes' : 'no'}`,
+      `Webhook path: ${safe.webhookPath}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agents' || cmd === '/agentstatus') {
+    await sendChunkedMessage(chatId, formatAgentList(), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agent') {
+    const agentId = String(args || '').trim();
+    if (!agentId) {
+      await safeSendMessage(chatId, 'Format: /agent <agentId>', replyOpt);
+      return true;
+    }
+    const agent = smartAgentSystem.agentRegistry.getAgent(agentId, services);
+    if (!agent) {
+      await safeSendMessage(chatId, 'Agent tidak ditemukan.', replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, [
+      `${agent.displayName}`,
+      `Role: ${agent.role}`,
+      `Bot: ${agent.botId}`,
+      `Silent default: ${agent.defaultSilent ? 'yes' : 'no'}`,
+      `Can propose execution: ${agent.canProposeExecution ? 'yes' : 'no'}`,
+      '',
+      agent.description,
+      '',
+      `Specialties: ${(agent.specialties || []).join(', ')}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/router' || cmd === '/routermode') {
+    await sendChunkedMessage(chatId, await formatRouterStatus(chatId), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/quiet' || cmd === '/smart') {
+    if (msg.chat?.type !== 'private' && !isAdmin(userId)) {
+      await safeSendMessage(chatId, 'Mengubah mode grup hanya untuk owner/admin.', replyOpt);
+      return true;
+    }
+    const mode = cmd === '/quiet' ? 'quiet' : 'natural_smart';
+    await smartAgentSystem.conversationBus.setGroupSettings(chatId, {
+      mode,
+      updatedBy: userId
+    }, services);
+    try {
+      await dashboard.auditLog.recordAuditLog({
+        actorType: 'telegram',
+        actorId: userId,
+        action: 'agents/group_mode_changed',
+        targetType: 'chat',
+        targetId: String(chatId),
+        userId,
+        decision: 'allowed',
+        status: 'ok',
+        afterSummary: { chatId: String(chatId), mode }
+      }, services);
+    } catch (_) {}
+    await safeSendMessage(chatId, `Router mode diset ke ${mode}.`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/council' || cmd === '/debate' || cmd === '/allagents' || cmd === '/askagents' || cmd === '/riskreview') {
+    if (!args) {
+      await safeSendMessage(chatId, `Format: ${cmd} <topic>`, replyOpt);
+      return true;
+    }
+    if (cmd === '/allagents' && !isAdmin(userId)) {
+      await safeSendMessage(chatId, '/allagents hanya untuk owner/admin agar grup tidak spam.', replyOpt);
+      return true;
+    }
+    const modeByCommand = {
+      '/council': 'council',
+      '/debate': 'debate',
+      '/allagents': 'allagents',
+      '/askagents': 'natural_smart',
+      '/riskreview': 'risk_review'
+    };
+    const preview = await renderAgentRoutePreview(args, modeByCommand[cmd], chatId, userId);
+    await sendChunkedMessage(chatId, `Agent Router Preview\n\n${preview}`, replyOpt);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
+  const services = getAgentServices(userId);
+  const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
+  const need = smartAgentSystem.agentRouter.detectNaturalAgentNeed(userText, {
+    chatId,
+    userId,
+    groupSettings: settings
+  }, services);
+
+  if (!need.needed) return { handled: false };
+  const route = need.route;
+  const event = smartAgentSystem.conversationBus.createConversationEvent({
+    message: msg,
+    __botId: msg.__botId || 'default',
+    __agentId: msg.__agentId || 'orchestrator'
+  }, { chatId, userId, text: userText }, services);
+
+  const canReply = await smartAgentSystem.conversationBus.preventDuplicateReplies(event, services);
+  if (!canReply) return { handled: true, answer: '', reason: 'duplicate_agent_route' };
+
+  const drafts = await smartAgentSystem.conversationBus.collectAgentDrafts(event, route, services);
+  await smartAgentSystem.conversationBus.recordAgentActivity(event, route, drafts, services);
+
+  const selectedDrafts = drafts.filter(draft => (route.selectedAgents || []).includes(draft.agentId));
+  const visibleText = [
+    'Smart Agent Router',
+    `Mode: ${route.policy?.mode || 'natural_smart'} | Risk: ${route.risk?.level || 'low'}`,
+    `Agent: ${(route.selectedAgents || []).join(', ')}`,
+    '',
+    ...selectedDrafts.map(draft => `• ${draft.text}`),
+    '',
+    route.approvalRequired
+      ? 'Catatan: request ini mengandung aksi/risk. Saya tidak akan menjalankan apa pun tanpa approval eksplisit.'
+      : ''
+  ].filter(Boolean).join('\n');
+
+  await sendChunkedMessage(chatId, visibleText, { reply_to_message_id: msg.message_id });
+  return { handled: true, answer: visibleText, route };
+}
+
 function formatPermissionFlags(summary = {}) {
   const flags = [
     summary.canRead ? 'read' : '',
@@ -6495,6 +6748,20 @@ async function handleHelp(chatId, msg) {
 /runexec proposalId - jalankan proposal yang sudah approved
 /reject proposalId | reason
 /cancel_exec proposalId
+/bots - daftar bot Telegram aman
+/botstatus - status multi-bot
+/botinfo botId - detail bot tanpa token
+/agents - daftar agent/persona
+/agent agentId - detail agent
+/agentstatus - status agent registry
+/router - status natural smart router
+/quiet - mode grup orchestrator-only
+/smart - mode grup natural smart
+/council topic - override council agent
+/debate topic - override planner vs critic
+/allagents topic - semua agent singkat [admin]
+/askagents topic - test smart router
+/riskreview topic - critic + security review
 /tools - daftar tool registry
 /tool toolId - metadata tool
 /toolpreview toolId | input
@@ -6684,6 +6951,21 @@ function isUnknownCommand(cmd) {
     '/reject',
     '/runexec',
     '/cancel_exec',
+    '/bots',
+    '/botstatus',
+    '/botinfo',
+    '/agents',
+    '/agent',
+    '/agentstatus',
+    '/router',
+    '/routermode',
+    '/quiet',
+    '/smart',
+    '/council',
+    '/debate',
+    '/allagents',
+    '/askagents',
+    '/riskreview',
     '/tools',
     '/tool',
     '/toolpreview',
@@ -7794,6 +8076,56 @@ dashboard.registerDashboardRoutes(app, {
   logger: log
 });
 
+async function handleMultiBotUpdate(update = {}) {
+  if (isDuplicateIncomingUpdate(update)) return { ok: true, duplicate: true };
+  if (update.callback_query) {
+    const cb = update.callback_query;
+    try {
+      await interactions.callbackRouter.handleCallbackQuery(getInteractionServices(), cb);
+      await multibotSystem.telegramClient.answerCallbackQueryAsBot(cb.__botId || update.__botId || 'default', cb.id, {}, getAgentServices(cb.from?.id));
+    } catch (_) {}
+    return { ok: true, type: 'callback_query' };
+  }
+
+  const msg = update.message;
+  if (!msg || msg.from?.is_bot) return { ok: true, ignored: true };
+  const chatId = msg.chat.id;
+  const userId = normalizeId(msg.from.id);
+  const text = String(msg.text || msg.caption || '').trim();
+  if (!text) return { ok: true, ignored: true };
+
+  const cmd = getCommandBase(text);
+  const args = getCommandArgs(text);
+  if (cmd) {
+    if (cmd === '/ping') {
+      await handlePing(chatId, msg);
+      return { ok: true, type: 'command' };
+    }
+    if (cmd === '/help') {
+      await handleHelp(chatId, msg);
+      return { ok: true, type: 'command' };
+    }
+    if (await handleAgentCommands(chatId, userId, resolveAlias(userId, cmd), args, msg)) {
+      return { ok: true, type: 'agent_command' };
+    }
+    await safeSendMessage(chatId, 'Command multi-bot diterima. Untuk command legacy lengkap, pakai bot utama/default.', { reply_to_message_id: msg.message_id });
+    return { ok: true, type: 'command_fallback' };
+  }
+
+  const routed = await handleNaturalAgentRoute(chatId, userId, text, msg);
+  if (!routed?.handled) {
+    await safeSendMessage(chatId, 'Saya bertindak sebagai Orchestrator Agent. Pesan diterima, tapi tidak perlu multi-agent route khusus.', { reply_to_message_id: msg.message_id });
+  }
+  return { ok: true, type: 'message' };
+}
+
+multibotSystem.webhookManager.registerMultiBotWebhookRoutes(app, {
+  env: config,
+  logger: log,
+  auditLog: dashboard.auditLog,
+  handleTelegramUpdate: handleMultiBotUpdate
+});
+
 app.get('/oauth2callback', async (req, res) => {
   const code = req.query.code;
   const state = req.query.state;
@@ -7979,6 +8311,7 @@ await withUserActionLock(userId, async () => {
   if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleAgentCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (resolvedCmd === '/feedback') { await handleFeedback(chatId, msg); return; }
   if (resolvedCmd === '/image') { await handleImage(chatId, args, msg); return; }
   if (resolvedCmd === '/tanggal') { await safeSendMessage(chatId, getCurrentDate(), { reply_to_message_id: msg.message_id }); return; }
@@ -8123,6 +8456,34 @@ Data endpoint membutuhkan Authorization Bearer token.`;
         intent: 'plugin_hook'
       });
     }
+    return;
+  }
+
+  const preToolAgentResult = await handleNaturalAgentRoute(chatId, userId, userText, msg);
+  if (preToolAgentResult?.handled) {
+    logMessageFlow('ai_pipeline_result', {
+      userId,
+      chatId,
+      pipeline: 'natural_smart_agents',
+      processed: true,
+      answerPreview: preToolAgentResult.answer
+    });
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: preToolAgentResult.answer,
+      intent: `natural_agents:${preToolAgentResult.route?.policy?.mode || 'natural_smart'}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: preToolAgentResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, preToolAgentResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
     return;
   }
 
@@ -9128,7 +9489,7 @@ async function startLegacyBotServer() {
   await restoreAllReminders();
   await restoreAllDigests();
 
-  const webhookUrl = WEBHOOK_BASE_URL
+  const webhookUrl = WEBHOOK_BASE_URL && TELEGRAM_TOKEN
     ? `${WEBHOOK_BASE_URL}/webhook/${TELEGRAM_TOKEN}`
     : null;
 

@@ -1499,6 +1499,167 @@ const UI = {
     document.getElementById('btn-executor-propose-task').addEventListener('click', proposeTask);
   },
 
+  async renderAgents(targetEl) {
+    targetEl.innerHTML = `
+      <div class="page-header">
+        <h2>🤝 Agents / Multi-Bot</h2>
+        <p>Status multi-bot, agent registry, dan natural smart router. Token dan webhook secret tidak pernah ditampilkan.</p>
+      </div>
+      <div class="grid-2">
+        <section class="panel">
+          <h3>Bot Status</h3>
+          <button id="agents-load-bots" class="btn btn-primary">Load Bots</button>
+          <div id="agents-bots" style="margin-top:16px;">${UI.renderEmptyState('🤖', 'Belum Dimuat', 'Klik Load Bots untuk melihat konfigurasi aman.')}</div>
+        </section>
+        <section class="panel">
+          <h3>Agent Roles</h3>
+          <button id="agents-load-agents" class="btn btn-primary">Load Agents</button>
+          <div id="agents-list" style="margin-top:16px;">${UI.renderEmptyState('🤝', 'Belum Dimuat', 'Klik Load Agents untuk melihat role agent.')}</div>
+        </section>
+      </div>
+      <section class="panel">
+        <h3>Natural Smart Router Test</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Sample Message</label>
+            <textarea id="agent-router-message" rows="4" placeholder="Contoh: Bot saya error setelah deploy di Render"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Mode</label>
+            <select id="agent-router-mode">
+              <option value="natural_smart">natural_smart</option>
+              <option value="quiet">quiet</option>
+              <option value="council">council</option>
+              <option value="debate">debate</option>
+              <option value="allagents">allagents</option>
+              <option value="risk_review">risk_review</option>
+            </select>
+          </div>
+        </div>
+        <button id="agent-router-test" class="btn btn-primary">Test Router</button>
+        <div id="agent-router-result" style="margin-top:16px;">${UI.renderEmptyState('🧭', 'Router Ready', 'Masukkan pesan untuk melihat topic, risk, dan selected agents.')}</div>
+      </section>
+      <div class="grid-2">
+        <section class="panel">
+          <h3>Group Mode Settings</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Chat ID</label>
+              <input id="agent-group-chat-id" placeholder="default">
+            </div>
+            <div class="form-group">
+              <label>Mode</label>
+              <select id="agent-group-mode">
+                <option value="natural_smart">natural_smart</option>
+                <option value="quiet">quiet</option>
+                <option value="manual">manual</option>
+                <option value="council">council</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Max Auto Agents</label>
+              <input id="agent-group-max" type="number" min="1" max="5" value="3">
+            </div>
+          </div>
+          <button id="agent-group-load" class="btn btn-outline">Load Settings</button>
+          <button id="agent-group-save" class="btn btn-primary">Save Settings</button>
+          <div id="agent-group-result" style="margin-top:16px;"></div>
+        </section>
+        <section class="panel">
+          <h3>Recent Agent Activity</h3>
+          <button id="agents-load-activity" class="btn btn-primary">Load Activity</button>
+          <div id="agents-activity" style="margin-top:16px;">${UI.renderEmptyState('📋', 'Belum Ada Activity', 'Routing natural chat akan muncul di sini.')}</div>
+        </section>
+      </div>
+      <section class="panel">
+        <h3>BotFather / Privacy Mode Note</h3>
+        <p class="text-muted">Gunakan BotFather untuk membuat token tiap bot. Orchestrator bisa membaca pesan sesuai privacy mode grup; specialist bot sebaiknya tetap command/mention-based. Jangan paste token ke chat.</p>
+      </section>
+    `;
+
+    const renderBotItems = (items = []) => items.length ? `
+      <div class="card-grid">
+        ${items.map(bot => UI.renderCard(
+          `${bot.id} → ${bot.agentId}`,
+          `<div>${UI.renderBadge(bot.enabled ? 'enabled' : 'disabled')} ${UI.renderBadge(bot.tokenConfigured ? 'token set' : 'token missing')}</div>
+           <div class="kv-item"><span class="kv-key">Webhook Secret</span><span>${bot.webhookSecretConfigured ? 'set' : 'missing'}</span></div>
+           <div class="kv-item"><span class="kv-key">Path</span><span><code>${Utils.escapeHtml(bot.webhookPath || '-')}</code></span></div>`,
+          `Username: ${Utils.escapeHtml(bot.username || '-')}`
+        )).join('')}
+      </div>
+    ` : UI.renderEmptyState('🤖', 'Tidak Ada Bot', 'Set TELEGRAM_TOKEN atau TELEGRAM_TOKEN_ORCHESTRATOR.');
+
+    const renderAgentItems = (items = []) => items.length ? `
+      <div class="card-grid">
+        ${items.map(agent => UI.renderCard(
+          agent.displayName,
+          `<div>${UI.renderBadge(agent.role)} ${agent.defaultSilent ? UI.renderBadge('silent default') : UI.renderBadge('orchestrator')}</div>
+           <p>${Utils.escapeHtml(agent.description || '')}</p>
+           <div class="text-muted">${(agent.specialties || []).slice(0, 6).map(Utils.escapeHtml).join(', ')}</div>`,
+          `Bot: ${Utils.escapeHtml(agent.botId || '-')}`
+        )).join('')}
+      </div>
+    ` : UI.renderEmptyState('🤝', 'Tidak Ada Agent', 'Default agents belum termuat.');
+
+    const renderRoute = (data = {}) => `
+      <div class="card">
+        <div class="card-title">Routing Result</div>
+        <div class="kv-item"><span class="kv-key">Topics</span><span>${(data.topics || []).map(UI.renderBadge).join(' ') || '-'}</span></div>
+        <div class="kv-item"><span class="kv-key">Risk</span><span>${UI.renderBadge(data.risk?.level || 'low')}</span></div>
+        <div class="kv-item"><span class="kv-key">Selected</span><span>${(data.selectedAgents || []).map(UI.renderBadge).join(' ') || '-'}</span></div>
+        <div class="kv-item"><span class="kv-key">Internal</span><span>${(data.internalOnlyAgents || []).map(UI.renderBadge).join(' ') || '-'}</span></div>
+        <div class="kv-item"><span class="kv-key">Muted</span><span>${(data.mutedAgents || []).slice(0, 10).map(UI.renderBadge).join(' ') || '-'}</span></div>
+        <div class="kv-item"><span class="kv-key">Approval</span><span>${data.approvalRequired ? 'required' : 'not required'}</span></div>
+        <p class="text-muted">${Utils.escapeHtml(data.reason || data.policy?.reason || '')}</p>
+      </div>
+    `;
+
+    document.getElementById('agents-load-bots').addEventListener('click', async () => {
+      const res = await Api.getBots();
+      document.getElementById('agents-bots').innerHTML = res.ok ? renderBotItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
+    });
+
+    document.getElementById('agents-load-agents').addEventListener('click', async () => {
+      const res = await Api.getAgents();
+      document.getElementById('agents-list').innerHTML = res.ok ? renderAgentItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
+    });
+
+    document.getElementById('agent-router-test').addEventListener('click', async () => {
+      const message = document.getElementById('agent-router-message').value;
+      const mode = document.getElementById('agent-router-mode').value;
+      const res = await Api.testAgentRouter({ message, mode });
+      document.getElementById('agent-router-result').innerHTML = res.ok ? renderRoute(res.data) : UI.renderEmptyState('⚠️', 'Router Error', res.error || 'API error');
+    });
+
+    document.getElementById('agent-group-load').addEventListener('click', async () => {
+      const chatId = document.getElementById('agent-group-chat-id').value || 'default';
+      const res = await Api.getAgentGroupSettings(chatId);
+      if (res.ok) {
+        document.getElementById('agent-group-mode').value = res.data.mode || 'natural_smart';
+        document.getElementById('agent-group-max').value = res.data.maxAutoAgents || 3;
+        document.getElementById('agent-group-result').innerHTML = `<div class="alert alert-info">Loaded: ${Utils.escapeHtml(res.data.mode || '-')}</div>`;
+      }
+    });
+
+    document.getElementById('agent-group-save').addEventListener('click', async () => {
+      const payload = {
+        chatId: document.getElementById('agent-group-chat-id').value || 'default',
+        mode: document.getElementById('agent-group-mode').value,
+        maxAutoAgents: Number(document.getElementById('agent-group-max').value || 3)
+      };
+      const res = await Api.updateAgentGroupSettings(payload);
+      document.getElementById('agent-group-result').innerHTML = `<div class="alert ${res.ok ? 'alert-success' : 'alert-danger'}">${res.ok ? 'Settings saved.' : (res.error || 'Failed')}</div>`;
+    });
+
+    document.getElementById('agents-load-activity').addEventListener('click', async () => {
+      const res = await Api.getAgentActivity({ limit: 20 });
+      const items = res.data?.items || [];
+      document.getElementById('agents-activity').innerHTML = res.ok && items.length
+        ? items.map(item => `<div class="card"><strong>${Utils.escapeHtml(item.mode || 'natural_smart')}</strong> ${UI.renderBadge(item.riskLevel || 'low')}<div>${(item.selectedAgents || []).map(UI.renderBadge).join(' ')}</div><p class="text-muted">${Utils.escapeHtml(item.messagePreview || '-')}</p></div>`).join('')
+        : UI.renderEmptyState('📋', 'Belum Ada Activity', 'Belum ada routing yang tercatat.');
+    });
+  },
+
   async renderTools(targetEl) {
     let currentUserId = localStorage.getItem('last_user_id') || '123456789';
 

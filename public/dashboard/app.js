@@ -103,6 +103,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'executor':
         await UI.renderExecutor(tabContent);
         break;
+      case 'agents':
+        await UI.renderAgents(tabContent);
+        break;
       case 'tools':
         await UI.renderTools(tabContent);
         break;

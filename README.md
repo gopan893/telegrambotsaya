@@ -20,6 +20,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Conversation continuity layer agar follow-up seperti `iya`, `lanjut`, `jelaskan`, dan pergantian topik dipahami natural
 - Interaction layer dengan inline keyboard, menu cepat, callback handler, dan confirmation flow untuk aksi penting
 - Human judgment safety layer untuk topik kesehatan, hukum, keuangan, keselamatan, dan keputusan besar
+- Multi-bot foundation + natural smart agent router untuk Orchestrator, Planner, Coder, Critic, Ops, Security, Executor, dan Reflection agent
 
 ## Mulai Cepat
 
@@ -38,6 +39,8 @@ OWNER_CHAT_ID=telegram_user_id_owner
 ```
 
 File env juga mendukung `DATABASE_URL`, `REDIS_URL`, `WEBHOOK_URL`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `OPENWEATHER_API_KEY`, `ADMIN_IDS`, dan variabel lain yang ada di `.env.example`.
+
+Multi-bot optional memakai env seperti `TELEGRAM_TOKEN_ORCHESTRATOR`, `TELEGRAM_TOKEN_CODER`, `TELEGRAM_TOKEN_OPS`, dan `TELEGRAM_WEBHOOK_SECRET_<ROLE>`. Token tidak ditampilkan oleh dashboard/API. Lihat `docs/MULTIBOT.md`.
 
 Storage production:
 
@@ -125,6 +128,10 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /ops
 /health
 /stats
+/bots
+/agents
+/router
+/council Phase 20 multi-bot
 ```
 
 ## Catatan Penting

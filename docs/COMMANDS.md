@@ -97,6 +97,28 @@ Natural chat seperti `jalankan task ini`, `eksekusi langkah berikutnya`, dan `bu
 
 Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropose`, lalu flow `/approve` dan `/runexec`. Tidak ada shell executor, dynamic plugin loading, atau arbitrary code execution.
 
+## Multi-Bot & Smart Agents
+
+| Command | Fungsi |
+| --- | --- |
+| `/bots` | Daftar bot Telegram secara aman, hanya tokenConfigured/webhookSecretConfigured. |
+| `/botstatus` | Ringkasan status multi-bot dan default bot. |
+| `/botinfo <botId>` | Detail bot tanpa token atau secret. |
+| `/agents` | Daftar agent/persona default. |
+| `/agent <agentId>` | Detail role, botId, specialties, dan guard agent. |
+| `/agentstatus` | Status agent registry. |
+| `/router` | Status natural smart router untuk chat saat ini. |
+| `/routermode` | Alias status router. |
+| `/quiet` | Mode grup orchestrator-only. |
+| `/smart` | Mode grup natural smart. |
+| `/council <topic>` | Override council ringan. |
+| `/debate <topic>` | Override planner vs critic. |
+| `/allagents <topic>` | Semua agent menjawab singkat, admin-only. |
+| `/askagents <topic>` | Test routing natural smart secara eksplisit. |
+| `/riskreview <topic>` | Paksa Critic + Security + Orchestrator. |
+
+Natural chat tetap utama. Pesan seperti `Bot saya error setelah deploy`, `Saya ingin restore backup lama`, atau `Saya capek hari ini` akan memilih agent relevan otomatis; agent lain tetap silent.
+
 ## Backup & Recovery
 
 | Command | Fungsi |

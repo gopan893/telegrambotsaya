@@ -350,6 +350,52 @@ const Api = {
     return this.apiGet(`/tools/audit${query ? `?${query}` : ''}`);
   },
 
+  async getBots() {
+    return this.apiGet('/bots');
+  },
+
+  async getBotStatus() {
+    return this.apiGet('/bots/status');
+  },
+
+  async getBotInfo(botId) {
+    return this.apiGet(`/bots/${encodeURIComponent(botId)}`);
+  },
+
+  async getAgents() {
+    return this.apiGet('/agents');
+  },
+
+  async getAgentInfo(agentId) {
+    return this.apiGet(`/agents/${encodeURIComponent(agentId)}`);
+  },
+
+  async getAgentRouterStatus(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.chatId) params.set('chatId', filters.chatId);
+    const query = params.toString();
+    return this.apiGet(`/agents/router/status${query ? `?${query}` : ''}`);
+  },
+
+  async testAgentRouter(payload) {
+    return this.apiPost('/agents/router/test', payload);
+  },
+
+  async getAgentActivity(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.limit) params.set('limit', filters.limit);
+    const query = params.toString();
+    return this.apiGet(`/agents/activity${query ? `?${query}` : ''}`);
+  },
+
+  async getAgentGroupSettings(chatId = 'default') {
+    return this.apiGet(`/agents/group-settings?chatId=${encodeURIComponent(chatId)}`);
+  },
+
+  async updateAgentGroupSettings(payload) {
+    return this.apiPost('/agents/group-settings/update', payload);
+  },
+
   async listBackups(filters = {}) {
     const params = new URLSearchParams();
     ['type', 'workspaceId', 'userId', 'status', 'limit'].forEach(key => {
