@@ -1537,7 +1537,48 @@ const UI = {
           </div>
         </div>
         <button id="agent-router-test" class="btn btn-primary">Test Router</button>
+        <button id="agent-router-test-memory" class="btn btn-outline">Test With Memory</button>
         <div id="agent-router-result" style="margin-top:16px;">${UI.renderEmptyState('🧭', 'Router Ready', 'Masukkan pesan untuk melihat topic, risk, dan selected agents.')}</div>
+      </section>
+      <section class="panel">
+        <h3>Agent Personality & Memory</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Agent ID</label>
+            <select id="agent-memory-agent">
+              <option value="orchestrator">orchestrator</option>
+              <option value="planner">planner</option>
+              <option value="coder">coder</option>
+              <option value="critic">critic</option>
+              <option value="research">research</option>
+              <option value="ops">ops</option>
+              <option value="security">security</option>
+              <option value="memory">memory</option>
+              <option value="executor">executor</option>
+              <option value="reflection">reflection</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Workspace ID</label>
+            <input id="agent-memory-workspace" placeholder="default">
+          </div>
+          <div class="form-group">
+            <label>User ID</label>
+            <input id="agent-memory-user" placeholder="optional">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Memory / Learning Note</label>
+          <textarea id="agent-memory-text" rows="3" placeholder="Contoh: Coder Agent harus menjaga CommonJS dan Render compatibility."></textarea>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="agent-profile-load" class="btn btn-outline">Load Profile</button>
+          <button id="agent-memory-load" class="btn btn-outline">Load Memory</button>
+          <button id="agent-memory-create" class="btn btn-primary">Save Agent Memory</button>
+          <button id="agent-note-create" class="btn btn-outline">Save Learning Note</button>
+          <button id="agent-shared-load" class="btn btn-outline">Shared Memory</button>
+        </div>
+        <div id="agent-memory-result" style="margin-top:16px;">${UI.renderEmptyState('🧠', 'Agent Memory Ready', 'Kelola profile dan memory per agent di sini.')}</div>
       </section>
       <div class="grid-2">
         <section class="panel">
@@ -1614,6 +1655,35 @@ const UI = {
       </div>
     `;
 
+    const renderMemoryItems = (items = []) => items.length ? `
+      <div class="card-grid">
+        ${items.map(memory => UI.renderCard(
+          `${memory.title || memory.id}`,
+          `<div>${UI.renderBadge(memory.type || 'memory')} ${memory.archivedAt ? UI.renderBadge('archived') : UI.renderBadge('active')}</div>
+           <p>${Utils.escapeHtml(memory.content || '')}</p>
+           <div class="text-muted">${(memory.tags || []).map(Utils.escapeHtml).join(', ') || '-'}</div>`,
+          `Agent: ${Utils.escapeHtml(memory.agentId || '-')} | Score: ${Math.round(Number(memory.relevanceScore || 0) * 100)}%`
+        )).join('')}
+      </div>
+    ` : UI.renderEmptyState('🧠', 'Belum Ada Memory', 'Simpan memory agent atau shared memory terlebih dahulu.');
+
+    const renderProfile = (profile = {}) => `
+      <div class="card">
+        <div class="card-title">${Utils.escapeHtml(profile.displayName || profile.agentId || 'Agent Profile')}</div>
+        <p>${Utils.escapeHtml(profile.personality || '')}</p>
+        <div class="kv-item"><span class="kv-key">Role</span><span>${Utils.escapeHtml(profile.role || '-')}</span></div>
+        <div class="kv-item"><span class="kv-key">Tone</span><span>${Utils.escapeHtml(profile.responseStyle?.tone || '-')}</span></div>
+        <div class="kv-item"><span class="kv-key">Memory</span><span>${profile.agentMemoryEnabled ? 'enabled' : 'disabled'} / shared ${profile.sharedMemoryEnabled ? 'enabled' : 'disabled'}</span></div>
+        <div class="text-muted">Scope: ${(profile.knowledgeScope || []).slice(0, 10).map(Utils.escapeHtml).join(', ')}</div>
+      </div>
+    `;
+
+    const getAgentMemoryFilters = () => ({
+      agentId: document.getElementById('agent-memory-agent').value || 'orchestrator',
+      workspaceId: document.getElementById('agent-memory-workspace').value || 'default',
+      userId: document.getElementById('agent-memory-user').value || ''
+    });
+
     document.getElementById('agents-load-bots').addEventListener('click', async () => {
       const res = await Api.getBots();
       document.getElementById('agents-bots').innerHTML = res.ok ? renderBotItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
@@ -1629,6 +1699,64 @@ const UI = {
       const mode = document.getElementById('agent-router-mode').value;
       const res = await Api.testAgentRouter({ message, mode });
       document.getElementById('agent-router-result').innerHTML = res.ok ? renderRoute(res.data) : UI.renderEmptyState('⚠️', 'Router Error', res.error || 'API error');
+    });
+
+    document.getElementById('agent-router-test-memory').addEventListener('click', async () => {
+      const filters = getAgentMemoryFilters();
+      const message = document.getElementById('agent-router-message').value;
+      const mode = document.getElementById('agent-router-mode').value;
+      const res = await Api.testAgentRouterWithMemory({ message, mode, workspaceId: filters.workspaceId, userId: filters.userId });
+      const agentsWithMemory = res.data?.agents || [];
+      document.getElementById('agent-router-result').innerHTML = res.ok
+        ? `${renderRoute(res.data.route || {})}<div class="card"><div class="card-title">Memory Context</div>${agentsWithMemory.map(item => `<p><strong>${Utils.escapeHtml(item.agentId)}</strong>: ${item.selectedMemoryCount + item.sharedMemoryCount} memory<br><span class="text-muted">${Utils.escapeHtml(item.memoryExplanation || '')}</span></p>`).join('') || '<p class="text-muted">Tidak ada memory relevan.</p>'}</div>`
+        : UI.renderEmptyState('⚠️', 'Router Memory Error', res.error || 'API error');
+    });
+
+    document.getElementById('agent-profile-load').addEventListener('click', async () => {
+      const filters = getAgentMemoryFilters();
+      const res = await Api.getAgentProfile(filters.agentId, { workspaceId: filters.workspaceId });
+      document.getElementById('agent-memory-result').innerHTML = res.ok ? renderProfile(res.data) : UI.renderEmptyState('⚠️', 'Gagal Load Profile', res.error || 'API error');
+    });
+
+    document.getElementById('agent-memory-load').addEventListener('click', async () => {
+      const filters = getAgentMemoryFilters();
+      const res = await Api.listAgentMemory(filters.agentId, { workspaceId: filters.workspaceId, userId: filters.userId, limit: 20 });
+      document.getElementById('agent-memory-result').innerHTML = res.ok ? renderMemoryItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Memory', res.error || 'API error');
+    });
+
+    document.getElementById('agent-memory-create').addEventListener('click', async () => {
+      const filters = getAgentMemoryFilters();
+      const content = document.getElementById('agent-memory-text').value;
+      const res = await Api.createAgentMemory(filters.agentId, {
+        workspaceId: filters.workspaceId,
+        userId: filters.userId,
+        type: 'project_context',
+        content,
+        tags: ['dashboard', 'manual']
+      });
+      document.getElementById('agent-memory-result').innerHTML = res.ok
+        ? `<div class="alert alert-success">Agent memory saved: ${Utils.escapeHtml(res.data.title || res.data.id)}</div>`
+        : UI.renderEmptyState('⚠️', 'Memory Ditolak', res.error || 'API error');
+    });
+
+    document.getElementById('agent-note-create').addEventListener('click', async () => {
+      const filters = getAgentMemoryFilters();
+      const content = document.getElementById('agent-memory-text').value;
+      const res = await Api.createAgentLearningNote(filters.agentId, {
+        workspaceId: filters.workspaceId,
+        userId: filters.userId,
+        content,
+        tags: ['dashboard', 'learning']
+      });
+      document.getElementById('agent-memory-result').innerHTML = res.ok
+        ? `<div class="alert alert-success">Learning note saved: ${Utils.escapeHtml(res.data.title || res.data.id)}</div>`
+        : UI.renderEmptyState('⚠️', 'Learning Note Ditolak', res.error || 'API error');
+    });
+
+    document.getElementById('agent-shared-load').addEventListener('click', async () => {
+      const filters = getAgentMemoryFilters();
+      const res = await Api.listSharedAgentMemory({ workspaceId: filters.workspaceId, limit: 20 });
+      document.getElementById('agent-memory-result').innerHTML = res.ok ? renderMemoryItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Shared Memory', res.error || 'API error');
     });
 
     document.getElementById('agent-group-load').addEventListener('click', async () => {

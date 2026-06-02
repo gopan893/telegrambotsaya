@@ -130,6 +130,10 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /stats
 /bots
 /agents
+/agentprofile coder
+/agentmemory coder
+/agentremember coder | Coder Agent menjaga CommonJS dan Render compatibility
+/agentstyle coder
 /router
 /council Phase 20 multi-bot
 ```

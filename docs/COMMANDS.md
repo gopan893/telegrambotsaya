@@ -107,6 +107,14 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/agents` | Daftar agent/persona default. |
 | `/agent <agentId>` | Detail role, botId, specialties, dan guard agent. |
 | `/agentstatus` | Status agent registry. |
+| `/agentprofile <agentId>` | Lihat personality profile agent. |
+| `/agentmemory <agentId>` | Lihat memory khusus agent. |
+| `/agentremember <agentId> \| <text>` | Simpan memory agent yang aman. |
+| `/agentforget <agentId> \| <memoryId>` | Archive memory agent. |
+| `/agentprefs <agentId>` | Lihat preferences agent. |
+| `/sharedmemory` | Lihat shared memory antar agent. |
+| `/agentlearn <agentId> \| <note>` | Simpan learning note agent. |
+| `/agentstyle <agentId>` | Lihat style guide agent. |
 | `/router` | Status natural smart router untuk chat saat ini. |
 | `/routermode` | Alias status router. |
 | `/quiet` | Mode grup orchestrator-only. |

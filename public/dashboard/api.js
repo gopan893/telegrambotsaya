@@ -381,6 +381,87 @@ const Api = {
     return this.apiPost('/agents/router/test', payload);
   },
 
+  async getAgentProfiles(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    const query = params.toString();
+    return this.apiGet(`/agents/profiles${query ? `?${query}` : ''}`);
+  },
+
+  async getAgentProfile(agentId, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    const query = params.toString();
+    return this.apiGet(`/agents/${encodeURIComponent(agentId)}/profile${query ? `?${query}` : ''}`);
+  },
+
+  async updateAgentProfile(agentId, payload = {}) {
+    return this.apiPost(`/agents/${encodeURIComponent(agentId)}/profile/update`, payload);
+  },
+
+  async listAgentMemory(agentId, filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'userId', 'type', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    if (filters.includeArchived) params.set('includeArchived', 'true');
+    const query = params.toString();
+    return this.apiGet(`/agents/${encodeURIComponent(agentId)}/memory${query ? `?${query}` : ''}`);
+  },
+
+  async createAgentMemory(agentId, payload = {}) {
+    return this.apiPost(`/agents/${encodeURIComponent(agentId)}/memory/create`, payload);
+  },
+
+  async archiveAgentMemory(agentId, memoryId, payload = {}) {
+    return this.apiPost(`/agents/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(memoryId)}/archive`, payload);
+  },
+
+  async restoreAgentMemory(agentId, memoryId, payload = {}) {
+    return this.apiPost(`/agents/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(memoryId)}/restore`, payload);
+  },
+
+  async listSharedAgentMemory(filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/agents/shared-memory${query ? `?${query}` : ''}`);
+  },
+
+  async createSharedAgentMemory(payload = {}) {
+    return this.apiPost('/agents/shared-memory/create', payload);
+  },
+
+  async getAgentPreferences(agentId, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    const query = params.toString();
+    return this.apiGet(`/agents/${encodeURIComponent(agentId)}/preferences${query ? `?${query}` : ''}`);
+  },
+
+  async updateAgentPreferences(agentId, payload = {}) {
+    return this.apiPost(`/agents/${encodeURIComponent(agentId)}/preferences/update`, payload);
+  },
+
+  async listAgentLearningNotes(agentId, filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'userId', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/agents/${encodeURIComponent(agentId)}/learning-notes${query ? `?${query}` : ''}`);
+  },
+
+  async createAgentLearningNote(agentId, payload = {}) {
+    return this.apiPost(`/agents/${encodeURIComponent(agentId)}/learning-notes/create`, payload);
+  },
+
+  async testAgentRouterWithMemory(payload = {}) {
+    return this.apiPost('/agents/router/test-with-memory', payload);
+  },
+
   async getAgentActivity(filters = {}) {
     const params = new URLSearchParams();
     if (filters.limit) params.set('limit', filters.limit);

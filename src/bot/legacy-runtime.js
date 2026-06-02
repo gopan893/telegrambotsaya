@@ -3464,6 +3464,60 @@ async function renderAgentRoutePreview(text, mode, chatId, userId) {
   ].join('\n');
 }
 
+async function formatAgentProfile(agentId, services) {
+  const profile = await smartAgentSystem.agentProfileStore.getAgentProfile(agentId, services);
+  return [
+    `${profile.displayName || profile.agentId}`,
+    `Role: ${profile.role || '-'}`,
+    `Memory: ${profile.agentMemoryEnabled ? 'enabled' : 'disabled'} | Shared: ${profile.sharedMemoryEnabled ? 'enabled' : 'disabled'}`,
+    `Tone: ${profile.responseStyle?.tone || '-'}`,
+    '',
+    profile.personality || '',
+    '',
+    `Knowledge scope: ${(profile.knowledgeScope || []).slice(0, 12).join(', ') || '-'}`
+  ].join('\n');
+}
+
+async function formatAgentMemoryList(agentId, services, options = {}) {
+  const items = await smartAgentSystem.agentMemoryStore.listAgentMemories({
+    agentId,
+    workspaceId: options.workspaceId || 'default',
+    userId: options.userId || services.userId || '',
+    limit: options.limit || 10
+  }, services);
+  if (!items.length) return `Belum ada memory untuk agent ${agentId}.`;
+  return [
+    `Agent Memory: ${agentId}`,
+    '',
+    ...items.map(item => [
+      `- ${item.id}`,
+      `  ${item.title}`,
+      `  Type: ${item.type} | Importance: ${Math.round(Number(item.importance || 0) * 100)}%`,
+      `  ${item.content}`
+    ].join('\n'))
+  ].join('\n');
+}
+
+async function formatSharedAgentMemory(services) {
+  const items = await smartAgentSystem.agentMemoryStore.listSharedAgentMemories({ workspaceId: 'default', limit: 10 }, services);
+  if (!items.length) return 'Belum ada shared memory agent.';
+  return [
+    'Shared Agent Memory',
+    '',
+    ...items.map(item => `- ${item.id}: ${item.title}\n  ${item.content}`)
+  ].join('\n');
+}
+
+async function formatAgentPreferences(agentId, services) {
+  const prefs = await smartAgentSystem.agentPreferences.getAgentPreferences(agentId, services);
+  return [
+    `Agent Preferences: ${agentId}`,
+    `Response style: ${JSON.stringify(prefs.responseStyle || {})}`,
+    `Preferences: ${JSON.stringify(prefs.preferences || {})}`,
+    `Memory policy: ${JSON.stringify(prefs.memoryPolicy || {})}`
+  ].join('\n');
+}
+
 async function handleAgentCommands(chatId, userId, cmd, args, msg) {
   const replyOpt = { reply_to_message_id: msg.message_id };
   const services = getAgentServices(userId);
@@ -3530,6 +3584,116 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
       '',
       `Specialties: ${(agent.specialties || []).join(', ')}`
     ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agentprofile') {
+    const agentId = String(args || '').trim();
+    if (!agentId) {
+      await safeSendMessage(chatId, 'Format: /agentprofile <agentId>', replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, await formatAgentProfile(agentId, services), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agentmemory') {
+    const agentId = String(args || '').trim();
+    if (!agentId) {
+      await safeSendMessage(chatId, 'Format: /agentmemory <agentId>', replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, await formatAgentMemoryList(agentId, services, { userId }), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agentremember') {
+    const [agentId, content = ''] = splitPipeArgs(args);
+    if (!agentId || !content) {
+      await safeSendMessage(chatId, 'Format: /agentremember <agentId> | <text>', replyOpt);
+      return true;
+    }
+    try {
+      const item = await smartAgentSystem.agentMemoryStore.createAgentMemory({
+        agentId,
+        workspaceId: 'default',
+        userId,
+        type: 'project_context',
+        content,
+        tags: ['telegram', 'manual'],
+        createdBy: userId
+      }, services);
+      await safeSendMessage(chatId, `Agent memory tersimpan: ${item.id}\n${item.title}`, replyOpt);
+    } catch (err) {
+      await safeSendMessage(chatId, err.code === 'AGENT_MEMORY_SECRET_REJECTED'
+        ? 'Konten terlihat seperti secret/token, jadi tidak disimpan.'
+        : `Gagal menyimpan agent memory: ${err.message}`, replyOpt);
+    }
+    return true;
+  }
+
+  if (cmd === '/agentforget') {
+    const [agentId, memoryId = ''] = splitPipeArgs(args);
+    if (!agentId || !memoryId) {
+      await safeSendMessage(chatId, 'Format: /agentforget <agentId> | <memoryId>', replyOpt);
+      return true;
+    }
+    try {
+      const item = await smartAgentSystem.agentMemoryStore.archiveAgentMemory(memoryId, { userId, actorId: userId }, services);
+      await safeSendMessage(chatId, `Agent memory diarsipkan: ${item.id}`, replyOpt);
+    } catch (err) {
+      await safeSendMessage(chatId, `Gagal archive agent memory: ${err.message}`, replyOpt);
+    }
+    return true;
+  }
+
+  if (cmd === '/agentprefs') {
+    const agentId = String(args || '').trim();
+    if (!agentId) {
+      await safeSendMessage(chatId, 'Format: /agentprefs <agentId>', replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, await formatAgentPreferences(agentId, services), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/sharedmemory') {
+    await sendChunkedMessage(chatId, await formatSharedAgentMemory(services), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agentlearn') {
+    const [agentId, note = ''] = splitPipeArgs(args);
+    if (!agentId || !note) {
+      await safeSendMessage(chatId, 'Format: /agentlearn <agentId> | <note>', replyOpt);
+      return true;
+    }
+    try {
+      const item = await smartAgentSystem.learningNotes.createLearningNote({
+        agentId,
+        workspaceId: 'default',
+        userId,
+        content: note,
+        tags: ['telegram', 'learning'],
+        createdBy: userId
+      }, services);
+      await safeSendMessage(chatId, `Learning note tersimpan: ${item.id}\n${item.title}`, replyOpt);
+    } catch (err) {
+      await safeSendMessage(chatId, err.code === 'AGENT_MEMORY_SECRET_REJECTED'
+        ? 'Catatan terlihat seperti secret/token, jadi tidak disimpan.'
+        : `Gagal menyimpan learning note: ${err.message}`, replyOpt);
+    }
+    return true;
+  }
+
+  if (cmd === '/agentstyle') {
+    const agentId = String(args || '').trim();
+    if (!agentId) {
+      await safeSendMessage(chatId, 'Format: /agentstyle <agentId>', replyOpt);
+      return true;
+    }
+    const profile = await smartAgentSystem.agentProfileStore.getAgentProfile(agentId, services);
+    await sendChunkedMessage(chatId, smartAgentSystem.agentStyleBuilder.buildTelegramStyleSummary(profile), replyOpt);
     return true;
   }
 
@@ -6754,6 +6918,14 @@ async function handleHelp(chatId, msg) {
 /agents - daftar agent/persona
 /agent agentId - detail agent
 /agentstatus - status agent registry
+/agentprofile agentId - personality profile agent
+/agentmemory agentId - memory khusus agent
+/agentremember agentId | text - simpan memory agent
+/agentforget agentId | memoryId - archive memory agent
+/agentprefs agentId - preferences agent
+/sharedmemory - shared memory antar agent
+/agentlearn agentId | note - learning note agent
+/agentstyle agentId - style guide agent
 /router - status natural smart router
 /quiet - mode grup orchestrator-only
 /smart - mode grup natural smart
@@ -6957,6 +7129,14 @@ function isUnknownCommand(cmd) {
     '/agents',
     '/agent',
     '/agentstatus',
+    '/agentprofile',
+    '/agentmemory',
+    '/agentremember',
+    '/agentforget',
+    '/agentprefs',
+    '/sharedmemory',
+    '/agentlearn',
+    '/agentstyle',
     '/router',
     '/routermode',
     '/quiet',

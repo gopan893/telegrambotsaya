@@ -453,7 +453,86 @@ function sanitizeAgentSummary(agent = {}) {
     priority: Number(agent.priority || 0),
     maxAutoReplies: Number(agent.maxAutoReplies || 1),
     riskSensitivity: truncateText(agent.riskSensitivity || 'medium', 40),
+    responseStyle: guards.preventSecretLeak(agent.responseStyle || {}),
+    memoryPolicy: guards.preventSecretLeak(agent.memoryPolicy || {}),
+    knowledgeScope: Array.isArray(agent.knowledgeScope) ? agent.knowledgeScope.slice(0, 24).map(item => truncateText(item, 80)) : [],
+    learningNotesEnabled: agent.learningNotesEnabled !== false,
+    agentMemoryEnabled: agent.agentMemoryEnabled !== false,
+    sharedMemoryEnabled: agent.sharedMemoryEnabled !== false,
+    updatedAt: agent.updatedAt || null,
     enabled: agent.enabled !== false
+  });
+}
+
+function sanitizeAgentProfile(profile = {}) {
+  return guards.preventSecretLeak({
+    agentId: truncateText(profile.agentId || profile.id || '', 80),
+    workspaceId: truncateText(profile.workspaceId || '', 120),
+    displayName: truncateText(profile.displayName || '', 140),
+    role: truncateText(profile.role || '', 80),
+    personality: truncateText(profile.personality || '', 500),
+    responseStyle: guards.preventSecretLeak(profile.responseStyle || {}),
+    preferences: guards.preventSecretLeak(profile.preferences || {}),
+    memoryPolicy: guards.preventSecretLeak(profile.memoryPolicy || {}),
+    knowledgeScope: Array.isArray(profile.knowledgeScope) ? profile.knowledgeScope.slice(0, 30).map(item => truncateText(item, 100)) : [],
+    safetyRules: Array.isArray(profile.safetyRules) ? profile.safetyRules.slice(0, 20).map(item => truncateText(item, 180)) : [],
+    toneRules: Array.isArray(profile.toneRules) ? profile.toneRules.slice(0, 20).map(item => truncateText(item, 180)) : [],
+    outputFormatRules: Array.isArray(profile.outputFormatRules) ? profile.outputFormatRules.slice(0, 20).map(item => truncateText(item, 180)) : [],
+    learningNotesEnabled: profile.learningNotesEnabled !== false,
+    agentMemoryEnabled: profile.agentMemoryEnabled !== false,
+    sharedMemoryEnabled: profile.sharedMemoryEnabled !== false,
+    updatedAt: profile.updatedAt || null
+  });
+}
+
+function sanitizeAgentMemory(memory = {}) {
+  return guards.preventSecretLeak({
+    id: truncateText(memory.id || '', 140),
+    agentId: truncateText(memory.agentId || '', 80),
+    workspaceId: truncateText(memory.workspaceId || '', 120),
+    userId: truncateText(memory.userId || '', 80),
+    type: truncateText(memory.type || '', 80),
+    title: truncateText(memory.title || '', 180),
+    content: truncateText(memory.content || '', 700),
+    tags: Array.isArray(memory.tags) ? memory.tags.slice(0, 20).map(item => truncateText(item, 60)) : [],
+    source: truncateText(memory.source || '', 100),
+    confidence: Number(memory.confidence || 0),
+    importance: Number(memory.importance || 0),
+    relevanceScore: Number(memory.relevanceScore || 0),
+    createdBy: truncateText(memory.createdBy || '', 80),
+    createdAt: memory.createdAt || null,
+    updatedAt: memory.updatedAt || null,
+    archivedAt: memory.archivedAt || null,
+    lastUsedAt: memory.lastUsedAt || null,
+    usageCount: Number(memory.usageCount || 0)
+  });
+}
+
+function sanitizeAgentPreferences(preferences = {}) {
+  return guards.preventSecretLeak({
+    agentId: truncateText(preferences.agentId || '', 80),
+    workspaceId: truncateText(preferences.workspaceId || '', 120),
+    preferences: guards.preventSecretLeak(preferences.preferences || {}),
+    responseStyle: guards.preventSecretLeak(preferences.responseStyle || {}),
+    memoryPolicy: guards.preventSecretLeak(preferences.memoryPolicy || {}),
+    updatedAt: preferences.updatedAt || null
+  });
+}
+
+function sanitizeAgentLearningNote(note = {}) {
+  return sanitizeAgentMemory({ ...note, type: note.type || 'learning_note' });
+}
+
+function sanitizeAgentPromptPreview(preview = {}) {
+  return guards.preventSecretLeak({
+    agentId: truncateText(preview.agentId || '', 80),
+    workspaceId: truncateText(preview.workspaceId || '', 120),
+    selectedMemoryCount: Number(preview.selectedMemoryCount || 0),
+    sharedMemoryCount: Number(preview.sharedMemoryCount || 0),
+    memoryExplanation: truncateText(preview.memoryExplanation || '', 500),
+    promptPreview: truncateText(preview.promptPreview || '', 1200),
+    selectedMemories: Array.isArray(preview.selectedMemories) ? preview.selectedMemories.slice(0, 5).map(sanitizeAgentMemory) : [],
+    sharedMemories: Array.isArray(preview.sharedMemories) ? preview.sharedMemories.slice(0, 3).map(sanitizeAgentMemory) : []
   });
 }
 
@@ -807,6 +886,11 @@ function sanitizeActionResult(result = {}) {
 module.exports = {
   sanitizeAgentActivity,
   sanitizeAgentGroupSettings,
+  sanitizeAgentLearningNote,
+  sanitizeAgentMemory,
+  sanitizeAgentPreferences,
+  sanitizeAgentProfile,
+  sanitizeAgentPromptPreview,
   sanitizeAgentRoutingResult,
   sanitizeAgentSummary,
   sanitizeBotConfig,

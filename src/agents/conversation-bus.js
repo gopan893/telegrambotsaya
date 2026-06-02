@@ -2,6 +2,7 @@
 
 const agentRegistry = require('./agent-registry');
 const agentRouter = require('./agent-router');
+const promptComposer = require('./agent-prompt-composer');
 const policy = require('./response-policy');
 const telegramClient = require('../multibot/telegram-client');
 const {
@@ -106,27 +107,52 @@ async function routeConversationEvent(event = {}, services = {}) {
   return { ok: true, event, groupSettings, route };
 }
 
-function buildAgentDraft(agent, event, route) {
+async function buildAgentDraft(agent, event, route, services = {}) {
   const text = buildSafeText(event.text, 220);
   const risk = route.risk?.level || 'low';
   const prefix = `Saya bertindak sebagai ${agent.displayName}.`;
+  let composed = null;
+  let memoryHint = '';
+  try {
+    composed = await promptComposer.composeAgentFinalPrompt(agent.id, event.text, {
+      chatId: event.chatId,
+      userId: event.userId,
+      workspaceId: services.workspaceId || 'default',
+      topics: route.topics || [],
+      risk,
+      mode: route.policy?.mode || route.mode || 'natural_smart'
+    }, services);
+    const used = (composed.selectedMemories || []).length + (composed.sharedMemories || []).length;
+    if (used > 0) {
+      const titles = [...(composed.selectedMemories || []), ...(composed.sharedMemories || [])]
+        .slice(0, 3)
+        .map(memory => memory.title)
+        .join(', ');
+      memoryHint = ` Konteks memory relevan: ${buildSafeText(titles, 180)}.`;
+    }
+  } catch (err) {
+    memoryHint = ' Memory agent tidak tersedia, saya pakai routing dasar.';
+  }
   const templates = {
-    orchestrator: `${prefix} Saya pilih mode ${route.policy?.mode || 'natural_smart'} untuk topik ${route.topics.join(', ')}. ${route.approvalRequired ? 'Aksi penting perlu approval eksplisit.' : 'Saya akan jaga jawaban tetap ringkas.'}`,
-    planner: `${prefix} Fokus saya: ubah ini menjadi 2-3 langkah prioritas yang bisa dikerjakan berikutnya.`,
-    coder: `${prefix} Fokus saya: cek akar masalah teknis, risiko regresi, dan langkah implementasi paling kecil.`,
-    critic: `${prefix} Risiko utama: scope melebar, asumsi belum tervalidasi, atau perubahan menyentuh fitur lama.`,
-    research: `${prefix} Saya bisa bantu cari opsi/API, tapi untuk data terbaru perlu tool search yang aman.`,
-    ops: `${prefix} Saya cek dari sisi deploy, health, PostgreSQL/Redis, webhook, dan fallback Render.`,
-    security: `${prefix} Saya melihat level risiko ${risk}. Jangan kirim token/secret di chat; gunakan env aman dan approval untuk restore/import.`,
-    memory: `${prefix} Saya akan memakai konteks yang relevan saja dari memory/graph, bukan semua data.`,
-    executor: `${prefix} Saya hanya boleh membuat proposal eksekusi. Tidak ada write/external/danger action tanpa /approve dan /runexec.`,
-    reflection: `${prefix} Saya akan bantu menenangkan konteks, memilah beban, lalu pilih satu langkah kecil.`
+    orchestrator: `${prefix} Saya pilih mode ${route.policy?.mode || 'natural_smart'} untuk topik ${route.topics.join(', ')}.${memoryHint} ${route.approvalRequired ? 'Aksi penting perlu approval eksplisit.' : 'Saya akan jaga jawaban tetap ringkas.'}`,
+    planner: `${prefix} Fokus saya: ubah ini menjadi 2-3 langkah prioritas yang bisa dikerjakan berikutnya.${memoryHint}`,
+    coder: `${prefix} Fokus saya: cek akar masalah teknis, risiko regresi, dan langkah implementasi paling kecil.${memoryHint}`,
+    critic: `${prefix} Risiko utama: scope melebar, asumsi belum tervalidasi, atau perubahan menyentuh fitur lama.${memoryHint}`,
+    research: `${prefix} Saya bisa bantu cari opsi/API, tapi untuk data terbaru perlu tool search yang aman.${memoryHint}`,
+    ops: `${prefix} Saya cek dari sisi deploy, health, PostgreSQL/Redis, webhook, dan fallback Render.${memoryHint}`,
+    security: `${prefix} Saya melihat level risiko ${risk}. Jangan kirim token/secret di chat; gunakan env aman dan approval untuk restore/import.${memoryHint}`,
+    memory: `${prefix} Saya akan memakai konteks yang relevan saja dari memory/graph, bukan semua data.${memoryHint}`,
+    executor: `${prefix} Saya hanya boleh membuat proposal eksekusi. Tidak ada write/external/danger action tanpa /approve dan /runexec.${memoryHint}`,
+    reflection: `${prefix} Saya akan bantu menenangkan konteks, memilah beban, lalu pilih satu langkah kecil.${memoryHint}`
   };
   return {
     agentId: agent.id,
     botId: agent.botId,
     visible: (route.selectedAgents || []).includes(agent.id),
-    text: templates[agent.id] || `${prefix} Saya relevan untuk pesan: ${text}`
+    text: templates[agent.id] || `${prefix} Saya relevan untuk pesan: ${text}${memoryHint}`,
+    selectedMemoryCount: composed ? ((composed.selectedMemories || []).length + (composed.sharedMemories || []).length) : 0,
+    memoryExplanation: composed?.memoryExplanation || '',
+    promptPreview: composed?.promptPreview || ''
   };
 }
 
@@ -134,7 +160,7 @@ async function collectAgentDrafts(event = {}, routeOrPolicy = {}, services = {})
   const route = routeOrPolicy.route || routeOrPolicy;
   const selectedIds = [...(route.selectedAgents || []), ...(route.internalOnlyAgents || [])];
   const agents = selectedIds.map(agentId => agentRegistry.getAgent(agentId, services)).filter(Boolean);
-  return agents.map(agent => buildAgentDraft(agent, event, route));
+  return await Promise.all(agents.map(agent => buildAgentDraft(agent, event, route, services)));
 }
 
 async function sendAgentResponses(event = {}, route = {}, responses = [], services = {}) {
@@ -166,6 +192,10 @@ async function recordAgentActivity(event = {}, route = {}, responses = [], servi
     reason: route.reason || route.policy?.reason || '',
     messagePreview: buildSafeText(event.text, 180),
     responseCount: responses.length,
+    memoryUse: responses.map(response => ({
+      agentId: response.agentId,
+      selectedMemoryCount: Number(response.selectedMemoryCount || 0)
+    })),
     createdAt: nowIso()
   });
   activity.unshift(item);

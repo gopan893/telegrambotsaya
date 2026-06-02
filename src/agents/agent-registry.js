@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizeId, nowIso } = require('./agent-utils');
+const personality = require('./agent-personality');
 
 const DEFAULT_AGENTS = [
   {
@@ -205,7 +206,10 @@ function attachBotIds(agents = [], services = {}) {
 }
 
 function loadDefaultAgents(services = {}) {
-  return attachBotIds(DEFAULT_AGENTS.map(agent => ({ ...agent, updatedAt: nowIso() })), services);
+  return attachBotIds(DEFAULT_AGENTS.map(agent => {
+    const profile = personality.getDefaultAgentProfile(agent.id);
+    return personality.mergeAgentProfile({ ...agent, updatedAt: nowIso() }, profile);
+  }), services);
 }
 
 function listAgents(filters = {}, services = {}) {
@@ -251,6 +255,13 @@ function buildAgentSafeSummary(agent = {}) {
     priority: Number(agent.priority || 0),
     maxAutoReplies: Number(agent.maxAutoReplies || 1),
     riskSensitivity: agent.riskSensitivity || 'medium',
+    responseStyle: agent.responseStyle || {},
+    memoryPolicy: agent.memoryPolicy || {},
+    knowledgeScope: Array.isArray(agent.knowledgeScope) ? agent.knowledgeScope.slice(0, 24) : [],
+    learningNotesEnabled: agent.learningNotesEnabled !== false,
+    agentMemoryEnabled: agent.agentMemoryEnabled !== false,
+    sharedMemoryEnabled: agent.sharedMemoryEnabled !== false,
+    updatedAt: agent.updatedAt || null,
     enabled: agent.enabled !== false
   };
 }
