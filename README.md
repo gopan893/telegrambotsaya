@@ -145,11 +145,27 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /proscons PostgreSQL atau Redis untuk memory
 /riskreview restore backup production
 /councilstatus
+/delegate buat prompt phase 24 external integration
+/delegations
+/rundelegation delegation_xxx
+/agenttasks
+/decision lanjut phase berapa
+/compare PostgreSQL | Redis
+/risk restore backup production
+/confidence pakai 10 bot langsung
+/decisions
 ```
 
 Multi-bot visible replies bisa diaktifkan di grup dengan `/multibot_on`. Specialist bot hanya bicara jika dipilih router, maksimal default 2 agent, dan token tidak pernah ditampilkan. Gunakan env seperti `TELEGRAM_TOKEN_PLANNER`, `TELEGRAM_TOKEN_CODER`, dan `TELEGRAM_TOKEN_CRITIC`; typo `TELEGRAM_TOKEN_PLANNE` akan diberi warning aman.
 
 Catatan analisis file/visual hanya muncul saat user membahas file, gambar, foto, dokumen, atau attachment saat ini. Chat normal seperti roadmap, deploy, dan refleksi tidak akan membawa metadata file lama seperti `#visual-analysis` atau `API Vision belum dikonfigurasi`.
+
+Phase 23/24 menambahkan agent delegation dan decision system:
+
+- `/delegate` memecah request kompleks menjadi task internal untuk Planner, Coder, Critic, Ops, Security, Memory, Research, atau Executor.
+- `/rundelegation` menjalankan reasoning task aman dan menyatukan hasilnya menjadi jawaban final.
+- `/decision`, `/compare`, `/proscons`, `/risk`, dan `/confidence` membuat analisis opsi, tradeoff, risk score, confidence, dan next step.
+- Delegation dan decision system tidak menjalankan shell, restore, import, write action, atau external action. Aksi berisiko tetap lewat executor approval.
 
 ## Catatan Penting
 

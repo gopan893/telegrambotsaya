@@ -20,6 +20,8 @@ const pwaRoutes = require('./pwa-routes');
 const agentMemoryRoutes = require('./agent-memory-routes');
 const councilRoutes = require('./council-routes');
 const agentRoutes = require('./agent-routes');
+const agentTaskRoutes = require('./agent-task-routes');
+const decisionRoutes = require('./decision-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -321,6 +323,8 @@ function registerDashboardRoutes(app, rawServices = {}) {
   agentMemoryRoutes.registerAgentMemoryRoutes(router, services);
   councilRoutes.registerCouncilRoutes(router, services);
   agentRoutes.registerAgentRoutes(router, services);
+  agentTaskRoutes.registerAgentTaskRoutes(router, services);
+  decisionRoutes.registerDecisionRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

@@ -1565,6 +1565,53 @@ const UI = {
         </div>
         <div id="council-result" style="margin-top:16px;">${UI.renderEmptyState('🧠', 'Council Ready', 'Jalankan council untuk melihat opini, kritik, dan synthesis.')}</div>
       </section>
+      <div class="grid-2">
+        <section class="panel">
+          <h3>Agent Task Delegation</h3>
+          <p class="text-muted">Pecah request kompleks menjadi task Planner/Coder/Critic/Ops/Security tanpa menjalankan aksi eksternal.</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Delegation Request</label>
+              <textarea id="delegation-message" rows="4" placeholder="Contoh: buat prompt phase 24 external integration"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Workspace ID</label>
+              <input id="delegation-workspace" placeholder="default">
+              <label style="margin-top:12px;">User ID</label>
+              <input id="delegation-user" placeholder="dashboard-admin">
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button id="delegation-create" class="btn btn-primary">Create Delegation</button>
+            <button id="delegation-router-test" class="btn btn-outline">Router Test</button>
+            <button id="delegation-load" class="btn btn-outline">Load Delegations</button>
+            <button id="agent-tasks-load" class="btn btn-outline">Load Tasks</button>
+          </div>
+          <div id="delegation-result" style="margin-top:16px;">${UI.renderEmptyState('🧩', 'Delegation Ready', 'Buat delegation untuk melihat task agent dan final synthesis.')}</div>
+        </section>
+        <section class="panel">
+          <h3>Decision / Risk Review</h3>
+          <p class="text-muted">Analisis opsi, pro/kontra, risk score, confidence, dan rekomendasi tanpa menjalankan action.</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Decision Question</label>
+              <textarea id="decision-question" rows="4" placeholder="Contoh: lebih baik tambah 10 bot langsung atau 4 dulu?"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Workspace ID</label>
+              <input id="decision-workspace" placeholder="default">
+              <label style="margin-top:12px;">User ID</label>
+              <input id="decision-user" placeholder="dashboard-admin">
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button id="decision-analyze" class="btn btn-primary">Analyze Decision</button>
+            <button id="decision-router-test" class="btn btn-outline">Router Test</button>
+            <button id="decision-load" class="btn btn-outline">Load Decisions</button>
+          </div>
+          <div id="decision-result" style="margin-top:16px;">${UI.renderEmptyState('⚖️', 'Decision Ready', 'Analisis keputusan akan muncul di sini.')}</div>
+        </section>
+      </div>
       <section class="panel">
         <h3>Agent Personality & Memory</h3>
         <div class="form-grid">
@@ -1723,6 +1770,71 @@ const UI = {
       </div>
     `).join('') : UI.renderEmptyState('🧠', 'Belum Ada Session', 'Council session akan muncul setelah dijalankan.');
 
+    const renderDelegationResult = (data = {}) => {
+      const session = data.session || data;
+      const tasks = data.tasks || [];
+      const finalAnswer = data.finalAnswer || session.finalSummary || '';
+      return `
+        <div class="card">
+          <div class="card-title">${Utils.escapeHtml(session.goal || session.originalMessageSummary || 'Delegation')} ${UI.renderBadge(session.status || 'created')} ${UI.renderBadge(session.riskLevel || 'low')}</div>
+          <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(session.id || '-')}</code></span></div>
+          <div class="kv-item"><span class="kv-key">Approval</span><span>${session.approvalRequired ? 'required' : 'not required'}</span></div>
+          ${finalAnswer ? `<p class="text-muted">${Utils.escapeHtml(finalAnswer.slice(0, 1200))}</p>` : ''}
+        </div>
+        <div class="card">
+          <div class="card-title">Agent Tasks</div>
+          ${tasks.length ? tasks.map(task => `
+            <p><strong>${Utils.escapeHtml(task.assignedAgentId || '-')}</strong> ${UI.renderBadge(task.type || '-')} ${UI.renderBadge(task.status || '-')}<br>
+            <span class="text-muted">${Utils.escapeHtml(task.title || task.description || '-')}</span></p>
+          `).join('') : '<p class="text-muted">Task belum dibuat atau belum dimuat.</p>'}
+        </div>
+      `;
+    };
+
+    const renderDelegationList = (items = []) => items.length ? items.map(item => `
+      <div class="card">
+        <div class="card-title">${Utils.escapeHtml(item.goal || item.originalMessageSummary || item.id)} ${UI.renderBadge(item.status || '-')}</div>
+        <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(item.id || '-')}</code></span></div>
+        <div>${(item.selectedAgents || []).slice(0, 6).map(UI.renderBadge).join(' ')}</div>
+        <p class="text-muted">${Utils.escapeHtml(item.finalSummary || '')}</p>
+      </div>
+    `).join('') : UI.renderEmptyState('🧩', 'Belum Ada Delegation', 'Delegation session akan muncul setelah dibuat.');
+
+    const renderAgentTaskList = (items = []) => items.length ? items.map(item => `
+      <div class="card">
+        <div class="card-title">${Utils.escapeHtml(item.title || item.id)} ${UI.renderBadge(item.status || '-')} ${UI.renderBadge(item.riskLevel || 'low')}</div>
+        <div class="kv-item"><span class="kv-key">Agent</span><span>${Utils.escapeHtml(item.assignedAgentId || '-')}</span></div>
+        <div class="kv-item"><span class="kv-key">Type</span><span>${Utils.escapeHtml(item.type || '-')}</span></div>
+        <p class="text-muted">${Utils.escapeHtml(item.resultSummary || item.description || '')}</p>
+      </div>
+    `).join('') : UI.renderEmptyState('🧩', 'Belum Ada Task', 'Agent task akan muncul dari delegation.');
+
+    const renderDecisionResult = (data = {}) => {
+      const decision = data.decision || data;
+      const rec = decision.recommendation || data.recommendation || {};
+      return `
+        <div class="card">
+          <div class="card-title">${Utils.escapeHtml(decision.title || 'Decision')} ${UI.renderBadge(decision.riskLevel || 'low')} ${UI.renderBadge(decision.confidence?.level || 'medium')}</div>
+          <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(decision.id || '-')}</code></span></div>
+          <div class="kv-item"><span class="kv-key">Approval</span><span>${decision.approvalRequired || rec.approvalRequired ? 'required' : 'not required'}</span></div>
+          <p><strong>Rekomendasi:</strong> ${Utils.escapeHtml(rec.recommendation || '-')}</p>
+          <p class="text-muted">${Utils.escapeHtml((data.finalAnswer || '').slice(0, 1200))}</p>
+        </div>
+        <div class="grid-2">
+          <div class="card"><div class="card-title">Options</div>${(decision.options || []).map(option => `<p><strong>${Utils.escapeHtml(option.label)}</strong> ${UI.renderBadge(option.estimatedRisk || 'low')}<br><span class="text-muted">Score: ${Utils.escapeHtml(String(option.score ?? 0))}</span></p>`).join('') || '<p class="text-muted">No options.</p>'}</div>
+          <div class="card"><div class="card-title">Next Steps</div>${(rec.nextSteps || decision.nextSteps || []).slice(0, 5).map((step, idx) => `<p>${idx + 1}. ${Utils.escapeHtml(step)}</p>`).join('') || '<p class="text-muted">No next steps.</p>'}</div>
+        </div>
+      `;
+    };
+
+    const renderDecisionList = (items = []) => items.length ? items.map(item => `
+      <div class="card">
+        <div class="card-title">${Utils.escapeHtml(item.title || item.question || item.id)} ${UI.renderBadge(item.status || '-')} ${UI.renderBadge(item.riskLevel || 'low')}</div>
+        <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(item.id || '-')}</code></span></div>
+        <p class="text-muted">${Utils.escapeHtml(item.recommendation?.recommendation || item.question || '')}</p>
+      </div>
+    `).join('') : UI.renderEmptyState('⚖️', 'Belum Ada Decision', 'Decision record akan muncul setelah analisis.');
+
     const renderMemoryItems = (items = []) => items.length ? `
       <div class="card-grid">
         ${items.map(memory => UI.renderCard(
@@ -1807,6 +1919,65 @@ const UI = {
       const payload = getCouncilPayload();
       const res = await Api.listCouncilSessions({ workspaceId: payload.workspaceId, limit: 20 });
       document.getElementById('council-result').innerHTML = res.ok ? renderCouncilSessions(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Sessions', res.error || 'API error');
+    });
+
+    const getDelegationPayload = () => ({
+      message: document.getElementById('delegation-message').value,
+      workspaceId: document.getElementById('delegation-workspace').value || 'default',
+      userId: document.getElementById('delegation-user').value || 'dashboard-admin'
+    });
+
+    document.getElementById('delegation-create').addEventListener('click', async () => {
+      const create = await Api.createDelegation(getDelegationPayload());
+      if (!create.ok) {
+        document.getElementById('delegation-result').innerHTML = UI.renderEmptyState('⚠️', 'Delegation Error', create.error || create.data?.error || 'API error');
+        return;
+      }
+      const run = await Api.runDelegation(create.data.session.id, {});
+      document.getElementById('delegation-result').innerHTML = run.ok ? renderDelegationResult(run.data) : renderDelegationResult(create.data);
+    });
+
+    document.getElementById('delegation-router-test').addEventListener('click', async () => {
+      const res = await Api.testDelegationRouter(getDelegationPayload());
+      document.getElementById('delegation-result').innerHTML = res.ok
+        ? `<div class="card"><div class="card-title">Delegation Router Test</div>${renderRoute(res.data.route || {})}<div class="kv-item"><span class="kv-key">Delegation needed</span><span>${res.data.delegation?.needed ? 'yes' : 'no'}</span></div><p class="text-muted">${Utils.escapeHtml(res.data.delegation?.reason || '')}</p></div>`
+        : UI.renderEmptyState('⚠️', 'Delegation Router Error', res.error || 'API error');
+    });
+
+    document.getElementById('delegation-load').addEventListener('click', async () => {
+      const payload = getDelegationPayload();
+      const res = await Api.listDelegations({ workspaceId: payload.workspaceId, userId: payload.userId, limit: 20 });
+      document.getElementById('delegation-result').innerHTML = res.ok ? renderDelegationList(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Delegations', res.error || 'API error');
+    });
+
+    document.getElementById('agent-tasks-load').addEventListener('click', async () => {
+      const payload = getDelegationPayload();
+      const res = await Api.listAgentTasks({ workspaceId: payload.workspaceId, limit: 30 });
+      document.getElementById('delegation-result').innerHTML = res.ok ? renderAgentTaskList(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Tasks', res.error || 'API error');
+    });
+
+    const getDecisionPayload = () => ({
+      question: document.getElementById('decision-question').value,
+      workspaceId: document.getElementById('decision-workspace').value || 'default',
+      userId: document.getElementById('decision-user').value || 'dashboard-admin'
+    });
+
+    document.getElementById('decision-analyze').addEventListener('click', async () => {
+      const res = await Api.analyzeDecision(getDecisionPayload());
+      document.getElementById('decision-result').innerHTML = res.ok ? renderDecisionResult(res.data) : UI.renderEmptyState('⚠️', 'Decision Error', res.error || res.data?.error || 'API error');
+    });
+
+    document.getElementById('decision-router-test').addEventListener('click', async () => {
+      const res = await Api.testDecisionRouter(getDecisionPayload());
+      document.getElementById('decision-result').innerHTML = res.ok
+        ? `<div class="card"><div class="card-title">Decision Router Test</div>${renderRoute(res.data.route || {})}<div class="kv-item"><span class="kv-key">Decision needed</span><span>${res.data.decision?.needed ? 'yes' : 'no'}</span></div><div class="kv-item"><span class="kv-key">Mode</span><span>${Utils.escapeHtml(res.data.decision?.mode || '-')}</span></div><p class="text-muted">${Utils.escapeHtml(res.data.decision?.reason || '')}</p></div>`
+        : UI.renderEmptyState('⚠️', 'Decision Router Error', res.error || 'API error');
+    });
+
+    document.getElementById('decision-load').addEventListener('click', async () => {
+      const payload = getDecisionPayload();
+      const res = await Api.listDecisions({ workspaceId: payload.workspaceId, userId: payload.userId, limit: 20 });
+      document.getElementById('decision-result').innerHTML = res.ok ? renderDecisionList(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Decisions', res.error || 'API error');
     });
 
     document.getElementById('agent-profile-load').addEventListener('click', async () => {

@@ -69,7 +69,7 @@ Tab `Agents / Multi-Bot` memiliki panel `Agent Council & Debate`:
 - Write/external/danger tetap harus lewat executor approval.
 - Secret-like input ditolak.
 - Audit log memakai summary sanitized.
-- Hidden chain-of-thought tidak ditampilkan; hanya reasoning summary ringkas.
+- Private reasoning detail tidak ditampilkan; hanya reasoning summary ringkas.
 
 ## Manual Test
 

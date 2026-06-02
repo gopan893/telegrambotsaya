@@ -780,6 +780,53 @@ const Api = {
 
   async restoreWorkflow(payload) {
     return this.apiPost('/actions/workflow/restore', payload);
+  },
+
+  async listAgentTasks(filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'delegationId', 'assignedAgentId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/agent-tasks${query ? `?${query}` : ''}`);
+  },
+
+  async createDelegation(payload = {}) {
+    return this.apiPost('/delegations/create', payload);
+  },
+
+  async runDelegation(delegationId, payload = {}) {
+    return this.apiPost(`/delegations/${encodeURIComponent(delegationId)}/run`, payload);
+  },
+
+  async listDelegations(filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'userId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/delegations${query ? `?${query}` : ''}`);
+  },
+
+  async testDelegationRouter(payload = {}) {
+    return this.apiPost('/delegations/router-test', payload);
+  },
+
+  async analyzeDecision(payload = {}) {
+    return this.apiPost('/decisions/analyze', payload);
+  },
+
+  async listDecisions(filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'userId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/decisions${query ? `?${query}` : ''}`);
+  },
+
+  async testDecisionRouter(payload = {}) {
+    return this.apiPost('/decisions/router-test', payload);
   }
 };
 

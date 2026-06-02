@@ -36,6 +36,10 @@ Command:
 
 Council internal otomatis bisa aktif pada topik planning/decision/risk, tetapi normal chat tetap satu jawaban final. Gunakan command eksplisit jika ingin melihat opini agent satu per satu.
 
+Phase 23 menambahkan delegation. Untuk request seperti `bagi tugas phase berikutnya` atau `bot error deploy, pecah tugasnya`, Orchestrator bisa membuat task internal untuk Planner/Coder/Ops/Critic/Security lalu menyatukan hasilnya. Task ini tetap reasoning-only dan tidak menjalankan aksi eksternal.
+
+Phase 24 menambahkan decision system. Untuk request seperti `lebih baik PostgreSQL atau Redis?` atau `lanjut phase berapa?`, bot dapat membuat pros/cons, tradeoff, risk score, confidence, dan recommendation tanpa memicu semua bot bicara.
+
 ## Visible Specialist Bots
 
 Jika bot Planner/Coder/Critic dan agent lain sudah ditambahkan ke grup, gunakan `/multibot_on` agar specialist yang dipilih router bisa bicara memakai token bot masing-masing. Ini tidak membuat semua bot menjawab semua pesan.

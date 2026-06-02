@@ -133,7 +133,32 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/councilstatus` | Status council session dan summary terbaru. |
 | `/councilrecent` | Daftar session council terbaru. |
 
+## Agent Delegation & Decision System
+
+| Command | Fungsi |
+| --- | --- |
+| `/delegate <topic>` | Pecah request kompleks menjadi task internal beberapa agent. |
+| `/delegations` | Daftar delegation session terbaru. |
+| `/delegation <delegationId>` | Detail delegation, task, dan status. |
+| `/rundelegation <delegationId>` | Jalankan reasoning task aman dan buat synthesis final. |
+| `/agenttasks` | Daftar agent task terbaru. |
+| `/agenttask <taskId>` | Detail agent task. |
+| `/runtask <taskId>` | Jalankan satu reasoning task aman. |
+| `/handoffs` | Lihat handoff agent task terbaru. |
+| `/handoff <taskId> | <targetAgentId>` | Buat handoff task ke agent yang lebih cocok. |
+| `/taskresult <taskId>` | Lihat hasil ringkas task. |
+| `/decision <pertanyaan/pilihan>` | Analisis keputusan dengan opsi, risiko, confidence, dan rekomendasi. |
+| `/compare <opsi A> | <opsi B>` | Bandingkan opsi secara terstruktur. |
+| `/proscons <topik>` | Pro/kontra, tradeoff, dan rekomendasi Phase 24. |
+| `/risk <rencana/aksi>` | Risk score dan mitigasi. |
+| `/confidence <rencana/opsi>` | Confidence score dan informasi yang kurang. |
+| `/decisions` | Daftar decision record terbaru. |
+| `/decisionhistory` | Alias daftar decision record. |
+| `/decisionstatus <decisionId> | <accepted|rejected|deferred>` | Update status keputusan. |
+
 Natural chat tetap utama. Pesan seperti `Bot saya error setelah deploy`, `Saya ingin restore backup lama`, atau `Saya capek hari ini` akan memilih agent relevan otomatis; agent lain tetap silent. Untuk planning/decision kompleks, council bisa berjalan internal tetapi user tetap menerima satu jawaban final yang bersih.
+
+Untuk topik yang kompleks, natural chat dapat memakai delegation atau decision system sebelum fallback AI umum. Contoh: `pecah goal ini jadi task`, `buat prompt phase external integration`, `lebih baik 10 bot langsung atau 4 dulu`, dan `apa risiko restore backup production`.
 
 Jika `/multibot_on` aktif dan token specialist tersedia, Planner/Coder/Critic/Ops/Security yang dipilih router dapat mengirim komentar singkat memakai bot masing-masing. Maksimal default 2 specialist visible, dan bot message tetap diabaikan untuk mencegah loop.
 

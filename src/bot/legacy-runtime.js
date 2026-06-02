@@ -3609,6 +3609,88 @@ async function runCouncilTelegramCommand(chatId, userId, cmd, args, msg) {
   });
 }
 
+function formatDelegationTelegramResult(result = {}) {
+  const session = result.session || result;
+  const tasks = result.tasks || [];
+  const finalAnswer = result.finalAnswer || session.finalSummary || '';
+  const lines = [
+    'Agent Task Delegation',
+    `Delegation: ${session.id || '-'}`,
+    `Status: ${session.status || '-'}`,
+    `Approval required: ${session.approvalRequired ? 'yes' : 'no'}`,
+    '',
+    finalAnswer || session.goal || session.originalMessageSummary || '',
+    ''
+  ];
+  if (tasks.length) {
+    lines.push('Task agent:');
+    for (const task of tasks.slice(0, 6)) {
+      lines.push(`- ${task.assignedAgentId || '-'} / ${task.type || '-'}: ${task.title || task.description || '-'}`);
+    }
+  }
+  return sanitizeOutgoingText(lines.filter(Boolean).join('\n'), { userText: session.goal || session.originalMessageSummary || '' });
+}
+
+async function runDelegationTelegramCommand(chatId, userId, args, msg, shouldRun = false) {
+  const services = getAgentServices(userId);
+  const session = await smartAgentSystem.delegationEngine.createDelegationSession({
+    workspaceId: 'default',
+    userId,
+    chatId,
+    messageId: msg.message_id,
+    source: 'telegram_command',
+    originalMessage: args,
+    goal: args
+  }, services);
+  const plan = await smartAgentSystem.delegationEngine.planDelegation(session.id, services);
+  if (!shouldRun) return formatDelegationTelegramResult(plan);
+  const result = await smartAgentSystem.delegationEngine.runDelegation(session.id, services);
+  return formatDelegationTelegramResult(result);
+}
+
+function formatDecisionTelegramResult(result = {}) {
+  const decision = result.decision || result;
+  const rec = decision.recommendation || result.recommendation || {};
+  const lines = [
+    'Decision / Risk Review',
+    `Decision: ${decision.id || '-'}`,
+    `Risk: ${decision.riskLevel || 'low'}`,
+    `Confidence: ${decision.confidence?.level || 'medium'} (${Math.round(Number(decision.confidence?.score || 0.5) * 100)}%)`,
+    `Approval required: ${decision.approvalRequired || rec.approvalRequired ? 'yes' : 'no'}`,
+    '',
+    `Rekomendasi: ${rec.recommendation || '-'}`,
+    '',
+    'Alasan:',
+    ...(rec.reasons || []).slice(0, 3).map(reason => `- ${reason}`),
+    '',
+    'Langkah berikutnya:',
+    ...(rec.nextSteps || decision.nextSteps || []).slice(0, 5).map((step, index) => `${index + 1}. ${step}`),
+    (decision.approvalRequired || rec.approvalRequired) ? '\nCatatan: write/external/danger action wajib lewat executor proposal dan approval eksplisit.' : ''
+  ];
+  return sanitizeOutgoingText(lines.filter(Boolean).join('\n'), { userText: decision.question || '' });
+}
+
+async function runDecisionTelegramCommand(chatId, userId, args, msg, mode = 'decision') {
+  const services = getAgentServices(userId);
+  const result = await smartAgentSystem.decisionStore.analyzeDecision({
+    workspaceId: 'default',
+    userId,
+    chatId,
+    messageId: msg.message_id,
+    source: 'telegram_command',
+    question: args,
+    topics: mode === 'risk' ? ['security'] : (mode === 'confidence' ? ['decision'] : [])
+  }, services);
+  return mode === 'confidence'
+    ? sanitizeOutgoingText([
+        'Decision Confidence',
+        `Confidence: ${result.decision.confidence.level} (${Math.round(Number(result.decision.confidence.score || 0.5) * 100)}%)`,
+        '',
+        ...(result.decision.confidence.reasons || []).map(reason => `- ${reason}`)
+      ].join('\n'), { userText: args })
+    : formatDecisionTelegramResult(result);
+}
+
 async function formatAgentProfile(agentId, services) {
   const profile = await smartAgentSystem.agentProfileStore.getAgentProfile(agentId, services);
   return [
@@ -3740,6 +3822,164 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
     await safeSendMessage(chatId, enabled
       ? 'Visible multi-bot replies aktif untuk specialist agent yang dipilih router.'
       : 'Visible multi-bot replies nonaktif. Hanya Orchestrator/default bot yang menjawab.', replyOpt);
+    return true;
+  }
+
+  if (cmd === '/delegate') {
+    if (!args) {
+      await safeSendMessage(chatId, 'Format: /delegate <topic/request kompleks>', replyOpt);
+      return true;
+    }
+    try {
+      await sendChunkedMessage(chatId, await runDelegationTelegramCommand(chatId, userId, args, msg, false), { ...replyOpt, userText: args });
+    } catch (err) {
+      await safeSendMessage(chatId, `Delegation gagal: ${err.code || err.message}`, replyOpt);
+    }
+    return true;
+  }
+
+  if (cmd === '/delegations') {
+    const items = await smartAgentSystem.delegationEngine.listDelegationSessions({ workspaceId: 'default', userId, limit: 10 }, services);
+    await sendChunkedMessage(chatId, [
+      'Recent Delegations',
+      '',
+      ...(items.length ? items.map((item, index) => `${index + 1}. ${item.id} [${item.status}] ${item.goal || item.originalMessageSummary}`) : ['Belum ada delegation session.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/delegation') {
+    const delegationId = String(args || '').trim();
+    if (!delegationId) {
+      await safeSendMessage(chatId, 'Format: /delegation <delegationId>', replyOpt);
+      return true;
+    }
+    const session = await smartAgentSystem.delegationEngine.getDelegationSession(delegationId, services);
+    if (!session) {
+      await safeSendMessage(chatId, 'Delegation tidak ditemukan.', replyOpt);
+      return true;
+    }
+    const tasks = await smartAgentSystem.agentTaskStore.listTasks({ delegationId, limit: 20 }, services);
+    await sendChunkedMessage(chatId, formatDelegationTelegramResult({ session, tasks }), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/rundelegation') {
+    const delegationId = String(args || '').trim();
+    if (!delegationId) {
+      await safeSendMessage(chatId, 'Format: /rundelegation <delegationId>', replyOpt);
+      return true;
+    }
+    const result = await smartAgentSystem.delegationEngine.runDelegation(delegationId, services);
+    await sendChunkedMessage(chatId, formatDelegationTelegramResult(result), { ...replyOpt, userText: result.session?.goal || '' });
+    return true;
+  }
+
+  if (cmd === '/agenttasks') {
+    const items = await smartAgentSystem.agentTaskStore.listTasks({ workspaceId: 'default', userId, limit: 12 }, services);
+    await sendChunkedMessage(chatId, [
+      'Recent Agent Tasks',
+      '',
+      ...(items.length ? items.map((item, index) => `${index + 1}. ${item.id} [${item.status}] ${item.assignedAgentId}/${item.type}: ${item.title}`) : ['Belum ada agent task.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/agenttask' || cmd === '/taskresult') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, `Format: ${cmd} <taskId>`, replyOpt);
+      return true;
+    }
+    const task = await smartAgentSystem.agentTaskStore.getTask(taskId, services);
+    if (!task) {
+      await safeSendMessage(chatId, 'Agent task tidak ditemukan.', replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, [
+      `Agent Task: ${task.id}`,
+      `Agent: ${task.assignedAgentId}`,
+      `Type: ${task.type}`,
+      `Status: ${task.status}`,
+      `Risk: ${task.riskLevel}`,
+      '',
+      task.title,
+      task.resultSummary || task.description || ''
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/runtask') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, 'Format: /runtask <taskId>', replyOpt);
+      return true;
+    }
+    const task = await smartAgentSystem.agentTaskRunner.runAgentTask(taskId, services);
+    await sendChunkedMessage(chatId, [
+      `Task selesai: ${task.id}`,
+      `Agent: ${task.assignedAgentId}`,
+      '',
+      task.resultSummary || '-'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/handoffs') {
+    const items = await smartAgentSystem.handoffManager.listHandoffs({ workspaceId: 'default', limit: 10 }, services);
+    await sendChunkedMessage(chatId, [
+      'Agent Handoffs',
+      '',
+      ...(items.length ? items.map((item, index) => `${index + 1}. ${item.taskId}: ${item.fromAgentId} -> ${item.toAgentId} [${item.status}] ${item.reason}`) : ['Belum ada handoff.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/handoff') {
+    const [taskId, toAgentId = ''] = splitPipeArgs(args);
+    if (!taskId || !toAgentId) {
+      await safeSendMessage(chatId, 'Format: /handoff <taskId> | <agentId>', replyOpt);
+      return true;
+    }
+    const handoff = await smartAgentSystem.handoffManager.createHandoff(taskId, 'orchestrator', toAgentId, 'Manual Telegram handoff', services);
+    await safeSendMessage(chatId, `Handoff dibuat: ${handoff.id}\n${handoff.fromAgentId} -> ${handoff.toAgentId}`, replyOpt);
+    return true;
+  }
+
+  if (['/decision', '/compare', '/proscons', '/risk', '/confidence'].includes(cmd)) {
+    if (!args) {
+      await safeSendMessage(chatId, `Format: ${cmd} <pertanyaan keputusan>`, replyOpt);
+      return true;
+    }
+    try {
+      const mode = cmd === '/risk' ? 'risk' : (cmd === '/confidence' ? 'confidence' : 'decision');
+      await sendChunkedMessage(chatId, await runDecisionTelegramCommand(chatId, userId, args, msg, mode), { ...replyOpt, userText: args });
+    } catch (err) {
+      await safeSendMessage(chatId, err.code === 'DECISION_SECRET_REJECTED'
+        ? 'Pertanyaan terlihat mengandung secret/token. Saya tidak menyimpannya.'
+        : `Decision analysis gagal: ${err.message}`, replyOpt);
+    }
+    return true;
+  }
+
+  if (cmd === '/decisions' || cmd === '/decisionhistory') {
+    const items = await smartAgentSystem.decisionStore.listDecisionRecords({ workspaceId: 'default', userId, limit: 10 }, services);
+    await sendChunkedMessage(chatId, [
+      'Decision History',
+      '',
+      ...(items.length ? items.map((item, index) => `${index + 1}. ${item.id} [${item.status}/${item.riskLevel}] ${item.recommendation?.recommendation || item.question}`) : ['Belum ada decision record.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/decisionstatus') {
+    const [decisionId, status = 'deferred'] = splitPipeArgs(args);
+    if (!decisionId) {
+      await safeSendMessage(chatId, 'Format: /decisionstatus <decisionId> | <accepted|rejected|deferred>', replyOpt);
+      return true;
+    }
+    const decision = await smartAgentSystem.decisionStore.updateDecisionStatus(decisionId, status, { actorId: userId }, services);
+    await safeSendMessage(chatId, `Decision ${decision.id} diset ke ${decision.status}.`, replyOpt);
     return true;
   }
 
@@ -3999,6 +4239,66 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
   const canReply = await smartAgentSystem.conversationBus.preventDuplicateReplies(event, services);
   if (!canReply) return { handled: true, answer: '', reason: 'duplicate_agent_route' };
+
+  try {
+    const decisionNeed = smartAgentSystem.decisionDetector.shouldTriggerDecisionSystem(userText, route, {}, {}, services);
+    if (decisionNeed.needed) {
+      const decision = await smartAgentSystem.decisionStore.analyzeDecision({
+        workspaceId: 'default',
+        userId,
+        chatId,
+        messageId: msg.message_id,
+        source: 'natural_chat',
+        question: userText,
+        topics: route.topics || []
+      }, services);
+      const answer = decision.finalAnswer || formatDecisionTelegramResult(decision);
+      await smartAgentSystem.conversationBus.recordAgentActivity(event, {
+        ...route,
+        reason: `decision_system:${decisionNeed.reason}`,
+        selectedAgents: route.selectedAgents || ['orchestrator', 'planner', 'critic']
+      }, [], services);
+      await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id, userText });
+      return { handled: true, answer, route, decisionId: decision.decision?.id };
+    }
+  } catch (err) {
+    log.warn('Natural decision fallback:', err.message);
+  }
+
+  try {
+    const delegationNeed = smartAgentSystem.delegationEngine.shouldTriggerDelegation(userText, {
+      workspaceId: 'default',
+      userId,
+      chatId,
+      topics: route.topics || []
+    }, route, {}, services);
+    if (delegationNeed.needed) {
+      const session = await smartAgentSystem.delegationEngine.createDelegationSession({
+        workspaceId: 'default',
+        userId,
+        chatId,
+        messageId: msg.message_id,
+        source: 'natural_chat',
+        originalMessage: userText,
+        goal: userText,
+        selectedAgents: route.selectedAgents || [],
+        riskLevel: route.risk?.level || 'low',
+        approvalRequired: route.approvalRequired
+      }, services);
+      await smartAgentSystem.delegationEngine.planDelegation(session.id, services);
+      const result = await smartAgentSystem.delegationEngine.runDelegation(session.id, services);
+      const answer = result.finalAnswer || result.session?.finalSummary || formatDelegationTelegramResult(result);
+      await smartAgentSystem.conversationBus.recordAgentActivity(event, {
+        ...route,
+        reason: `delegation:${delegationNeed.reason}`,
+        selectedAgents: result.session?.selectedAgents || route.selectedAgents || []
+      }, [], services);
+      await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id, userText });
+      return { handled: true, answer, route, delegationId: session.id };
+    }
+  } catch (err) {
+    log.warn('Natural delegation fallback:', err.message);
+  }
 
   try {
     const council = await smartAgentSystem.councilEngine.runNaturalCouncilIfNeeded(userText, {
@@ -7115,6 +7415,21 @@ async function handleHelp(chatId, msg) {
 /learnplan topik - roadmap belajar
 /mentalmodel konsep - mental model
 /decision pilihan/masalah - decision support
+/compare A vs B - bandingkan opsi
+/risk pertanyaan - review risiko keputusan
+/confidence pertanyaan - jelaskan confidence keputusan
+/decisions - riwayat keputusan
+/decisionstatus id | accepted/rejected/deferred - update status keputusan
+/decisionhistory - riwayat keputusan
+/delegate topic - buat agent task delegation
+/delegations - daftar delegation session
+/delegation id - detail delegation
+/rundelegation id - jalankan delegation
+/agenttasks - daftar agent task
+/agenttask id - detail agent task
+/runtask id - jalankan reasoning task agent
+/handoffs - daftar handoff agent
+/handoff taskId | agentId - buat handoff manual
 /blindspot rencana - cari blind spot
 /assumptions argumen - cek asumsi
 /perspectives masalah - multi perspektif
@@ -7338,6 +7653,22 @@ function isUnknownCommand(cmd) {
     '/learnplan',
     '/mentalmodel',
     '/decision',
+    '/compare',
+    '/risk',
+    '/confidence',
+    '/decisions',
+    '/decisionstatus',
+    '/decisionhistory',
+    '/delegate',
+    '/delegations',
+    '/delegation',
+    '/rundelegation',
+    '/agenttasks',
+    '/agenttask',
+    '/runtask',
+    '/handoffs',
+    '/handoff',
+    '/taskresult',
     '/blindspot',
     '/assumptions',
     '/perspectives',
