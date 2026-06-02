@@ -42,6 +42,12 @@ Contoh routing:
 | `Cari API vision gratis` | Orchestrator, Research, Coder |
 | `Saya ingin menjalankan backup sekarang` | Orchestrator, Executor, Security, Ops |
 
+## Council Integration
+
+Phase 22 menambahkan internal council untuk pesan yang butuh keputusan multi-agent, misalnya `saya bingung lanjut phase berapa`, `nilai rencana saya`, `restore backup production`, atau `pilih PostgreSQL atau Redis`.
+
+Normal chat tetap hanya mengirim final synthesis yang bersih. Diagnostics seperti `Mode`, raw selected agents, dan policy object hanya boleh muncul di `/router`, dashboard router test, atau command council eksplisit.
+
 ## Risk Policy
 
 Write/external/danger action tidak pernah dijalankan langsung. Router hanya mengarahkan ke proposal/approval flow Phase 16.

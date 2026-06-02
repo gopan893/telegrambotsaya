@@ -16,6 +16,7 @@ const toolRoutes = require('./tool-routes');
 const backupRoutes = require('./backup-routes');
 const pwaRoutes = require('./pwa-routes');
 const agentMemoryRoutes = require('./agent-memory-routes');
+const councilRoutes = require('./council-routes');
 const agentRoutes = require('./agent-routes');
 
 module.exports = {
@@ -30,6 +31,7 @@ module.exports = {
   plannerRoutes,
   executorRoutes,
   backupRoutes,
+  councilRoutes,
   agentMemoryRoutes,
   agentRoutes,
   pwaRoutes,

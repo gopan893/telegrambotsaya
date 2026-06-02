@@ -19,12 +19,17 @@ Command:
 /router
 /council <topic>
 /debate <topic>
+/proscons <topic>
 /allagents <topic>
 /askagents <topic>
 /riskreview <topic>
+/councilstatus
+/councilrecent
 ```
 
 `/allagents` admin/owner only agar grup tidak spam.
+
+Council internal otomatis bisa aktif pada topik planning/decision/risk, tetapi normal chat tetap satu jawaban final. Gunakan command eksplisit jika ingin melihat opini agent satu per satu.
 
 ## Dashboard
 

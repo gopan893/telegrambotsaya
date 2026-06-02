@@ -381,6 +381,59 @@ const Api = {
     return this.apiPost('/agents/router/test', payload);
   },
 
+  async getCouncilOverview(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    if (filters.limit) params.set('limit', filters.limit);
+    const query = params.toString();
+    return this.apiGet(`/council${query ? `?${query}` : ''}`);
+  },
+
+  async listCouncilSessions(filters = {}) {
+    const params = new URLSearchParams();
+    ['workspaceId', 'source', 'mode', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/council/sessions${query ? `?${query}` : ''}`);
+  },
+
+  async getCouncilSession(sessionId) {
+    return this.apiGet(`/council/sessions/${encodeURIComponent(sessionId)}`);
+  },
+
+  async runCouncil(payload = {}) {
+    return this.apiPost('/council/run', payload);
+  },
+
+  async runCouncilDebate(payload = {}) {
+    return this.apiPost('/council/debate', payload);
+  },
+
+  async runCouncilRiskReview(payload = {}) {
+    return this.apiPost('/council/risk-review', payload);
+  },
+
+  async runCouncilDecisionReview(payload = {}) {
+    return this.apiPost('/council/decision-review', payload);
+  },
+
+  async cancelCouncilSession(sessionId, payload = {}) {
+    return this.apiPost(`/council/sessions/${encodeURIComponent(sessionId)}/cancel`, payload);
+  },
+
+  async listCouncilSummaries(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);
+    if (filters.limit) params.set('limit', filters.limit);
+    const query = params.toString();
+    return this.apiGet(`/council/summaries${query ? `?${query}` : ''}`);
+  },
+
+  async testCouncilRouter(payload = {}) {
+    return this.apiPost('/council/router-test', payload);
+  },
+
   async getAgentProfiles(filters = {}) {
     const params = new URLSearchParams();
     if (filters.workspaceId) params.set('workspaceId', filters.workspaceId);

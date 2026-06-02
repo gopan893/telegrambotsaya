@@ -3388,6 +3388,7 @@ function getAgentServices(actorId = '') {
     env: config,
     botRegistry: multibotSystem.botRegistry,
     telegramClient: multibotSystem.telegramClient,
+    agentMemoryStore: smartAgentSystem.agentMemoryStore,
     auditLog: dashboard.auditLog,
     safeSendMessage,
     sendChunkedMessage,
@@ -3463,6 +3464,82 @@ async function renderAgentRoutePreview(text, mode, chatId, userId) {
   }
   return smartAgentSystem.agentResponseRenderer.renderDebugRouterReply(route, route.scores || [], {
     reason: route.reason || route.policy?.reason || ''
+  });
+}
+
+function formatCouncilTelegramResult(result = {}, options = {}) {
+  const session = result.session || result;
+  const opinions = result.opinions || session.opinions || [];
+  const critiques = result.critiques || session.critiques || [];
+  const decision = result.decision || session.decision || {};
+  const riskReview = result.riskReview || session.riskReview || {};
+  const lines = [
+    options.title || 'Agent Council',
+    `Session: ${session.id || result.sessionId || '-'}`,
+    `Mode: ${session.mode || '-'}`,
+    `Risk: ${riskReview.riskLevel || session.riskLevel || 'low'}`,
+    `Approval required: ${riskReview.approvalRequired || session.approvalRequired ? 'yes' : 'no'}`,
+    '',
+    decision.recommendation ? `Rekomendasi: ${decision.recommendation}` : (result.finalSummary || session.finalSummary || ''),
+    ''
+  ];
+  if (opinions.length) {
+    lines.push('Opini agent:');
+    for (const opinion of opinions.slice(0, 5)) {
+      lines.push(`- ${opinion.agentId}: ${opinion.summary || (opinion.recommendations || [])[0] || '-'}`);
+    }
+    lines.push('');
+  }
+  if (critiques.length) {
+    lines.push('Kritik/risk notes:');
+    for (const critique of critiques.slice(0, 4)) {
+      lines.push(`- ${critique.criticAgentId || 'critic'} -> ${critique.targetAgentId || '-'}: ${critique.summary}`);
+    }
+    lines.push('');
+  }
+  if (Array.isArray(decision.nextSteps) && decision.nextSteps.length) {
+    lines.push('Langkah berikutnya:');
+    decision.nextSteps.slice(0, 5).forEach((step, index) => lines.push(`${index + 1}. ${step}`));
+  }
+  if (riskReview.approvalRequired) {
+    lines.push('', 'Catatan: write/external/danger action tetap harus lewat proposal dan approval eksplisit.');
+  }
+  return lines.filter(line => line !== undefined && line !== null).join('\n');
+}
+
+async function runCouncilTelegramCommand(chatId, userId, cmd, args, msg) {
+  const modeByCommand = {
+    '/council': 'quick_council',
+    '/debate': 'debate',
+    '/riskreview': 'risk_review',
+    '/proscons': 'decision_review'
+  };
+  const services = getAgentServices(userId);
+  const mode = modeByCommand[cmd] || 'quick_council';
+  const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
+  const route = smartAgentSystem.agentRouter.routeMessage(args, {
+    forceMode: mode,
+    chatId,
+    userId,
+    groupSettings: settings
+  }, services);
+  const result = await smartAgentSystem.councilEngine.runCouncil({
+    workspaceId: 'default',
+    userId,
+    chatId,
+    messageId: msg.message_id,
+    source: 'telegram_command',
+    mode,
+    topic: args,
+    originalMessage: args,
+    routerPolicy: route,
+    riskLevel: route.risk?.level || 'low',
+    approvalRequired: route.approvalRequired
+  }, services);
+  return formatCouncilTelegramResult(result, {
+    title: cmd === '/debate'
+      ? 'Agent Debate'
+      : (cmd === '/riskreview' ? 'Agent Risk Review' : (cmd === '/proscons' ? 'Pros/Cons Council' : 'Agent Council'))
   });
 }
 
@@ -3735,7 +3812,47 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
     return true;
   }
 
-  if (cmd === '/council' || cmd === '/debate' || cmd === '/allagents' || cmd === '/askagents' || cmd === '/riskreview') {
+  if (cmd === '/councilstatus') {
+    const sessions = await smartAgentSystem.councilEngine.listSessions({ limit: 5 }, services);
+    const summaries = await smartAgentSystem.councilEngine.listSummaries({ limit: 3 }, services);
+    await sendChunkedMessage(chatId, [
+      'Agent Council Status',
+      `Recent sessions: ${sessions.length}`,
+      `Saved summaries: ${summaries.length}`,
+      '',
+      ...(sessions.length
+        ? sessions.map((item, index) => `${index + 1}. ${item.id} [${item.mode}, ${item.status}, risk ${item.riskLevel}] ${item.topic}`)
+        : ['Belum ada council session.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/councilrecent') {
+    const sessions = await smartAgentSystem.councilEngine.listSessions({ limit: 10 }, services);
+    await sendChunkedMessage(chatId, [
+      'Recent Council Sessions',
+      '',
+      ...(sessions.length
+        ? sessions.map((item, index) => `${index + 1}. ${item.id} - ${item.mode} - ${item.status}\n   ${item.finalSummary || item.topic || '-'}`)
+        : ['Belum ada council session.'])
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/council' || cmd === '/debate' || cmd === '/riskreview' || cmd === '/proscons') {
+    if (!args) {
+      await safeSendMessage(chatId, `Format: ${cmd} <topic>`, replyOpt);
+      return true;
+    }
+    try {
+      await sendChunkedMessage(chatId, await runCouncilTelegramCommand(chatId, userId, cmd, args, msg), replyOpt);
+    } catch (err) {
+      await safeSendMessage(chatId, `Council gagal diproses: ${err.code || err.message || 'unknown error'}`, replyOpt);
+    }
+    return true;
+  }
+
+  if (cmd === '/allagents' || cmd === '/askagents') {
     if (!args) {
       await safeSendMessage(chatId, `Format: ${cmd} <topic>`, replyOpt);
       return true;
@@ -3745,11 +3862,8 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
       return true;
     }
     const modeByCommand = {
-      '/council': 'council',
-      '/debate': 'debate',
       '/allagents': 'allagents',
-      '/askagents': 'natural_smart',
-      '/riskreview': 'risk_review'
+      '/askagents': 'natural_smart'
     };
     const preview = await renderAgentRoutePreview(args, modeByCommand[cmd], chatId, userId);
     await sendChunkedMessage(chatId, `Agent Router Preview\n\n${preview}`, replyOpt);
@@ -3778,6 +3892,33 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
   const canReply = await smartAgentSystem.conversationBus.preventDuplicateReplies(event, services);
   if (!canReply) return { handled: true, answer: '', reason: 'duplicate_agent_route' };
+
+  try {
+    const council = await smartAgentSystem.councilEngine.runNaturalCouncilIfNeeded(userText, {
+      workspaceId: 'default',
+      chatId,
+      userId,
+      messageId: msg.message_id,
+      source: 'natural_chat',
+      skipDuplicateCheck: true
+    }, route, services);
+    if (council.handled) {
+      const answer = council.finalAnswer || council.finalSummary || council.session?.finalSummary;
+      if (answer) {
+        await smartAgentSystem.conversationBus.recordAgentActivity(event, {
+          ...route,
+          policy: { ...(route.policy || {}), mode: council.session?.mode || route.policy?.mode || 'natural_smart' },
+          selectedAgents: council.session?.selectedAgents || route.selectedAgents || [],
+          internalOnlyAgents: council.session?.internalOnlyAgents || route.internalOnlyAgents || [],
+          reason: 'council_internal_synthesis'
+        }, []);
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        return { handled: true, answer, route, councilSessionId: council.session?.id || council.sessionId };
+      }
+    }
+  } catch (err) {
+    log.warn('Natural council fallback:', err.message);
+  }
 
   const drafts = await smartAgentSystem.conversationBus.collectAgentDrafts(event, route, services);
   await smartAgentSystem.conversationBus.recordAgentActivity(event, route, drafts, services);
@@ -6932,6 +7073,9 @@ async function handleHelp(chatId, msg) {
 /smart - mode grup natural smart
 /council topic - override council agent
 /debate topic - override planner vs critic
+/proscons topic - review pro/kontra ringkas
+/councilstatus - status session council
+/councilrecent - session council terbaru
 /allagents topic - semua agent singkat [admin]
 /askagents topic - test smart router
 /riskreview topic - critic + security review
@@ -7144,6 +7288,9 @@ function isUnknownCommand(cmd) {
     '/smart',
     '/council',
     '/debate',
+    '/proscons',
+    '/councilstatus',
+    '/councilrecent',
     '/allagents',
     '/askagents',
     '/riskreview',

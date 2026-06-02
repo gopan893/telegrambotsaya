@@ -119,13 +119,16 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/routermode` | Alias status router. |
 | `/quiet` | Mode grup orchestrator-only. |
 | `/smart` | Mode grup natural smart. |
-| `/council <topic>` | Override council ringan. |
-| `/debate <topic>` | Override planner vs critic. |
+| `/council <topic>` | Run Agent Council ringan dan synthesis final. |
+| `/debate <topic>` | Run debate satu ronde dengan Planner/Critic dan synthesis. |
+| `/proscons <topic>` | Review pro/kontra dan rekomendasi. |
 | `/allagents <topic>` | Semua agent menjawab singkat, admin-only. |
 | `/askagents <topic>` | Test routing natural smart secara eksplisit. |
-| `/riskreview <topic>` | Paksa Critic + Security + Orchestrator. |
+| `/riskreview <topic>` | Paksa Security/Critic review untuk topik berisiko. |
+| `/councilstatus` | Status council session dan summary terbaru. |
+| `/councilrecent` | Daftar session council terbaru. |
 
-Natural chat tetap utama. Pesan seperti `Bot saya error setelah deploy`, `Saya ingin restore backup lama`, atau `Saya capek hari ini` akan memilih agent relevan otomatis; agent lain tetap silent.
+Natural chat tetap utama. Pesan seperti `Bot saya error setelah deploy`, `Saya ingin restore backup lama`, atau `Saya capek hari ini` akan memilih agent relevan otomatis; agent lain tetap silent. Untuk planning/decision kompleks, council bisa berjalan internal tetapi user tetap menerima satu jawaban final yang bersih.
 
 ## Backup & Recovery
 

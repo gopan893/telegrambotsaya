@@ -136,6 +136,10 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /agentstyle coder
 /router
 /council Phase 20 multi-bot
+/debate 10 bot langsung atau 4 dulu
+/proscons PostgreSQL atau Redis untuk memory
+/riskreview restore backup production
+/councilstatus
 ```
 
 ## Catatan Penting

@@ -1541,6 +1541,31 @@ const UI = {
         <div id="agent-router-result" style="margin-top:16px;">${UI.renderEmptyState('🧭', 'Router Ready', 'Masukkan pesan untuk melihat topic, risk, dan selected agents.')}</div>
       </section>
       <section class="panel">
+        <h3>Agent Council & Debate</h3>
+        <p class="text-muted">Council memberi final synthesis sanitized. Normal chat tetap satu jawaban bersih; opini agent tampil hanya di mode eksplisit ini.</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Topic / Decision</label>
+            <textarea id="council-topic" rows="4" placeholder="Contoh: saya bingung lanjut phase berapa"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Workspace ID</label>
+            <input id="council-workspace" placeholder="default">
+            <label style="margin-top:12px;">User ID</label>
+            <input id="council-user" placeholder="dashboard-admin">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="council-run" class="btn btn-primary">Run Council</button>
+          <button id="council-debate" class="btn btn-outline">Debate</button>
+          <button id="council-risk" class="btn btn-outline">Risk Review</button>
+          <button id="council-decision" class="btn btn-outline">Decision Review</button>
+          <button id="council-router-test" class="btn btn-outline">Council Router Test</button>
+          <button id="council-load-sessions" class="btn btn-outline">Load Sessions</button>
+        </div>
+        <div id="council-result" style="margin-top:16px;">${UI.renderEmptyState('🧠', 'Council Ready', 'Jalankan council untuk melihat opini, kritik, dan synthesis.')}</div>
+      </section>
+      <section class="panel">
         <h3>Agent Personality & Memory</h3>
         <div class="form-grid">
           <div class="form-group">
@@ -1655,6 +1680,36 @@ const UI = {
       </div>
     `;
 
+    const renderCouncilResult = (data = {}) => {
+      const session = data.session || data;
+      const decision = data.decision || session.decision || {};
+      const risk = data.riskReview || session.riskReview || {};
+      const opinions = data.opinions || session.opinions || [];
+      const critiques = data.critiques || session.critiques || [];
+      return `
+        <div class="card">
+          <div class="card-title">${Utils.escapeHtml(session.mode || 'Council')} ${UI.renderBadge(session.status || 'completed')} ${UI.renderBadge(risk.riskLevel || session.riskLevel || 'low')}</div>
+          <div class="kv-item"><span class="kv-key">Session</span><span><code>${Utils.escapeHtml(session.id || data.sessionId || '-')}</code></span></div>
+          <div class="kv-item"><span class="kv-key">Approval</span><span>${risk.approvalRequired || session.approvalRequired ? 'required' : 'not required'}</span></div>
+          <p><strong>Rekomendasi:</strong> ${Utils.escapeHtml(decision.recommendation || session.finalSummary || data.finalSummary || '-')}</p>
+          <div class="text-muted">${Utils.escapeHtml((data.finalAnswer || session.finalSummary || '').slice(0, 900))}</div>
+        </div>
+        <div class="grid-2">
+          <div class="card"><div class="card-title">Opinions</div>${opinions.slice(0, 5).map(item => `<p><strong>${Utils.escapeHtml(item.agentId || '-')}</strong>: ${Utils.escapeHtml(item.summary || '-')}</p>`).join('') || '<p class="text-muted">No opinions.</p>'}</div>
+          <div class="card"><div class="card-title">Critiques</div>${critiques.slice(0, 5).map(item => `<p><strong>${Utils.escapeHtml(item.criticAgentId || '-')}</strong>: ${Utils.escapeHtml(item.summary || '-')}</p>`).join('') || '<p class="text-muted">No critiques.</p>'}</div>
+        </div>
+      `;
+    };
+
+    const renderCouncilSessions = (items = []) => items.length ? items.map(item => `
+      <div class="card">
+        <div class="card-title">${Utils.escapeHtml(item.topic || item.id)} ${UI.renderBadge(item.mode || '-')} ${UI.renderBadge(item.status || '-')}</div>
+        <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(item.id || '-')}</code></span></div>
+        <div>${(item.selectedAgents || []).slice(0, 6).map(UI.renderBadge).join(' ')}</div>
+        <p class="text-muted">${Utils.escapeHtml(item.finalSummary || item.originalMessage || '')}</p>
+      </div>
+    `).join('') : UI.renderEmptyState('🧠', 'Belum Ada Session', 'Council session akan muncul setelah dijalankan.');
+
     const renderMemoryItems = (items = []) => items.length ? `
       <div class="card-grid">
         ${items.map(memory => UI.renderCard(
@@ -1710,6 +1765,35 @@ const UI = {
       document.getElementById('agent-router-result').innerHTML = res.ok
         ? `${renderRoute(res.data.route || {})}<div class="card"><div class="card-title">Memory Context</div>${agentsWithMemory.map(item => `<p><strong>${Utils.escapeHtml(item.agentId)}</strong>: ${item.selectedMemoryCount + item.sharedMemoryCount} memory<br><span class="text-muted">${Utils.escapeHtml(item.memoryExplanation || '')}</span></p>`).join('') || '<p class="text-muted">Tidak ada memory relevan.</p>'}</div>`
         : UI.renderEmptyState('⚠️', 'Router Memory Error', res.error || 'API error');
+    });
+
+    const getCouncilPayload = () => ({
+      topic: document.getElementById('council-topic').value,
+      workspaceId: document.getElementById('council-workspace').value || 'default',
+      userId: document.getElementById('council-user').value || 'dashboard-admin'
+    });
+
+    const showCouncilResponse = (res) => {
+      document.getElementById('council-result').innerHTML = res.ok
+        ? renderCouncilResult(res.data)
+        : UI.renderEmptyState('⚠️', 'Council Error', res.error || res.data?.error || 'API error');
+    };
+
+    document.getElementById('council-run').addEventListener('click', async () => showCouncilResponse(await Api.runCouncil(getCouncilPayload())));
+    document.getElementById('council-debate').addEventListener('click', async () => showCouncilResponse(await Api.runCouncilDebate(getCouncilPayload())));
+    document.getElementById('council-risk').addEventListener('click', async () => showCouncilResponse(await Api.runCouncilRiskReview(getCouncilPayload())));
+    document.getElementById('council-decision').addEventListener('click', async () => showCouncilResponse(await Api.runCouncilDecisionReview(getCouncilPayload())));
+    document.getElementById('council-router-test').addEventListener('click', async () => {
+      const payload = getCouncilPayload();
+      const res = await Api.testCouncilRouter({ message: payload.topic, workspaceId: payload.workspaceId, userId: payload.userId });
+      document.getElementById('council-result').innerHTML = res.ok
+        ? `<div class="card"><div class="card-title">Council Router Test</div>${renderRoute(res.data.route || {})}<div class="kv-item"><span class="kv-key">Council needed</span><span>${res.data.council?.needed ? 'yes' : 'no'}</span></div><div class="kv-item"><span class="kv-key">Mode</span><span>${Utils.escapeHtml(res.data.council?.mode || '-')}</span></div><p class="text-muted">${Utils.escapeHtml(res.data.council?.reason || '')}</p></div>`
+        : UI.renderEmptyState('⚠️', 'Council Router Error', res.error || 'API error');
+    });
+    document.getElementById('council-load-sessions').addEventListener('click', async () => {
+      const payload = getCouncilPayload();
+      const res = await Api.listCouncilSessions({ workspaceId: payload.workspaceId, limit: 20 });
+      document.getElementById('council-result').innerHTML = res.ok ? renderCouncilSessions(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Sessions', res.error || 'API error');
     });
 
     document.getElementById('agent-profile-load').addEventListener('click', async () => {

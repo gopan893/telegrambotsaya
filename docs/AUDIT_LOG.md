@@ -153,6 +153,24 @@ restore/permission_denied
 
 Entry menyertakan `workspaceId`, `actorRole`, `backupId` atau `restorePlanId`, scope, decision, dan summary yang sudah disanitasi. Secret/env/API key/connection string tidak disimpan di audit.
 
+## Agent Council Audit Events
+
+Phase 22 mencatat council/debate/risk review:
+
+```text
+agents/council_session_created
+agents/council_session_completed
+agents/council_session_cancelled
+agents/debate_round_completed
+agents/council_risk_review_run
+agents/council_approval_required_detected
+agents/council_summary_saved
+agents/council_router_tested
+agents/council_secret_like_rejected
+```
+
+Entry menyertakan `workspaceId`, `userId`, `sessionId`, mode, selected agents, risk level, decision, dan summary yang sudah disanitasi. Jika teks terlihat seperti token/API key/connection string, council menolak input dan audit hanya menyimpan alasan aman.
+
 ## Known Limits
 
 - Belum ada export audit terpisah.
