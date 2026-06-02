@@ -129,7 +129,12 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /health
 /stats
 /bots
+/botmapping
 /agents
+/multibot
+/multibot_on
+/multibot_off
+/visibleagents
 /agentprofile coder
 /agentmemory coder
 /agentremember coder | Coder Agent menjaga CommonJS dan Render compatibility
@@ -141,6 +146,10 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /riskreview restore backup production
 /councilstatus
 ```
+
+Multi-bot visible replies bisa diaktifkan di grup dengan `/multibot_on`. Specialist bot hanya bicara jika dipilih router, maksimal default 2 agent, dan token tidak pernah ditampilkan. Gunakan env seperti `TELEGRAM_TOKEN_PLANNER`, `TELEGRAM_TOKEN_CODER`, dan `TELEGRAM_TOKEN_CRITIC`; typo `TELEGRAM_TOKEN_PLANNE` akan diberi warning aman.
+
+Catatan analisis file/visual hanya muncul saat user membahas file, gambar, foto, dokumen, atau attachment saat ini. Chat normal seperti roadmap, deploy, dan refleksi tidak akan membawa metadata file lama seperti `#visual-analysis` atau `API Vision belum dikonfigurasi`.
 
 ## Catatan Penting
 

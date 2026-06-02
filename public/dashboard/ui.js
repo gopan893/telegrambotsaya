@@ -1626,6 +1626,18 @@ const UI = {
               <label>Max Auto Agents</label>
               <input id="agent-group-max" type="number" min="1" max="5" value="3">
             </div>
+            <div class="form-group">
+              <label>Visible Specialist Replies</label>
+              <select id="agent-group-visible-mode">
+                <option value="off">orchestrator only</option>
+                <option value="selected">selected specialist bots</option>
+                <option value="council_only">council only</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Max Specialist Bots</label>
+              <input id="agent-group-specialist-max" type="number" min="0" max="5" value="2">
+            </div>
           </div>
           <button id="agent-group-load" class="btn btn-outline">Load Settings</button>
           <button id="agent-group-save" class="btn btn-primary">Save Settings</button>
@@ -1643,7 +1655,8 @@ const UI = {
       </section>
     `;
 
-    const renderBotItems = (items = []) => items.length ? `
+    const renderBotItems = (items = [], warnings = []) => items.length ? `
+      ${warnings.length ? `<div class="alert alert-warning">${warnings.map(item => Utils.escapeHtml(item.message || item)).join('<br>')}</div>` : ''}
       <div class="card-grid">
         ${items.map(bot => UI.renderCard(
           `${bot.id} → ${bot.agentId}`,
@@ -1741,7 +1754,7 @@ const UI = {
 
     document.getElementById('agents-load-bots').addEventListener('click', async () => {
       const res = await Api.getBots();
-      document.getElementById('agents-bots').innerHTML = res.ok ? renderBotItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
+      document.getElementById('agents-bots').innerHTML = res.ok ? renderBotItems(res.data.items || [], res.data.warnings || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
     });
 
     document.getElementById('agents-load-agents').addEventListener('click', async () => {
@@ -1849,6 +1862,8 @@ const UI = {
       if (res.ok) {
         document.getElementById('agent-group-mode').value = res.data.mode || 'natural_smart';
         document.getElementById('agent-group-max').value = res.data.maxAutoAgents || 3;
+        document.getElementById('agent-group-visible-mode').value = res.data.visibleSpecialistReplies || 'off';
+        document.getElementById('agent-group-specialist-max').value = res.data.maxVisibleSpecialistBots || 2;
         document.getElementById('agent-group-result').innerHTML = `<div class="alert alert-info">Loaded: ${Utils.escapeHtml(res.data.mode || '-')}</div>`;
       }
     });
@@ -1857,7 +1872,10 @@ const UI = {
       const payload = {
         chatId: document.getElementById('agent-group-chat-id').value || 'default',
         mode: document.getElementById('agent-group-mode').value,
-        maxAutoAgents: Number(document.getElementById('agent-group-max').value || 3)
+        maxAutoAgents: Number(document.getElementById('agent-group-max').value || 3),
+        visibleSpecialistReplies: document.getElementById('agent-group-visible-mode').value,
+        multiBotVisibleReplies: document.getElementById('agent-group-visible-mode').value !== 'off',
+        maxVisibleSpecialistBots: Number(document.getElementById('agent-group-specialist-max').value || 2)
       };
       const res = await Api.updateAgentGroupSettings(payload);
       document.getElementById('agent-group-result').innerHTML = `<div class="alert ${res.ok ? 'alert-success' : 'alert-danger'}">${res.ok ? 'Settings saved.' : (res.error || 'Failed')}</div>`;

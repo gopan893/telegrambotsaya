@@ -6,6 +6,8 @@ const promptComposer = require('./agent-prompt-composer');
 const responseRenderer = require('./agent-response-renderer');
 const policy = require('./response-policy');
 const telegramClient = require('../multibot/telegram-client');
+const fileIntentGuard = require('../multimodal/file-intent-guard');
+const outputSanitizer = require('../ai-os/output-sanitizer');
 const {
   AGENT_ACTIVITY_KEY,
   AGENT_FINGERPRINT_KEY,
@@ -19,6 +21,56 @@ const {
   safeWrite,
   sanitizeSummary
 } = require('./agent-utils');
+
+function isLikelyGroupChat(chatId = '', event = {}) {
+  if (event.chatType && event.chatType !== 'private') return true;
+  return String(chatId || '').startsWith('-');
+}
+
+function isMultiBotAvailable(services = {}) {
+  try {
+    return Boolean(services.botRegistry?.isMultiBotEnabled?.(services.env || process.env));
+  } catch (_) {
+    return false;
+  }
+}
+
+function buildDefaultGroupSettings(chatId, services = {}, event = {}) {
+  const multiBotGroup = isLikelyGroupChat(chatId, event) && isMultiBotAvailable(services);
+  return {
+    chatId: String(chatId),
+    mode: 'natural_smart',
+    maxAutoAgents: 3,
+    allowAllAgents: false,
+    orchestratorBotId: 'default',
+    multiBotVisibleReplies: multiBotGroup,
+    visibleSpecialistReplies: multiBotGroup ? 'selected' : 'off',
+    maxVisibleSpecialistBots: 2,
+    updatedBy: '',
+    updatedAt: null
+  };
+}
+
+function normalizeVisibleReplyMode(value, fallback = 'off') {
+  return ['off', 'selected', 'council_only'].includes(String(value || '')) ? String(value) : fallback;
+}
+
+function sanitizeAgentTelegramText(text = '', event = {}, services = {}) {
+  const fileRelated = fileIntentGuard.isFileRelatedMessage(event.text || '', {
+    event,
+    hasAttachment: Boolean(event.update?.message?.photo || event.update?.message?.document || event.update?.message?.voice)
+  });
+  return outputSanitizer.sanitizeAssistantVisibleText(responseRenderer.stripDebugFromNaturalReply(text), {
+    userText: event.text || '',
+    fileRelated,
+    forceClean: true
+  });
+}
+
+async function sendAsConfiguredBot(botId, chatId, text, options = {}, services = {}) {
+  const client = services.telegramClient?.sendMessageAsBot ? services.telegramClient : telegramClient;
+  return client.sendMessageAsBot(botId, chatId, text, options, services);
+}
 
 function createConversationEvent(update = {}, context = {}, services = {}) {
   const msg = update.message || update.edited_message || {};
@@ -44,15 +96,8 @@ function createConversationEvent(update = {}, context = {}, services = {}) {
 
 async function getGroupSettings(chatId, services = {}) {
   const all = await safeRead(GROUP_SETTINGS_KEY, {}, services);
-  return all[String(chatId)] || {
-    chatId: String(chatId),
-    mode: 'natural_smart',
-    maxAutoAgents: 3,
-    allowAllAgents: false,
-    orchestratorBotId: 'default',
-    updatedBy: '',
-    updatedAt: null
-  };
+  const defaults = buildDefaultGroupSettings(chatId, services);
+  return { ...defaults, ...(all[String(chatId)] || {}) };
 }
 
 async function setGroupSettings(chatId, patch = {}, services = {}) {
@@ -64,6 +109,9 @@ async function setGroupSettings(chatId, patch = {}, services = {}) {
     maxAutoAgents: Number(patch.maxAutoAgents || previous.maxAutoAgents || 3),
     allowAllAgents: Boolean(patch.allowAllAgents ?? previous.allowAllAgents),
     orchestratorBotId: patch.orchestratorBotId || previous.orchestratorBotId || 'default',
+    multiBotVisibleReplies: Boolean(patch.multiBotVisibleReplies ?? previous.multiBotVisibleReplies ?? false),
+    visibleSpecialistReplies: normalizeVisibleReplyMode(patch.visibleSpecialistReplies, previous.visibleSpecialistReplies || 'off'),
+    maxVisibleSpecialistBots: Math.min(Math.max(Number(patch.maxVisibleSpecialistBots || previous.maxVisibleSpecialistBots || 2), 0), 5),
     updatedBy: String(patch.updatedBy || previous.updatedBy || ''),
     updatedAt: nowIso()
   };
@@ -173,22 +221,64 @@ async function sendAgentResponses(event = {}, route = {}, responses = [], servic
       text: event.text,
       topics: route.topics || []
     }, services);
-    await telegramClient.sendMessageAsBot(event.botId || 'default', event.chatId, text, {
+    const groupSettings = await getGroupSettings(event.chatId, services);
+    await sendAsConfiguredBot(groupSettings.orchestratorBotId || event.botId || 'default', event.chatId, sanitizeAgentTelegramText(text, event, services), {
       reply_to_message_id: event.messageId || undefined,
-      disable_web_page_preview: true
+      disable_web_page_preview: true,
+      userText: event.text || '',
+      fileRelated: fileIntentGuard.isFileRelatedMessage(event.text || '', { event })
     }, services);
-    return { sent: 1 };
+    const specialistResult = await sendVisibleSpecialistReplies(event, route, responses, services, { groupSettings, mode });
+    return { sent: 1 + specialistResult.sent, specialistSent: specialistResult.sent, specialistBotIds: specialistResult.botIds };
   }
   const order = policy.buildResponseOrder(route.policy || route);
   const visible = responses.filter(item => (route.selectedAgents || []).includes(item.agentId));
   const sorted = visible.sort((a, b) => order.indexOf(a.agentId) - order.indexOf(b.agentId));
   for (const response of sorted) {
-    await telegramClient.sendMessageAsBot(response.botId, event.chatId, response.text, {
+    await sendAsConfiguredBot(response.botId, event.chatId, sanitizeAgentTelegramText(response.text, event, services), {
       reply_to_message_id: event.messageId || undefined,
-      disable_web_page_preview: true
+      disable_web_page_preview: true,
+      userText: event.text || '',
+      fileRelated: fileIntentGuard.isFileRelatedMessage(event.text || '', { event })
     }, services);
   }
   return { sent: sorted.length };
+}
+
+async function sendVisibleSpecialistReplies(event = {}, route = {}, responses = [], services = {}, options = {}) {
+  const groupSettings = options.groupSettings || await getGroupSettings(event.chatId, services);
+  const mode = options.mode || route.policy?.mode || route.mode || route.commandMode || 'natural_smart';
+  if (groupSettings.mode === 'quiet' || route.policy?.mode === 'quiet') return { sent: 0, botIds: [] };
+  if (!groupSettings.multiBotVisibleReplies) return { sent: 0, botIds: [] };
+  if (groupSettings.visibleSpecialistReplies === 'off') return { sent: 0, botIds: [] };
+  if (groupSettings.visibleSpecialistReplies === 'council_only' && !['council', 'debate', 'risk_review', 'decision_review'].includes(mode)) {
+    return { sent: 0, botIds: [] };
+  }
+
+  const selected = new Set(route.selectedAgents || []);
+  const internal = new Set(route.internalOnlyAgents || []);
+  const muted = new Set(route.mutedAgents || []);
+  const max = Math.min(Math.max(Number(groupSettings.maxVisibleSpecialistBots || 2), 0), 5);
+  if (max <= 0) return { sent: 0, botIds: [] };
+  const specialists = responses
+    .filter(item => item.agentId && item.agentId !== 'orchestrator')
+    .filter(item => selected.has(item.agentId))
+    .filter(item => !internal.has(item.agentId) && !muted.has(item.agentId))
+    .slice(0, max);
+
+  const sentBotIds = [];
+  for (const response of specialists) {
+    const clean = sanitizeAgentTelegramText(response.text, event, services);
+    if (!clean) continue;
+    await sendAsConfiguredBot(response.botId || response.agentId, event.chatId, clean, {
+      reply_to_message_id: event.messageId || undefined,
+      disable_web_page_preview: true,
+      userText: event.text || '',
+      fileRelated: fileIntentGuard.isFileRelatedMessage(event.text || '', { event })
+    }, services);
+    sentBotIds.push(response.botId || response.agentId);
+  }
+  return { sent: sentBotIds.length, botIds: sentBotIds };
 }
 
 async function recordAgentActivity(event = {}, route = {}, responses = [], services = {}) {
@@ -247,5 +337,6 @@ module.exports = {
   recordAgentActivity,
   routeConversationEvent,
   sendAgentResponses,
+  sendVisibleSpecialistReplies,
   setGroupSettings
 };

@@ -200,7 +200,10 @@ function attachBotIds(agents = [], services = {}) {
   const bots = services.botRegistry?.listBotConfigsSafe?.(services.env || process.env) || [];
   const botIds = new Set(bots.map(bot => bot.id));
   return agents.map(agent => {
-    const botId = botIds.has(agent.botId) ? agent.botId : (agent.id === 'orchestrator' ? 'default' : agent.botId);
+    const preferredBotId = agent.id === 'orchestrator'
+      ? (botIds.has('default') ? 'default' : (botIds.has('orchestrator') ? 'orchestrator' : 'default'))
+      : agent.id;
+    const botId = botIds.has(preferredBotId) ? preferredBotId : agent.botId;
     return { ...agent, botId };
   });
 }

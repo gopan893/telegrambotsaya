@@ -36,6 +36,7 @@ const documentParser = require('../multimodal/document-parser');
 const imageVision = require('../multimodal/image-vision');
 const dataInterpreter = require('../multimodal/data-interpreter');
 const crossModal = require('../multimodal/cross-modal-engine');
+const fileIntentGuard = require('../multimodal/file-intent-guard');
 
 /**
  * Deteksi Mode AI (termasuk mode multimodal baru)
@@ -550,13 +551,17 @@ async function executeMultimodalPipeline(userId, chatId, userMessage, msgObj, bo
       observability.logEvent(traceId, 'CognitiveCore', 'AI_OS_PREPARE_FAILED', { error: err.message });
       context.aiOSRules = 'AI OS fallback: layer persistent cognition tidak tersedia, lanjutkan dengan pipeline lama.';
     }
+    const fileRelated = fileIntentGuard.shouldUseRecentFileContext(userMessage, {
+      hasAttachment,
+      message: msgObj
+    });
     const recentFileContexts = hasAttachment
       ? [
         fileContext,
         ...memory.getRecentFileContexts(userId, botServices, 3)
           .filter(ctx => ctx && ctx.fileId !== fileContext?.fileId)
       ].filter(Boolean)
-      : memory.getRecentFileContexts(userId, botServices, 3);
+      : (fileRelated ? memory.getRecentFileContexts(userId, botServices, 3) : []);
     const crossModalContext = crossModal.buildCrossModalContext(traceId, userMessage, context, recentFileContexts);
     context.crossModalContext = crossModalContext;
     messageBus.updateContext(traceId, 'sharedMemory', context.summary);
@@ -858,6 +863,9 @@ Ketik **"lanjut"** untuk membuka langkah berikutnya, atau **"batal"** untuk meng
     if (!isToolRequest || (executionResult && !executionResult.ok) || verification.annotation || hasAttachment) {
       await sendStreamingAnswer(chatId, finalAnswer, {
         reply_to_message_id: msgObj.message_id,
+        fileRelated: fileRelated || hasAttachment,
+        userText: userMessage,
+        hasAttachment,
         ...interactionExtra
       });
     }

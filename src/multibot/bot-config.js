@@ -106,6 +106,17 @@ function loadBotConfigsFromEnv(env = process.env) {
   });
 }
 
+function detectConfigWarnings(env = process.env) {
+  const warnings = [];
+  if (hasValue(env.TELEGRAM_TOKEN_PLANNE)) {
+    warnings.push({
+      code: 'POSSIBLE_TELEGRAM_TOKEN_PLANNER_TYPO',
+      message: 'Possible typo: TELEGRAM_TOKEN_PLANNE detected. Use TELEGRAM_TOKEN_PLANNER.'
+    });
+  }
+  return warnings;
+}
+
 function sanitizeBotConfig(config = {}) {
   return {
     id: config.id,
@@ -138,6 +149,7 @@ module.exports = {
   ROLE_LABELS,
   buildWebhookPath,
   createBotConfig,
+  detectConfigWarnings,
   loadBotConfigsFromEnv,
   loadLegacyBotConfig,
   loadRoleBotConfig,

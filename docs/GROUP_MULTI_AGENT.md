@@ -25,11 +25,28 @@ Command:
 /riskreview <topic>
 /councilstatus
 /councilrecent
+/multibot
+/multibot_on
+/multibot_off
+/visibleagents
+/botmapping
 ```
 
 `/allagents` admin/owner only agar grup tidak spam.
 
 Council internal otomatis bisa aktif pada topik planning/decision/risk, tetapi normal chat tetap satu jawaban final. Gunakan command eksplisit jika ingin melihat opini agent satu per satu.
+
+## Visible Specialist Bots
+
+Jika bot Planner/Coder/Critic dan agent lain sudah ditambahkan ke grup, gunakan `/multibot_on` agar specialist yang dipilih router bisa bicara memakai token bot masing-masing. Ini tidak membuat semua bot menjawab semua pesan.
+
+Default policy:
+
+- Orchestrator selalu boleh memberi jawaban final.
+- Specialist visible hanya jika dipilih router dan `multiBotVisibleReplies=true`.
+- Maksimal 2 specialist bot terlihat pada natural chat.
+- `/multibot_off` mengembalikan grup ke Orchestrator-only.
+- `/botmapping` menampilkan agent -> bot configured true/false tanpa token.
 
 ## Dashboard
 
@@ -42,6 +59,8 @@ Tab `Agents / Multi-Bot` menampilkan:
 - router test panel
 - selected/internal/muted agents
 - group mode settings
+- visible reply settings
+- safe agent-to-bot mapping
 - recent routing activity
 
 Dashboard tidak menampilkan token atau webhook secret asli.

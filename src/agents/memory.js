@@ -214,7 +214,10 @@ class MemoryAgent {
     const { ensureUser } = botServices;
     const u = ensureUser(userId);
     const fileMemory = u.fileMemory || {};
+    const ttlMs = Number(botServices.fileContextTtlMs || 30 * 60 * 1000);
+    const now = Date.now();
     return Object.values(fileMemory)
+      .filter(item => now - Number(item.cachedAt || item.extractedAt || 0) <= ttlMs)
       .sort((a, b) => (b.cachedAt || b.extractedAt || 0) - (a.cachedAt || a.extractedAt || 0))
       .slice(0, limit);
   }

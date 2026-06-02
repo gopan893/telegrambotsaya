@@ -45,6 +45,15 @@ const PROJECT_LEAK_PATTERNS = [
   /\broadmap\s+project\b/gi
 ];
 
+const FILE_ANALYSIS_BLOCK_PATTERNS = [
+  /(?:^|\n)\s*Catatan:\s*confidence analisis file rendah[^\n]*(?:\n|$)/gi,
+  /(?:^|\n)\s*Sumber file:\s*[^\n]*(?:#visual-analysis[^\n]*)?(?:\n|$)/gi,
+  /(?:^|\n)\s*Batasan analisis:\s*(?:API Vision belum dikonfigurasi|Analisis berbasis metadata saja|OCR belum tersedia)[^\n]*(?:\n|$)/gi,
+  /(?:^|\n)\s*[^\n]*API Vision belum dikonfigurasi[^\n]*(?:\n|$)/gi,
+  /(?:^|\n)\s*[^\n]*Analisis berbasis metadata saja[^\n]*(?:\n|$)/gi,
+  /(?:^|\n)\s*[^\n]*#[a-z-]*visual-analysis[^\n]*(?:\n|$)/gi
+];
+
 // Admin-visible debug markers (these are intentional and should NOT be stripped for admins)
 const ADMIN_MARKERS = [
   '/debug', '/system', '/ops', '/diag', '/health',
@@ -57,15 +66,27 @@ const ADMIN_MARKERS = [
 function containsInternalDebugText(text) {
   if (!text) return false;
   const t = String(text);
-  return INTERNAL_PATTERNS.some(({ pattern }) => pattern.test(t))
-    || PROJECT_LEAK_PATTERNS.some(p => p.test(t));
+  return INTERNAL_PATTERNS.some(({ pattern }) => {
+    pattern.lastIndex = 0;
+    return pattern.test(t);
+  })
+    || PROJECT_LEAK_PATTERNS.some(p => {
+      p.lastIndex = 0;
+      return p.test(t);
+    });
+}
+
+function shouldPreserveProjectLeakPattern(pattern, options = {}) {
+  const userText = String(options.userText || '');
+  const asksAboutRoadmap = /\b(phase|tahap|roadmap|lanjut|prioritas|rencana)\b/i.test(userText);
+  return asksAboutRoadmap && pattern.source === '\\bphase\\s+\\d+\\b';
 }
 
 /**
  * Rewrite internal debug text to be user-friendly.
  * Applies pattern replacements and cleans up blank lines.
  */
-function rewriteInternalDebugText(text) {
+function rewriteInternalDebugText(text, options = {}) {
   if (!text) return text;
   let t = String(text);
 
@@ -76,6 +97,7 @@ function rewriteInternalDebugText(text) {
 
   // Remove project leak patterns
   for (const p of PROJECT_LEAK_PATTERNS) {
+    if (shouldPreserveProjectLeakPattern(p, options)) continue;
     t = t.replace(p, '');
   }
 
@@ -83,6 +105,22 @@ function rewriteInternalDebugText(text) {
   t = t.replace(/\n{3,}/g, '\n\n').trim();
 
   return t;
+}
+
+function containsStaleFileAnalysisText(text) {
+  if (!text) return false;
+  return FILE_ANALYSIS_BLOCK_PATTERNS.some(pattern => {
+    pattern.lastIndex = 0;
+    return pattern.test(String(text));
+  });
+}
+
+function stripStaleFileAnalysisBlocks(text) {
+  let t = String(text || '');
+  for (const pattern of FILE_ANALYSIS_BLOCK_PATTERNS) {
+    t = t.replace(pattern, '\n');
+  }
+  return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
@@ -104,22 +142,27 @@ function shouldExposeDebug(userText, isAdmin) {
 function sanitizeAssistantVisibleText(text, options = {}) {
   if (!text) return text;
 
-  const { isAdmin = false, userText = '', forceClean = false } = options;
+  const { isAdmin = false, userText = '', forceClean = false, fileRelated = false } = options;
 
   // Skip sanitization for explicit admin debug commands (unless forced)
   if (!forceClean && isAdmin && shouldExposeDebug(userText, isAdmin)) {
     return text;
   }
 
-  // If no internal debug text, return as-is (performance optimization)
-  if (!containsInternalDebugText(text)) return text;
+  let output = String(text || '');
+  if (!fileRelated && containsStaleFileAnalysisText(output)) {
+    output = stripStaleFileAnalysisBlocks(output);
+  }
 
-  return rewriteInternalDebugText(text);
+  if (containsInternalDebugText(output)) output = rewriteInternalDebugText(output, { userText });
+  return output;
 }
 
 module.exports = {
   containsInternalDebugText,
+  containsStaleFileAnalysisText,
   rewriteInternalDebugText,
+  stripStaleFileAnalysisBlocks,
   shouldExposeDebug,
   sanitizeAssistantVisibleText
 };

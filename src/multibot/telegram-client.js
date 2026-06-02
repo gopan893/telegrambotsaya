@@ -3,6 +3,8 @@
 const axios = require('axios');
 const botRegistry = require('./bot-registry');
 const { sanitizeBotConfig } = require('./bot-config');
+const outputSanitizer = require('../ai-os/output-sanitizer');
+const fileIntentGuard = require('../multimodal/file-intent-guard');
 
 function resolveBot(botId, services = {}) {
   const env = services.env || process.env;
@@ -27,8 +29,8 @@ async function telegramPostAsBot(botId, method, payload = {}, services = {}) {
     throw new Error('Telegram bot token is not configured.');
   }
   const url = getTelegramApiUrl(config.id, method, services);
-  await axios.post(url, payload, { timeout: 15000 });
-  return true;
+  const response = await axios.post(url, payload, { timeout: 15000 });
+  return response.data || true;
 }
 
 async function sendMessageAsBot(botId, chatId, text, options = {}, services = {}) {
@@ -37,9 +39,21 @@ async function sendMessageAsBot(botId, chatId, text, options = {}, services = {}
   let finalText = String(text || '');
 
   if (!config?.token && botId && defaultBot?.id !== botId) {
-    finalText = `[${botId} Agent]\n${finalText}`;
+    const identity = config ? sanitizeBotConfig(config) : { displayName: `${botId} Agent` };
+    finalText = `[${identity.displayName || botId}]\n${finalText}`;
   }
 
+  const fileRelated = Boolean(options.fileRelated) || fileIntentGuard.isFileRelatedMessage(options.userText || '', {
+    hasAttachment: options.hasAttachment
+  });
+  finalText = typeof services.sanitizeOutgoingText === 'function'
+    ? services.sanitizeOutgoingText(finalText, { userText: options.userText || '', fileRelated, forceClean: true })
+    : outputSanitizer.sanitizeAssistantVisibleText(finalText, { userText: options.userText || '', fileRelated, forceClean: true });
+
+  const payloadOptions = { ...options };
+  delete payloadOptions.fileRelated;
+  delete payloadOptions.userText;
+  delete payloadOptions.hasAttachment;
   if ((!config?.token || config.id === defaultBot?.id) && typeof services.safeSendMessage === 'function') {
     return services.safeSendMessage(chatId, finalText, options);
   }
@@ -49,7 +63,7 @@ async function sendMessageAsBot(botId, chatId, text, options = {}, services = {}
     text: finalText,
     parse_mode: options.parse_mode || 'HTML',
     disable_web_page_preview: options.disable_web_page_preview !== false,
-    ...options
+    ...payloadOptions
   }, services);
 }
 

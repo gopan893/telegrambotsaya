@@ -50,6 +50,8 @@ Bot: Menurut saya lanjut ke Phase 22 — Agent Council + Internal Debate Engine.
 
 Command eksplisit boleh menampilkan opini agent dan kritik ringkas karena user memang meminta mode council.
 
+Jika visible multi-bot replies aktif, opini council dapat dikirim oleh bot agent yang sesuai. Jika token specialist tidak tersedia, Orchestrator mengirim fallback berlabel seperti `[Planner Agent]`. Catatan file/visual tetap disaring kecuali topiknya memang file/gambar/dokumen.
+
 ## Dashboard
 
 Tab `Agents / Multi-Bot` memiliki panel `Agent Council & Debate`:

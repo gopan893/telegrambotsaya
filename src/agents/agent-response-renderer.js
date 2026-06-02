@@ -1,6 +1,8 @@
 'use strict';
 
 const { buildSafeText, maskSecret } = require('./agent-utils');
+const outputSanitizer = require('../ai-os/output-sanitizer');
+const fileIntentGuard = require('../multimodal/file-intent-guard');
 
 const DEBUG_PATTERNS = [
   /^Smart Agent Router\b/im,
@@ -26,6 +28,19 @@ function stripDebugFromNaturalReply(text = '') {
   let output = String(text || '');
   for (const pattern of DEBUG_PATTERNS) output = output.replace(pattern, '');
   return stripAgentSelfIntro(maskSecret(output)).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function sanitizeRenderedReply(text = '', context = {}, event = {}) {
+  const fileRelated = fileIntentGuard.isFileRelatedMessage(context.text || event.text || '', {
+    ...context,
+    event,
+    hasAttachment: context.hasAttachment
+  });
+  return outputSanitizer.sanitizeAssistantVisibleText(stripDebugFromNaturalReply(text), {
+    userText: context.text || event.text || '',
+    fileRelated,
+    forceClean: true
+  });
 }
 
 function getDraft(agentDrafts = [], agentId) {
@@ -140,7 +155,7 @@ function renderFinalSynthesis(orchestratorDraft = {}, specialistDrafts = [], con
     answer += '\n\nCatatan: aksi write/external/danger tetap perlu proposal dan approval eksplisit sebelum dijalankan.';
   }
 
-  return stripDebugFromNaturalReply(answer);
+  return sanitizeRenderedReply(answer, context, event);
 }
 
 function renderNaturalSmartReply(event = {}, policyOrRoute = {}, agentDrafts = [], context = {}, services = {}) {
@@ -185,7 +200,7 @@ function renderCouncilReply(agentDrafts = [], context = {}) {
   const lines = [];
   for (const draft of visible) {
     const label = draft.agentId.charAt(0).toUpperCase() + draft.agentId.slice(1);
-    const clean = stripDebugFromNaturalReply(draft.text);
+    const clean = sanitizeRenderedReply(draft.text, context, context.event || {});
     if (clean) lines.push(`${label}: ${clean}`);
   }
   return lines.length ? lines.join('\n\n') : 'Council belum punya opini yang relevan.';

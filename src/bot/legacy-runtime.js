@@ -41,6 +41,7 @@ const {
   formatRedisStatus
 } = require('../dashboard/storage-status-formatters');
 const outputSanitizer = require('../ai-os/output-sanitizer');
+const fileIntentGuard = require('../multimodal/file-intent-guard');
 const {
   sendTelegramMessage,
   sendTelegramWithKeyboard
@@ -100,6 +101,9 @@ const {
 } = config;
 
 multibotSystem.botRegistry.loadBotConfigs(config);
+for (const warning of multibotSystem.botRegistry.detectConfigWarnings?.(config) || []) {
+  console.warn(`[multibot] ${warning.message}`);
+}
 
 const FILE_DIR = process.cwd();
 const storageManager = createStorageManager({
@@ -336,9 +340,31 @@ function sanitizeOutgoingText(text, opts = {}) {
   const sanitized = outputSanitizer.sanitizeAssistantVisibleText(original, {
     isAdmin: Boolean(opts.isAdmin),
     userText: opts.userText || '',
-    forceClean: Boolean(opts.forceClean)
+    forceClean: Boolean(opts.forceClean),
+    fileRelated: Boolean(opts.fileRelated) || fileIntentGuard.isFileRelatedMessage(opts.userText || '', opts)
   });
   return multiDeviceUX.normalizeForTelegram(sanitized);
+}
+
+function splitTelegramSendOptions(extra = {}) {
+  const {
+    fileRelated,
+    userText,
+    hasAttachment,
+    msg,
+    update,
+    forceClean,
+    ...telegramExtra
+  } = extra || {};
+  return {
+    telegramExtra,
+    sanitizerOptions: {
+      fileRelated: Boolean(fileRelated) || fileIntentGuard.isFileRelatedMessage(userText || '', { hasAttachment, msg, update }),
+      userText: userText || '',
+      hasAttachment,
+      forceClean
+    }
+  };
 }
 
 function simpleDetectLanguage(text) {
@@ -1387,20 +1413,22 @@ async function telegramPost(method, payload) {
 }
 
 async function safeSendMessage(chatId, text, extra = {}) {
+  const { telegramExtra, sanitizerOptions } = splitTelegramSendOptions(extra);
   return sendTelegramMessage(
     { telegramPost, logger: log },
     chatId,
-    text,
-    extra
+    sanitizeOutgoingText(text, sanitizerOptions),
+    telegramExtra
   );
 }
 
 async function sendChunkedMessage(chatId, text, extra = {}) {
+  const { telegramExtra, sanitizerOptions } = splitTelegramSendOptions(extra);
   return sendTelegramMessage(
     { telegramPost, logger: log },
     chatId,
-    sanitizeOutgoingText(text),
-    extra
+    sanitizeOutgoingText(text, sanitizerOptions),
+    telegramExtra
   );
 }
 
@@ -1470,11 +1498,12 @@ async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = 
 }
 
 async function sendStreamingAnswer(chatId, text, extra = {}) {
+  const { telegramExtra, sanitizerOptions } = splitTelegramSendOptions(extra);
   return sendTelegramMessage(
     { telegramPost, logger: log },
     chatId,
-    sanitizeOutgoingText(text),
-    extra
+    sanitizeOutgoingText(text, sanitizerOptions),
+    telegramExtra
   );
 }
 
@@ -3392,6 +3421,7 @@ function getAgentServices(actorId = '') {
     auditLog: dashboard.auditLog,
     safeSendMessage,
     sendChunkedMessage,
+    sanitizeOutgoingText,
     telegramPost,
     logger: log
   };
@@ -3420,6 +3450,42 @@ function formatAgentList() {
     'Agent Registry',
     '',
     ...agents.map(agent => `- ${agent.id}: ${agent.displayName} (${agent.role})${agent.defaultSilent ? ' [silent default]' : ''}`)
+  ].join('\n');
+}
+
+async function formatBotMappingList(chatId, services) {
+  const agents = smartAgentSystem.agentRegistry.listAgents({}, services);
+  const bots = multibotSystem.botRegistry.listBotConfigsSafe(config);
+  const byId = new Map(bots.map(bot => [bot.id, bot]));
+  const warnings = multibotSystem.botRegistry.detectConfigWarnings?.(config) || [];
+  const lines = [
+    'Agent → Bot Mapping',
+    '',
+    ...agents.map(agent => {
+      const bot = byId.get(agent.botId);
+      return `- ${agent.id} -> ${agent.botId} configured: ${bot?.tokenConfigured ? 'true' : 'false'}`;
+    })
+  ];
+  if (warnings.length) {
+    lines.push('', 'Warnings:', ...warnings.map(item => `- ${item.message}`));
+  }
+  if (chatId) {
+    const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
+    lines.push('', `Visible replies: ${settings.multiBotVisibleReplies ? 'on' : 'off'} (${settings.visibleSpecialistReplies})`, `Max specialist bots: ${settings.maxVisibleSpecialistBots}`);
+  }
+  return lines.join('\n');
+}
+
+async function formatVisibleAgentSettings(chatId, services) {
+  const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
+  return [
+    'Visible Multi-Bot Replies',
+    `Enabled: ${settings.multiBotVisibleReplies ? 'yes' : 'no'}`,
+    `Mode: ${settings.visibleSpecialistReplies}`,
+    `Max specialist bots: ${settings.maxVisibleSpecialistBots}`,
+    `Router mode: ${settings.mode}`,
+    '',
+    'Gunakan /multibot_on untuk specialist bot terpilih, atau /multibot_off untuk Orchestrator saja.'
   ].join('\n');
 }
 
@@ -3633,6 +3699,47 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
       `Enabled: ${safe.enabled ? 'yes' : 'no'}`,
       `Webhook path: ${safe.webhookPath}`
     ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/botmapping') {
+    await sendChunkedMessage(chatId, await formatBotMappingList(chatId, services), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/multibot' || cmd === '/visibleagents') {
+    await sendChunkedMessage(chatId, await formatVisibleAgentSettings(chatId, services), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/multibot_on' || cmd === '/multibot_off') {
+    if (msg.chat?.type !== 'private' && !isAdmin(userId)) {
+      await safeSendMessage(chatId, 'Mengubah visible multi-bot replies hanya untuk owner/admin.', replyOpt);
+      return true;
+    }
+    const enabled = cmd === '/multibot_on';
+    await smartAgentSystem.conversationBus.setGroupSettings(chatId, {
+      multiBotVisibleReplies: enabled,
+      visibleSpecialistReplies: enabled ? 'selected' : 'off',
+      maxVisibleSpecialistBots: enabled ? 2 : 0,
+      updatedBy: userId
+    }, services);
+    try {
+      await dashboard.auditLog.recordAuditLog({
+        actorType: 'telegram',
+        actorId: userId,
+        action: 'agents/visible_multibot_replies_changed',
+        targetType: 'chat',
+        targetId: String(chatId),
+        userId,
+        decision: 'allowed',
+        status: 'ok',
+        afterSummary: { chatId: String(chatId), enabled }
+      }, services);
+    } catch (_) {}
+    await safeSendMessage(chatId, enabled
+      ? 'Visible multi-bot replies aktif untuk specialist agent yang dipilih router.'
+      : 'Visible multi-bot replies nonaktif. Hanya Orchestrator/default bot yang menjawab.', replyOpt);
     return true;
   }
 
@@ -3912,7 +4019,24 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
           internalOnlyAgents: council.session?.internalOnlyAgents || route.internalOnlyAgents || [],
           reason: 'council_internal_synthesis'
         }, []);
-        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id });
+        await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id, userText });
+        const councilResponses = (council.opinions || council.session?.opinions || [])
+          .filter(opinion => opinion.agentId && opinion.agentId !== 'orchestrator')
+          .map(opinion => {
+            const agent = smartAgentSystem.agentRegistry.getAgent(opinion.agentId, services) || {};
+            return {
+              agentId: opinion.agentId,
+              botId: agent.botId || opinion.agentId,
+              text: opinion.summary || (opinion.recommendations || [])[0] || ''
+            };
+          });
+        await smartAgentSystem.conversationBus.sendVisibleSpecialistReplies(event, {
+          ...route,
+          selectedAgents: council.session?.selectedAgents || route.selectedAgents || [],
+          internalOnlyAgents: council.session?.internalOnlyAgents || route.internalOnlyAgents || [],
+          mutedAgents: route.mutedAgents || [],
+          policy: { ...(route.policy || {}), mode: council.session?.mode || 'decision_review' }
+        }, councilResponses, services, { mode: council.session?.mode || 'decision_review' });
         return { handled: true, answer, route, councilSessionId: council.session?.id || council.sessionId };
       }
     }
@@ -3931,7 +4055,7 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
     topics: route.topics || []
   }, services);
 
-  await sendChunkedMessage(chatId, visibleText, { reply_to_message_id: msg.message_id });
+  await smartAgentSystem.conversationBus.sendAgentResponses(event, route, drafts, services);
   return { handled: true, answer: visibleText, route };
 }
 
@@ -7057,6 +7181,11 @@ async function handleHelp(chatId, msg) {
 /bots - daftar bot Telegram aman
 /botstatus - status multi-bot
 /botinfo botId - detail bot tanpa token
+/botmapping - mapping agent ke bot tanpa token
+/multibot - status visible multi-bot replies
+/multibot_on - aktifkan specialist bot terpilih [admin grup]
+/multibot_off - nonaktifkan specialist replies [admin grup]
+/visibleagents - policy visible replies
 /agents - daftar agent/persona
 /agent agentId - detail agent
 /agentstatus - status agent registry
@@ -7271,6 +7400,11 @@ function isUnknownCommand(cmd) {
     '/bots',
     '/botstatus',
     '/botinfo',
+    '/botmapping',
+    '/multibot',
+    '/multibot_on',
+    '/multibot_off',
+    '/visibleagents',
     '/agents',
     '/agent',
     '/agentstatus',
@@ -7456,7 +7590,7 @@ ${fileText.slice(0, 20000)}`,
       await sendChunkedMessage(
         chatId,
         `📄 Jawaban dari file:\n\n${answer}`,
-        { reply_to_message_id: msg.message_id }
+        { reply_to_message_id: msg.message_id, fileRelated: true, userText: query }
       );
 
     } catch (err) {
@@ -9660,7 +9794,9 @@ async function smartFileQuestion(chatId, userId, text, msg) {
     chatId,
     `📄 Jawaban berdasarkan file:\n\n${result}`,
     {
-      reply_to_message_id: msg.message_id
+      reply_to_message_id: msg.message_id,
+      fileRelated: true,
+      userText: text
     }
   );
 

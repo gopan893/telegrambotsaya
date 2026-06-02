@@ -1,6 +1,7 @@
 'use strict';
 
 const {
+  detectConfigWarnings,
   loadBotConfigsFromEnv,
   sanitizeBotConfig,
   validateBotConfig
@@ -78,12 +79,14 @@ function buildBotStatusSummary(env = process.env) {
     configured: configured.length,
     enabled: enabled.length,
     defaultBotId: getDefaultBot(env)?.id || null,
-    bots: current.configs.map(sanitizeBotConfig)
+    bots: current.configs.map(sanitizeBotConfig),
+    warnings: detectConfigWarnings(env)
   };
 }
 
 module.exports = {
   buildBotStatusSummary,
+  detectConfigWarnings,
   getBotConfig,
   getDefaultBot,
   isMultiBotEnabled,

@@ -104,6 +104,7 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/bots` | Daftar bot Telegram secara aman, hanya tokenConfigured/webhookSecretConfigured. |
 | `/botstatus` | Ringkasan status multi-bot dan default bot. |
 | `/botinfo <botId>` | Detail bot tanpa token atau secret. |
+| `/botmapping` | Mapping aman agent -> bot dan status configured true/false. |
 | `/agents` | Daftar agent/persona default. |
 | `/agent <agentId>` | Detail role, botId, specialties, dan guard agent. |
 | `/agentstatus` | Status agent registry. |
@@ -117,6 +118,10 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/agentstyle <agentId>` | Lihat style guide agent. |
 | `/router` | Status natural smart router untuk chat saat ini. |
 | `/routermode` | Alias status router. |
+| `/multibot` | Status visible multi-bot replies untuk chat/grup. |
+| `/multibot_on` | Aktifkan specialist bot replies yang dipilih router, admin/owner di grup. |
+| `/multibot_off` | Matikan specialist bot replies, kembali Orchestrator-only. |
+| `/visibleagents` | Lihat policy visible replies, max specialist, dan mode grup. |
 | `/quiet` | Mode grup orchestrator-only. |
 | `/smart` | Mode grup natural smart. |
 | `/council <topic>` | Run Agent Council ringan dan synthesis final. |
@@ -129,6 +134,10 @@ Direct run untuk tool write/external/danger ditolak dan diarahkan ke `/toolpropo
 | `/councilrecent` | Daftar session council terbaru. |
 
 Natural chat tetap utama. Pesan seperti `Bot saya error setelah deploy`, `Saya ingin restore backup lama`, atau `Saya capek hari ini` akan memilih agent relevan otomatis; agent lain tetap silent. Untuk planning/decision kompleks, council bisa berjalan internal tetapi user tetap menerima satu jawaban final yang bersih.
+
+Jika `/multibot_on` aktif dan token specialist tersedia, Planner/Coder/Critic/Ops/Security yang dipilih router dapat mengirim komentar singkat memakai bot masing-masing. Maksimal default 2 specialist visible, dan bot message tetap diabaikan untuk mencegah loop.
+
+Catatan visual/file seperti `Sumber file`, `#visual-analysis`, atau `API Vision belum dikonfigurasi` hanya muncul saat pesan saat ini memang membahas file/gambar/dokumen atau ada attachment. Chat biasa seperti roadmap, deploy, atau refleksi tidak membawa metadata file lama.
 
 ## Backup & Recovery
 

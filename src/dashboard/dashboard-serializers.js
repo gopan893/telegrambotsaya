@@ -603,6 +603,9 @@ function sanitizeAgentGroupSettings(settings = {}) {
     maxAutoAgents: Number(settings.maxAutoAgents || 3),
     allowAllAgents: Boolean(settings.allowAllAgents),
     orchestratorBotId: truncateText(settings.orchestratorBotId || 'default', 80),
+    multiBotVisibleReplies: Boolean(settings.multiBotVisibleReplies),
+    visibleSpecialistReplies: settings.visibleSpecialistReplies || 'off',
+    maxVisibleSpecialistBots: Number(settings.maxVisibleSpecialistBots || 0),
     updatedBy: truncateText(settings.updatedBy || '', 80),
     updatedAt: settings.updatedAt || null
   });

@@ -48,6 +48,18 @@ Phase 22 menambahkan internal council untuk pesan yang butuh keputusan multi-age
 
 Normal chat tetap hanya mengirim final synthesis yang bersih. Diagnostics seperti `Mode`, raw selected agents, dan policy object hanya boleh muncul di `/router`, dashboard router test, atau command council eksplisit.
 
+## Visible Replies
+
+Normal natural chat memakai satu jawaban final dari Orchestrator. Jika `/multibot_on` aktif di grup, router boleh mengirim komentar singkat dari specialist yang memang dipilih:
+
+- `planner` untuk roadmap/prioritas.
+- `coder` untuk debugging/coding.
+- `critic` untuk risiko/trade-off.
+- `ops` untuk deploy/health/Render/PostgreSQL/Redis.
+- `security` untuk secret/restore/import/danger action.
+
+Specialist yang tidak dipilih tetap diam. Jumlah specialist visible dibatasi oleh setting grup, default maksimal 2.
+
 ## Risk Policy
 
 Write/external/danger action tidak pernah dijalankan langsung. Router hanya mengarahkan ke proposal/approval flow Phase 16.
@@ -70,3 +82,14 @@ Jika secret-like text terdeteksi, output dan audit summary disanitasi.
 - Agent lain masuk `internalOnlyAgents`.
 - Bot message diabaikan agar tidak terjadi loop.
 - Fingerprint pesan terbaru mencegah reply duplicate.
+
+## File/Visual Context Guard
+
+Catatan analisis file/visual hanya muncul jika pesan saat ini memang membahas file, gambar, foto, dokumen, OCR, preview, atau update Telegram berisi attachment. Untuk chat normal seperti `lanjut phase berapa`, `bot error deploy`, atau `saya capek hari ini`, router tidak menyertakan konteks visual lama dan sanitizer menghapus blok seperti:
+
+- `Sumber file:`
+- `#visual-analysis`
+- `API Vision belum dikonfigurasi`
+- `Analisis berbasis metadata saja`
+
+Konteks file sementara tetap bisa dipakai untuk pertanyaan eksplisit seperti `gambar tadi maksudnya apa?`.

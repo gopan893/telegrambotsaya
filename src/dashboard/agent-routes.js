@@ -39,8 +39,10 @@ function registerAgentRoutes(router, services = {}) {
 
   router.get('/bots', (req, res) => {
     multibot.botRegistry.loadBotConfigs(services.env || process.env);
+    const status = multibot.botRegistry.buildBotStatusSummary(services.env || process.env);
     return guards.safeDashboardResponse(res, {
-      items: multibot.botRegistry.listBotConfigsSafe(services.env || process.env)
+      items: multibot.botRegistry.listBotConfigsSafe(services.env || process.env),
+      warnings: status.warnings || []
     });
   });
 
@@ -109,6 +111,9 @@ function registerAgentRoutes(router, services = {}) {
       maxAutoAgents: req.body?.maxAutoAgents,
       allowAllAgents: req.body?.allowAllAgents,
       orchestratorBotId: req.body?.orchestratorBotId,
+      multiBotVisibleReplies: req.body?.multiBotVisibleReplies,
+      visibleSpecialistReplies: req.body?.visibleSpecialistReplies,
+      maxVisibleSpecialistBots: req.body?.maxVisibleSpecialistBots,
       updatedBy: getActorId(req, services)
     }, agentServices);
     await auditAgentAction('agents/group_mode_changed', req, {
