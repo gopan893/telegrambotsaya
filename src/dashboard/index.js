@@ -22,6 +22,7 @@ const agentTaskRoutes = require('./agent-task-routes');
 const decisionRoutes = require('./decision-routes');
 const agentExecutorRoutes = require('./agent-executor-routes');
 const agentEvaluationRoutes = require('./agent-evaluation-routes');
+const evaluationRoutes = require('./evaluation-routes');
 
 module.exports = {
   registerDashboardRoutes,
@@ -41,6 +42,7 @@ module.exports = {
   agentTaskRoutes,
   agentExecutorRoutes,
   agentEvaluationRoutes,
+  evaluationRoutes,
   decisionRoutes,
   pwaRoutes,
   toolRoutes,

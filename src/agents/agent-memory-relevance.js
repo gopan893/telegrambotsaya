@@ -15,7 +15,7 @@ const {
 const topicClassifier = require('./topic-classifier');
 
 const AGENT_TOPIC_FIT = {
-  orchestrator: ['unknown', 'casual', 'planning', 'roadmap', 'dashboard', 'telegram'],
+  orchestrator: ['unknown', 'casual', 'planning', 'roadmap', 'dashboard', 'telegram', 'school_life', 'social_advice', 'emotional_support', 'daily_life'],
   planner: ['planning', 'roadmap', 'learning', 'project', 'workflow'],
   coder: ['coding', 'debugging', 'database', 'redis', 'telegram', 'deploy'],
   critic: ['security', 'risk', 'roadmap', 'planning', 'backup'],
@@ -24,19 +24,19 @@ const AGENT_TOPIC_FIT = {
   security: ['security', 'secret', 'restore', 'import', 'executor', 'tool'],
   memory: ['memory', 'graph', 'project', 'dashboard'],
   executor: ['executor', 'tool', 'backup', 'restore'],
-  reflection: ['emotional', 'personal_reflection', 'learning']
+  reflection: ['emotional', 'personal_reflection', 'emotional_support', 'social_advice', 'school_life', 'daily_life', 'learning']
 };
 
 const TYPE_TOPIC_FIT = {
   technical_pattern: ['coding', 'debugging', 'database', 'redis', 'telegram', 'deploy'],
   project_context: ['planning', 'roadmap', 'project', 'coding', 'deploy', 'dashboard'],
   risk_pattern: ['security', 'risk', 'restore', 'import', 'backup', 'roadmap'],
-  learning_note: ['learning', 'research', 'personal_reflection'],
+  learning_note: ['learning', 'research', 'personal_reflection', 'school_life'],
   decision_note: ['planning', 'roadmap', 'database', 'backup', 'executor'],
   ops_note: ['ops', 'deploy', 'database', 'redis', 'backup'],
   security_note: ['security', 'secret', 'restore', 'import', 'executor'],
-  reflection_note: ['emotional', 'personal_reflection', 'learning'],
-  user_preference: ['casual', 'unknown', 'learning', 'personal_reflection'],
+  reflection_note: ['emotional', 'personal_reflection', 'emotional_support', 'social_advice', 'school_life', 'daily_life', 'learning'],
+  user_preference: ['casual', 'unknown', 'learning', 'personal_reflection', 'school_life', 'social_advice', 'daily_life'],
   shared_context: ['planning', 'project', 'coding', 'dashboard', 'memory', 'graph'],
   correction: ['coding', 'debugging', 'planning'],
   lesson: ['learning', 'coding', 'planning', 'ops']
@@ -77,6 +77,10 @@ function calculateMemoryRelevance(memory = {}, message = '', context = {}, servi
   if (topics.some(topic => agentFit.includes(topic))) score += 0.12;
   const typeFit = TYPE_TOPIC_FIT[memory.type] || [];
   if (topics.some(topic => typeFit.includes(topic))) score += 0.16;
+  const personalDomain = topicClassifier.isPersonalDomainMessage?.(message, topics);
+  if (personalDomain && !['reflection', 'orchestrator'].includes(agentId)) score -= 0.34;
+  if (personalDomain && ['technical_pattern', 'project_context', 'ops_note', 'security_note', 'decision_note', 'shared_context'].includes(memory.type)) score -= 0.42;
+  if (personalDomain && ['reflection_note', 'user_preference', 'learning_note'].includes(memory.type)) score += 0.18;
   if (topics.includes('emotional') && !['reflection', 'orchestrator'].includes(agentId) && !['reflection_note', 'user_preference'].includes(memory.type)) score -= 0.28;
   if ((topics.includes('secret') || topics.includes('security')) && !['security', 'orchestrator'].includes(agentId) && memory.type !== 'security_note') score -= 0.18;
   if ((topics.includes('executor') || topics.includes('restore')) && !['executor', 'security', 'orchestrator', 'ops'].includes(agentId)) score -= 0.18;

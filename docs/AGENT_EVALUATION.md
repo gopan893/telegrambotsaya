@@ -35,9 +35,16 @@ Mengukur:
 /evalagents
 /evalagent <caseId>
 /evalsummary
+/evalgates
+/evalcompare
 ```
 
 Evaluation bersifat dry-run. Ia boleh membuat action plan dry-run di storage test, tetapi tidak approve dan tidak run action.
+
+Phase 26 menambahkan harness v2 dengan golden cases untuk chat sekolah/personal, short follow-up context, quality gates, dan regression compare. Lihat:
+
+- [AGENT_EVALUATION_V2.md](AGENT_EVALUATION_V2.md)
+- [QUALITY_GATES.md](QUALITY_GATES.md)
 
 ## Dashboard
 

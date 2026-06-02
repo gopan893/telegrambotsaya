@@ -4068,12 +4068,13 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
   }
 
   if (cmd === '/evalagents') {
-    const result = await smartAgentSystem.agentEvaluationHarness.runEvaluationSuite({ limit: 20 }, getAgentServices(userId));
+    const result = await smartAgentSystem.agentEvaluationV2.suite.runEvaluationSuite({ limit: 50 }, getAgentServices(userId));
     await sendChunkedMessage(chatId, [
-      'Agent Evaluation Suite',
-      `Status: ${result.summary.status}`,
-      `Score rata-rata: ${result.summary.average}%`,
-      `Passed: ${result.summary.passed}/${result.summary.total}`,
+      'Agent Evaluation Suite v2',
+      `Status: ${result.run.status}`,
+      `Score rata-rata: ${result.summary.averageScore}%`,
+      `Passed: ${result.summary.passedCases}/${result.summary.totalCases}`,
+      `Quality gates: ${result.summary.qualityGateStatus}`,
       '',
       'Evaluasi dry-run saja. Tidak ada action yang dieksekusi.'
     ].join('\n'), replyOpt);
@@ -4086,10 +4087,10 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
       await safeSendMessage(chatId, 'Format: /evalagent <caseId>', replyOpt);
       return true;
     }
-    const result = await smartAgentSystem.agentEvaluationHarness.runEvaluationCase(caseId, getAgentServices(userId));
+    const result = await smartAgentSystem.agentEvaluationV2.suite.runEvaluationCase(caseId, getAgentServices(userId));
     await sendChunkedMessage(chatId, result.ok === false ? `Evaluation gagal: ${result.reason}` : [
       `Evaluation: ${result.case.id}`,
-      `Score: ${result.score.percentage}% (${result.score.passed ? 'passed' : 'failed'})`,
+      `Score: ${result.score.averageScore}% (${result.score.passed ? 'passed' : 'failed'})`,
       `Agents: ${(result.selectedAgents || []).join(', ') || '-'}`,
       `Risk: ${result.riskLevel}`,
       `Action: ${result.actionType || '-'}`,
@@ -4099,14 +4100,25 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
   }
 
   if (cmd === '/evalsummary') {
-    const latest = await smartAgentSystem.agentEvaluationHarness.getLatestEvaluationRun(getAgentServices(userId));
-    await sendChunkedMessage(chatId, latest ? [
-      'Latest Agent Evaluation',
-      `Run: ${latest.id}`,
-      `Status: ${latest.summary.status}`,
-      `Average: ${latest.summary.average}%`,
-      `Passed: ${latest.summary.passed}/${latest.summary.total}`
-    ].join('\n') : 'Belum ada evaluation run. Jalankan /evalagents.', replyOpt);
+    const latest = await smartAgentSystem.agentEvaluationV2.suite.getLatestEvaluationRun(getAgentServices(userId));
+    await sendChunkedMessage(chatId, smartAgentSystem.agentEvaluationV2.report.formatRunForTelegram(latest), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/evalgates') {
+    const latest = await smartAgentSystem.agentEvaluationV2.suite.getLatestEvaluationRun(getAgentServices(userId));
+    await sendChunkedMessage(chatId, smartAgentSystem.agentEvaluationV2.report.formatQualityGatesForTelegram(latest?.qualityGates), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/evalcompare') {
+    const runs = await smartAgentSystem.agentEvaluationV2.suite.listEvaluationRuns({ limit: 2 }, getAgentServices(userId));
+    const compare = smartAgentSystem.agentEvaluationV2.regression.compareRuns(runs[0], runs[1]);
+    await sendChunkedMessage(chatId, [
+      'Agent Evaluation Compare',
+      compare.reason === 'not_enough_runs' ? 'Belum ada dua run untuk dibandingkan.' : (compare.ok ? 'Tidak ada regresi besar.' : 'Regresi terdeteksi:'),
+      ...(compare.regressions || []).map(item => `- ${item.key}: ${item.previousValue} -> ${item.currentValue} (${item.delta})`)
+    ].join('\n'), replyOpt);
     return true;
   }
 
@@ -4371,10 +4383,13 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
 async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
   const services = getAgentServices(userId);
   const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
+  const recentTopic = await smartAgentSystem.conversationBus.getRecentChatTopic(chatId, userId, services);
   const need = smartAgentSystem.agentRouter.detectNaturalAgentNeed(userText, {
     chatId,
     userId,
-    groupSettings: settings
+    groupSettings: settings,
+    previousTopics: recentTopic?.topics || [],
+    previousText: recentTopic?.textPreview || ''
   }, services);
 
   if (!need.needed) return { handled: false };
@@ -4492,7 +4507,7 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
           selectedAgents: council.session?.selectedAgents || route.selectedAgents || [],
           internalOnlyAgents: council.session?.internalOnlyAgents || route.internalOnlyAgents || [],
           reason: 'council_internal_synthesis'
-        }, []);
+        }, [], services);
         await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id, userText });
         const councilResponses = (council.opinions || council.session?.opinions || [])
           .filter(opinion => opinion.agentId && opinion.agentId !== 'orchestrator')
@@ -7673,6 +7688,8 @@ async function handleHelp(chatId, msg) {
 /evalagents - run evaluation suite dry-run
 /evalagent caseId - run satu evaluation case
 /evalsummary - summary evaluation terbaru
+/evalgates - status quality gates evaluation
+/evalcompare - bandingkan dua evaluation run terakhir
 /approve proposalId - approve tanpa menjalankan
 /runexec proposalId - jalankan proposal yang sudah approved
 /reject proposalId | reason
@@ -7918,6 +7935,8 @@ function isUnknownCommand(cmd) {
     '/evalagents',
     '/evalagent',
     '/evalsummary',
+    '/evalgates',
+    '/evalcompare',
     '/approve',
     '/reject',
     '/runexec',

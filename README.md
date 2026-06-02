@@ -160,6 +160,8 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /evalagents
 /evalagent eval_backup_proposal
 /evalsummary
+/evalgates
+/evalcompare
 ```
 
 Multi-bot visible replies bisa diaktifkan di grup dengan `/multibot_on`. Specialist bot hanya bicara jika dipilih router, maksimal default 2 agent, dan token tidak pernah ditampilkan. Gunakan env seperti `TELEGRAM_TOKEN_PLANNER`, `TELEGRAM_TOKEN_CODER`, dan `TELEGRAM_TOKEN_CRITIC`; typo `TELEGRAM_TOKEN_PLANNE` akan diberi warning aman.
@@ -179,7 +181,9 @@ Phase 25 menghubungkan agent reasoning ke executor secara aman:
 - `/approve <proposalId>` hanya approve.
 - `/runexec <proposalId>` baru menjalankan proposal yang sudah approved.
 - Agent tidak bisa self-approve atau self-run.
-- `/evalagents` menjalankan evaluation harness dry-run untuk mengecek routing, delegation, decision, risk, proposal, dan kebocoran secret sebelum menambah integrasi eksternal yang lebih kuat.
+- `/evalagents` menjalankan evaluation harness v2 secara dry-run untuk mengecek routing, domain personal/sekolah, follow-up context, delegation, decision, risk, proposal, quality gates, dan kebocoran secret sebelum menambah integrasi eksternal yang lebih kuat.
+- `/evalgates` menampilkan gate seperti no-leak, approval safety, domain routing, dan risk score.
+- `/evalcompare` membandingkan dua run terakhir untuk melihat regresi.
 
 ## Catatan Penting
 

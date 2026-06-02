@@ -50,7 +50,16 @@ function run() {
     MISTRAL_API_KEY: '',
     DASHBOARD_ADMIN_TOKEN: 'dash'
   });
-  assert.deepStrictEqual(envStatus, {
+  assert.deepStrictEqual({
+    telegramToken: envStatus.telegramToken,
+    databaseUrl: envStatus.databaseUrl,
+    redisUrl: envStatus.redisUrl,
+    openWeatherApiKey: envStatus.openWeatherApiKey,
+    tavilyApiKey: envStatus.tavilyApiKey,
+    groqApiKey: envStatus.groqApiKey,
+    mistralApiKey: envStatus.mistralApiKey,
+    dashboardAdminToken: envStatus.dashboardAdminToken
+  }, {
     telegramToken: 'set',
     databaseUrl: 'set',
     redisUrl: 'missing',
@@ -60,6 +69,8 @@ function run() {
     mistralApiKey: 'missing',
     dashboardAdminToken: 'set'
   });
+  assert(!JSON.stringify(envStatus).includes('real-token'));
+  assert(!JSON.stringify(envStatus).includes('postgres://secret'));
 
   assert.strictEqual(guards.validateLimit(undefined, 20, 100), 20);
   assert.strictEqual(guards.validateLimit('500', 20, 100), 100);

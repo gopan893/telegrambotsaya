@@ -2,6 +2,7 @@
 
 const agentRegistry = require('./agent-registry');
 const scoring = require('./agent-scoring');
+const classifier = require('./topic-classifier');
 const { unique } = require('./agent-utils');
 
 function decideResponsePolicy(message, context = {}, scores = [], risk = {}, services = {}) {
@@ -13,10 +14,12 @@ function decideResponsePolicy(message, context = {}, scores = [], risk = {}, ser
   let requireOrchestratorSummary = false;
   let approvalRequired = Boolean(risk.writeOrExternalIntent || risk.dangerIntent || risk.secretDetected);
 
+  const personalDomain = classifier.isPersonalDomainMessage(message, topics);
+
   if (topics.includes('casual')) {
     mode = 'normal';
     selectedAgents = ['orchestrator'];
-  } else if (topics.includes('emotional')) {
+  } else if (personalDomain || topics.includes('emotional')) {
     mode = 'emotional_support';
     selectedAgents = ['orchestrator', 'reflection'];
     maxVisibleReplies = 2;
@@ -72,7 +75,10 @@ function decideResponsePolicy(message, context = {}, scores = [], risk = {}, ser
   }
   const internalOnlyAgents = selectedAgents.filter(agentId => !visible.includes(agentId));
   const enabledIds = agentRegistry.listAgents({ enabled: true }, services).map(agent => agent.id);
-  const mutedAgents = enabledIds.filter(agentId => !visible.includes(agentId) && !internalOnlyAgents.includes(agentId));
+  let mutedAgents = enabledIds.filter(agentId => !visible.includes(agentId) && !internalOnlyAgents.includes(agentId));
+  if (personalDomain && !risk.secretDetected && risk.level !== 'danger') {
+    mutedAgents = unique([...mutedAgents, 'coder', 'ops', 'executor', 'memory', 'research', 'security']);
+  }
 
   return enforceAntiSpamPolicy({
     mode,
@@ -88,7 +94,7 @@ function decideResponsePolicy(message, context = {}, scores = [], risk = {}, ser
 }
 
 function buildPolicyReason(mode, topics = [], risk = {}) {
-  if (mode === 'emotional_support') return 'emotional message routed to reflection support';
+  if (mode === 'emotional_support') return 'personal/social message routed to reflection support';
   if (mode === 'execution_proposal') return 'action/write intent requires human approval';
   if (mode === 'risk_review') return 'high risk message requires security review';
   if (mode === 'quiet') return 'group is in quiet mode';

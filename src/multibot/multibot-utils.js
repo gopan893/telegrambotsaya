@@ -7,7 +7,7 @@ const SECRET_PATTERNS = [
   /postgresql:\/\/[^\s]+/ig,
   /rediss?:\/\/[^\s]+/ig,
   /\b(?:token|secret|password|api[_-]?key)\b\s*[:=]\s*[^\s]+/ig,
-  /\b(?:sk-|ghp_|gsk_|tvly_)[a-z0-9_-]{8,}/ig
+  /\b(?:sk-|ghp_|gsk_|tvly_)[a-z0-9_-]{4,}/ig
 ];
 
 function normalizeId(value) {

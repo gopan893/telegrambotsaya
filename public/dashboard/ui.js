@@ -1510,6 +1510,8 @@ const UI = {
             <button class="btn btn-outline" id="btn-eval-cases">Load Cases</button>
             <button class="btn btn-primary" id="btn-eval-suite">Run Suite</button>
             <button class="btn btn-outline" id="btn-eval-runs">Latest Runs</button>
+            <button class="btn btn-outline" id="btn-eval-gates">Quality Gates</button>
+            <button class="btn btn-outline" id="btn-eval-compare">Compare</button>
           </div>
           <div id="agent-evaluation-result" style="margin-top:12px;">${UI.renderEmptyState('🧪', 'Evaluation Ready', 'Jalankan suite untuk mengukur routing, risk, proposal, dan safety.')}</div>
         </section>
@@ -1585,12 +1587,29 @@ const UI = {
       }));
     });
     document.getElementById('btn-eval-suite').addEventListener('click', async () => {
-      const res = await Api.runEvaluationSuite({ limit: 20 });
-      document.getElementById('agent-evaluation-result').innerHTML = `<div class="card"><h3>Suite Result</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data?.summary || res.data, null, 2))}</pre></div>`;
+      const res = await Api.runEvaluationSuite({ limit: 50 });
+      const summary = res.data?.summary || {};
+      document.getElementById('agent-evaluation-result').innerHTML = `
+        <div class="grid grid-3" style="gap:12px;">
+          <div class="stat-card"><span class="stat-label">Average</span><strong>${Utils.escapeHtml(String(summary.averageScore ?? '-'))}%</strong></div>
+          <div class="stat-card"><span class="stat-label">Passed</span><strong>${Utils.escapeHtml(String(summary.passedCases ?? 0))}/${Utils.escapeHtml(String(summary.totalCases ?? 0))}</strong></div>
+          <div class="stat-card"><span class="stat-label">Quality Gates</span><strong>${Utils.escapeHtml(summary.qualityGateStatus || '-')}</strong></div>
+        </div>
+        <div class="card" style="margin-top:12px;"><h3>Category Scores</h3><pre>${Utils.escapeHtml(JSON.stringify(summary.categoryScores || {}, null, 2))}</pre></div>
+        ${(summary.failures || []).length ? `<div class="alert alert-warning"><pre>${Utils.escapeHtml(JSON.stringify(summary.failures, null, 2))}</pre></div>` : ''}
+      `;
     });
     document.getElementById('btn-eval-runs').addEventListener('click', async () => {
       const res = await Api.listEvaluationRuns({ limit: 5 });
       document.getElementById('agent-evaluation-result').innerHTML = `<pre>${Utils.escapeHtml(JSON.stringify(res.data?.items || [], null, 2))}</pre>`;
+    });
+    document.getElementById('btn-eval-gates').addEventListener('click', async () => {
+      const res = await Api.getEvaluationQualityGates();
+      document.getElementById('agent-evaluation-result').innerHTML = `<div class="card"><h3>Quality Gates</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data?.qualityGates || res.data, null, 2))}</pre></div>`;
+    });
+    document.getElementById('btn-eval-compare').addEventListener('click', async () => {
+      const res = await Api.compareEvaluationRuns();
+      document.getElementById('agent-evaluation-result').innerHTML = `<div class="card"><h3>Regression Compare</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data?.compare || res.data, null, 2))}</pre></div>`;
     });
   },
 

@@ -5,6 +5,7 @@ const agentRouter = require('./agent-router');
 const promptComposer = require('./agent-prompt-composer');
 const responseRenderer = require('./agent-response-renderer');
 const policy = require('./response-policy');
+const topicClassifier = require('./topic-classifier');
 const telegramClient = require('../multibot/telegram-client');
 const fileIntentGuard = require('../multimodal/file-intent-guard');
 const outputSanitizer = require('../ai-os/output-sanitizer');
@@ -21,6 +22,29 @@ const {
   safeWrite,
   sanitizeSummary
 } = require('./agent-utils');
+
+const AGENT_RECENT_TOPIC_KEY = 'agent_recent_chat_topics';
+
+function sanitizeDomainLeakage(text = '', event = {}, route = {}) {
+  const topics = route.topics || topicClassifier.classifyMessageTopic(event.text || '', route || {});
+  const personalDomain = topicClassifier.isPersonalDomainMessage(event.text || '', topics);
+  if (!personalDomain) return text;
+  return String(text || '')
+    .split('\n')
+    .filter(line => {
+      const raw = line.toLowerCase();
+      if (raw.includes('fokus saya: cek akar masalah teknis')) return false;
+      if (raw.includes('risiko regresi')) return false;
+      if (raw.includes('langkah implementasi paling kecil')) return false;
+      if (raw.includes('error python')) return false;
+      if (raw.includes('stack trace')) return false;
+      if (raw.includes('debug') || raw.includes('deploy')) return false;
+      return true;
+    })
+    .join('\n')
+    .replace(/\b(coder|ops)\s+agent\b[:. ]*/gi, '')
+    .trim();
+}
 
 function isLikelyGroupChat(chatId = '', event = {}) {
   if (event.chatType && event.chatType !== 'private') return true;
@@ -55,12 +79,13 @@ function normalizeVisibleReplyMode(value, fallback = 'off') {
   return ['off', 'selected', 'council_only'].includes(String(value || '')) ? String(value) : fallback;
 }
 
-function sanitizeAgentTelegramText(text = '', event = {}, services = {}) {
+function sanitizeAgentTelegramText(text = '', event = {}, services = {}, route = {}) {
   const fileRelated = fileIntentGuard.isFileRelatedMessage(event.text || '', {
     event,
     hasAttachment: Boolean(event.update?.message?.photo || event.update?.message?.document || event.update?.message?.voice)
   });
-  return outputSanitizer.sanitizeAssistantVisibleText(responseRenderer.stripDebugFromNaturalReply(text), {
+  const domainClean = sanitizeDomainLeakage(responseRenderer.stripDebugFromNaturalReply(text), event, route);
+  return outputSanitizer.sanitizeAssistantVisibleText(domainClean, {
     userText: event.text || '',
     fileRelated,
     forceClean: true
@@ -98,6 +123,41 @@ async function getGroupSettings(chatId, services = {}) {
   const all = await safeRead(GROUP_SETTINGS_KEY, {}, services);
   const defaults = buildDefaultGroupSettings(chatId, services);
   return { ...defaults, ...(all[String(chatId)] || {}) };
+}
+
+async function getRecentChatTopic(chatId, userId, services = {}) {
+  const all = await safeRead(AGENT_RECENT_TOPIC_KEY, {}, services);
+  const scopedKey = `${String(chatId)}:${String(userId || '')}`;
+  const chatKey = String(chatId);
+  const item = all[scopedKey] || all[chatKey] || null;
+  if (!item) return null;
+  const ageMs = Date.now() - Number(item.ts || 0);
+  if (ageMs > Number(services.agentRecentTopicTtlMs || 20 * 60 * 1000)) return null;
+  return item;
+}
+
+async function rememberChatTopic(chatId, userId, topics = [], text = '', services = {}) {
+  const cleanTopics = (topics || []).filter(topic => topic && topic !== 'unknown' && topic !== 'casual');
+  if (!cleanTopics.length) return null;
+  const all = await safeRead(AGENT_RECENT_TOPIC_KEY, {}, services);
+  const item = sanitizeSummary({
+    chatId: String(chatId),
+    userId: String(userId || ''),
+    topics: cleanTopics.slice(0, 8),
+    textPreview: buildSafeText(text, 180),
+    ts: Date.now(),
+    updatedAt: nowIso()
+  });
+  all[`${String(chatId)}:${String(userId || '')}`] = item;
+  all[String(chatId)] = item;
+  const keys = Object.keys(all);
+  if (keys.length > 500) {
+    keys.sort((a, b) => Number(all[b].ts || 0) - Number(all[a].ts || 0))
+      .slice(500)
+      .forEach(key => delete all[key]);
+  }
+  await safeWrite(AGENT_RECENT_TOPIC_KEY, all, services);
+  return item;
 }
 
 async function setGroupSettings(chatId, patch = {}, services = {}) {
@@ -147,10 +207,13 @@ async function routeConversationEvent(event = {}, services = {}) {
       route: null
     };
   }
+  const recent = await getRecentChatTopic(event.chatId, event.userId, services);
   const route = agentRouter.routeMessage(event.text, {
     chatId: event.chatId,
     userId: event.userId,
     groupSettings,
+    previousTopics: event.previousTopics || recent?.topics || [],
+    previousText: event.previousText || recent?.textPreview || '',
     forceMode: event.forceMode || groupSettings.mode || 'natural_smart'
   }, services);
   return { ok: true, event, groupSettings, route };
@@ -222,7 +285,7 @@ async function sendAgentResponses(event = {}, route = {}, responses = [], servic
       topics: route.topics || []
     }, services);
     const groupSettings = await getGroupSettings(event.chatId, services);
-    await sendAsConfiguredBot(groupSettings.orchestratorBotId || event.botId || 'default', event.chatId, sanitizeAgentTelegramText(text, event, services), {
+    await sendAsConfiguredBot(groupSettings.orchestratorBotId || event.botId || 'default', event.chatId, sanitizeAgentTelegramText(text, event, services, route), {
       reply_to_message_id: event.messageId || undefined,
       disable_web_page_preview: true,
       userText: event.text || '',
@@ -235,7 +298,7 @@ async function sendAgentResponses(event = {}, route = {}, responses = [], servic
   const visible = responses.filter(item => (route.selectedAgents || []).includes(item.agentId));
   const sorted = visible.sort((a, b) => order.indexOf(a.agentId) - order.indexOf(b.agentId));
   for (const response of sorted) {
-    await sendAsConfiguredBot(response.botId, event.chatId, sanitizeAgentTelegramText(response.text, event, services), {
+    await sendAsConfiguredBot(response.botId, event.chatId, sanitizeAgentTelegramText(response.text, event, services, route), {
       reply_to_message_id: event.messageId || undefined,
       disable_web_page_preview: true,
       userText: event.text || '',
@@ -268,7 +331,7 @@ async function sendVisibleSpecialistReplies(event = {}, route = {}, responses = 
 
   const sentBotIds = [];
   for (const response of specialists) {
-    const clean = sanitizeAgentTelegramText(response.text, event, services);
+    const clean = sanitizeAgentTelegramText(response.text, event, services, route);
     if (!clean) continue;
     await sendAsConfiguredBot(response.botId || response.agentId, event.chatId, clean, {
       reply_to_message_id: event.messageId || undefined,
@@ -306,6 +369,7 @@ async function recordAgentActivity(event = {}, route = {}, responses = [], servi
   activity.unshift(item);
   await safeWrite(AGENT_ACTIVITY_KEY, activity.slice(0, 200), services);
   try {
+    await rememberChatTopic(event.chatId, event.userId, route.topics || [], event.text || '', services);
     await services.auditLog?.recordAuditLog?.({
       actorType: 'telegram',
       actorId: event.userId,
@@ -331,8 +395,10 @@ async function listAgentActivity(options = {}, services = {}) {
 module.exports = {
   createConversationEvent,
   collectAgentDrafts,
+  getRecentChatTopic,
   getGroupSettings,
   listAgentActivity,
+  rememberChatTopic,
   preventDuplicateReplies,
   recordAgentActivity,
   routeConversationEvent,

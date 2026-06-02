@@ -1,6 +1,7 @@
 'use strict';
 
 const agentRegistry = require('./agent-registry');
+const classifier = require('./topic-classifier');
 const { unique } = require('./agent-utils');
 
 const TOPIC_AGENT_MAP = {
@@ -28,6 +29,10 @@ const TOPIC_AGENT_MAP = {
   telegram: ['coder', 'ops'],
   personal_reflection: ['reflection', 'planner'],
   emotional: ['reflection'],
+  emotional_support: ['reflection'],
+  social_advice: ['reflection'],
+  school_life: ['reflection'],
+  daily_life: ['reflection'],
   finance: ['critic'],
   learning: ['reflection', 'research']
 };
@@ -41,6 +46,10 @@ function scoreAgent(agent, message, topics = [], risk = {}, context = {}) {
   if ((risk.writeOrExternalIntent || risk.actionRequested) && agent.id === 'executor') score += 45;
   if (risk.level === 'danger' && agent.id === 'security') score += 35;
   if (agent.id === 'critic' && (topics.includes('planning') || topics.includes('roadmap'))) score += 18;
+  const personalDomain = classifier.isPersonalDomainMessage(message, topics);
+  if (personalDomain && ['coder', 'ops', 'executor', 'tools', 'memory'].includes(agent.id) && !context.mentionedAgents?.includes(agent.id)) score -= 95;
+  if (personalDomain && agent.id === 'security' && !risk.secretDetected && risk.level !== 'danger' && !context.mentionedAgents?.includes(agent.id)) score -= 80;
+  if (personalDomain && agent.id === 'critic' && !risk.dangerIntent && !risk.secretDetected) score -= 28;
   if (topics.includes('emotional') && ['coder', 'ops', 'security'].includes(agent.id) && !context.mentionedAgents?.includes(agent.id)) score -= 80;
   if (topics.includes('casual') && agent.id !== 'orchestrator') score -= 80;
   score += Number(agent.priority || 0) / 10;

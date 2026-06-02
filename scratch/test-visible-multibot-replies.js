@@ -83,6 +83,28 @@ function createServices() {
   await agents.conversationBus.sendAgentResponses(event, routedLimited.route, await agents.conversationBus.collectAgentDrafts(event, routedLimited.route, services), services);
   assert.ok(services.sent.filter(item => item.botId !== 'default').length <= 1, 'maxVisibleSpecialistBots enforced');
 
+  services.sent.length = 0;
+  const schoolEvent = agents.conversationBus.createConversationEvent({
+    message: {
+      message_id: 2,
+      text: 'Aku dimarahin guru karena telat',
+      chat: { id: '-1001', type: 'group' },
+      from: { id: 'u1', is_bot: false }
+    }
+  }, {}, services);
+  await agents.conversationBus.setGroupSettings('-1001', {
+    mode: 'natural_smart',
+    multiBotVisibleReplies: true,
+    visibleSpecialistReplies: 'selected',
+    maxVisibleSpecialistBots: 2
+  }, services);
+  const schoolRoute = await agents.conversationBus.routeConversationEvent(schoolEvent, services);
+  assert.ok(schoolRoute.route.selectedAgents.includes('reflection'), 'personal/school route should select reflection');
+  assert.ok(!schoolRoute.route.selectedAgents.includes('coder'), 'coder must stay silent for school advice');
+  await agents.conversationBus.sendAgentResponses(schoolEvent, schoolRoute.route, await agents.conversationBus.collectAgentDrafts(schoolEvent, schoolRoute.route, services), services);
+  assert.ok(!services.sent.some(item => item.botId === 'coder'), 'coder bot should not reply to school advice');
+  assert.ok(!services.sent.some(item => /teknis|regresi|deploy|debug/i.test(item.text)), 'school advice must not leak technical text');
+
   const botMessage = agents.conversationBus.createConversationEvent({
     message: {
       text: 'bot loop',

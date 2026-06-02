@@ -10,6 +10,7 @@ module.exports = {
   agentApprovalFlow: require('./agent-approval-flow'),
   agentEvaluationCases: require('./agent-evaluation-cases'),
   agentEvaluationHarness: require('./agent-evaluation-harness'),
+  agentEvaluationV2: require('./eval'),
   agentEvaluationScorer: require('./agent-evaluation-scorer'),
   agentExecutorBridge: require('./agent-executor-bridge'),
   agentExecutorPolicy: require('./agent-executor-policy'),

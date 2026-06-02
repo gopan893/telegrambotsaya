@@ -57,4 +57,11 @@ const emotional = relevance.filterRelevantMemories(memories, 'Saya capek hari in
 });
 assert.ok(!emotional.some(item => item.id === 'm1'));
 
+const schoolAdvice = relevance.filterRelevantMemories(memories, 'Bagaimana menghadapi guru yang marah?', { id: 'reflection' }, {
+  workspaceId: 'ws1',
+  userId: 'u1',
+  topics: ['school_life', 'social_advice']
+});
+assert.ok(!schoolAdvice.some(item => item.id === 'm1'), 'school advice must not inject Render/Node technical memory');
+
 console.log('test-agent-memory-relevance: ok');

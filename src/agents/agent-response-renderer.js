@@ -3,6 +3,7 @@
 const { buildSafeText, maskSecret } = require('./agent-utils');
 const outputSanitizer = require('../ai-os/output-sanitizer');
 const fileIntentGuard = require('../multimodal/file-intent-guard');
+const topicClassifier = require('./topic-classifier');
 
 const DEBUG_PATTERNS = [
   /^Smart Agent Router\b/im,
@@ -36,7 +37,26 @@ function sanitizeRenderedReply(text = '', context = {}, event = {}) {
     event,
     hasAttachment: context.hasAttachment
   });
-  return outputSanitizer.sanitizeAssistantVisibleText(stripDebugFromNaturalReply(text), {
+  const topics = context.topics || context.route?.topics || [];
+  const personalDomain = topicClassifier.isPersonalDomainMessage?.(context.text || event.text || '', topics);
+  let clean = stripDebugFromNaturalReply(text);
+  if (personalDomain) {
+    clean = clean
+      .split('\n')
+      .filter(line => {
+        const raw = line.toLowerCase();
+        if (raw.includes('fokus saya: cek akar masalah teknis')) return false;
+        if (raw.includes('risiko regresi')) return false;
+        if (raw.includes('langkah implementasi paling kecil')) return false;
+        if (raw.includes('error python')) return false;
+        if (raw.includes('stack trace')) return false;
+        if (raw.includes('debug') || raw.includes('deploy')) return false;
+        return true;
+      })
+      .join('\n')
+      .trim();
+  }
+  return outputSanitizer.sanitizeAssistantVisibleText(clean, {
     userText: context.text || event.text || '',
     fileRelated,
     forceClean: true
@@ -125,6 +145,35 @@ function renderEmotionalFallback() {
   ].join('\n');
 }
 
+function renderPersonalAdviceFallback(text = '', topics = []) {
+  if (topics.includes('school_life') || /\b(guru|sekolah|telat|dimarahin|dimarahi)\b/i.test(text)) {
+    return [
+      'Tenang dulu. Saat guru sedang marah, jangan membalas atau memotong pembicaraan.',
+      '',
+      'Yang paling aman:',
+      '1. Dengarkan dulu sampai selesai.',
+      '2. Minta maaf singkat tanpa banyak alasan.',
+      '3. Akui bagian yang memang salah.',
+      '4. Tawarkan perbaikan yang jelas.',
+      '',
+      'Contoh kalimat:',
+      '"Maaf Pak/Bu, saya terlambat. Saya paham ini salah, dan saya akan berusaha datang lebih awal. Kalau ada tugas atau konsekuensi, saya siap memperbaiki."',
+      '',
+      'Kalau guru masih emosi, cukup jawab pendek dan sopan. Jelaskan alasan nanti saat suasananya lebih tenang.'
+    ].join('\n');
+  }
+
+  return [
+    'Mulai dari menenangkan situasi dulu, lalu jawab dengan sopan dan singkat.',
+    '',
+    'Langkah praktis:',
+    '1. Dengarkan tanpa membalas saat emosi sedang tinggi.',
+    '2. Minta maaf untuk bagian yang memang salah.',
+    '3. Jelaskan seperlunya tanpa menyalahkan orang lain.',
+    '4. Tunjukkan satu tindakan perbaikan yang bisa kamu lakukan sekarang.'
+  ].join('\n');
+}
+
 function renderFinalSynthesis(orchestratorDraft = {}, specialistDrafts = [], context = {}) {
   const event = context.event || {};
   const route = context.route || context.policy || {};
@@ -132,7 +181,10 @@ function renderFinalSynthesis(orchestratorDraft = {}, specialistDrafts = [], con
   const topics = context.topics || route.topics || [];
   let answer = '';
 
-  if (topics.includes('emotional') || topics.includes('personal_reflection')) {
+  const personalDomain = topicClassifier.isPersonalDomainMessage?.(text, topics);
+  if (personalDomain && (topics.includes('school_life') || topics.includes('social_advice') || topics.includes('daily_life') || topics.includes('emotional_support'))) {
+    answer = renderPersonalAdviceFallback(text, topics);
+  } else if (topics.includes('emotional') || topics.includes('personal_reflection')) {
     answer = renderEmotionalFallback();
   } else if (topics.includes('security') || topics.includes('secret') || topics.includes('restore') || topics.includes('import') || topics.includes('executor')) {
     answer = renderSecurityFallback(route);

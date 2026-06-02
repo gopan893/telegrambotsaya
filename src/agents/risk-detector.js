@@ -7,11 +7,11 @@ function detectSecretLikeContent(message) {
 }
 
 function detectActionRequest(message) {
-  return /\b(jalankan|menjalankan|eksekusi|run|approve|set webhook|restore|import|hapus|delete|kirim|ubah permission)\b/i.test(String(message?.text || message || ''));
+  return /\b(jalankan|menjalankan|eksekusi|run|approve|set webhook|restore|import|hapus|delete|kirim|ubah permission|kerjakan keputusan|terapkan keputusan|kerjakan delegasi)\b/i.test(String(message?.text || message || ''));
 }
 
 function detectWriteOrExternalIntent(message) {
-  return /\b(restore|import|overwrite|hapus|delete|jalankan|menjalankan|eksekusi|run|set env|set webhook|kirim email|external api)\b/i.test(String(message?.text || message || ''));
+  return /\b(restore|import|overwrite|hapus|delete|jalankan|menjalankan|eksekusi|run|set env|set webhook|kirim email|external api|kerjakan keputusan|terapkan keputusan|kerjakan delegasi)\b/i.test(String(message?.text || message || ''));
 }
 
 function detectDangerIntent(message) {
@@ -27,7 +27,9 @@ function detectMessageRisk(message, topics = [], context = {}, services = {}) {
   let level = 'low';
   if (action || writeExternal) level = 'medium';
   if (danger || secret || topics.includes('security')) level = 'high';
-  if (secret || textIncludesAny(text, ['drop table', 'hapus semua', 'overwrite production', 'restore backup lama'])) level = 'danger';
+  if ((topics.includes('debugging') || topics.includes('deploy')) && /\b(error|gagal|crash|deploy|render|python)\b/i.test(text)) level = 'medium';
+  if (topics.includes('executor') && action) level = 'medium';
+  if (secret || topics.includes('secret') || textIncludesAny(text, ['drop table', 'hapus semua', 'overwrite production', 'restore backup lama'])) level = 'danger';
   return {
     level,
     riskLevel: level,

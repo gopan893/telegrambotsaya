@@ -39,8 +39,22 @@ Contoh routing:
 | `Bot saya error setelah deploy` | Orchestrator, Ops, Coder |
 | `Saya ingin restore backup lama` | Orchestrator, Security, Executor, Ops |
 | `Saya capek hari ini` | Orchestrator, Reflection |
+| `Bagaimana menghadapi guru yang sedang marah?` | Orchestrator, Reflection |
 | `Cari API vision gratis` | Orchestrator, Research, Coder |
 | `Saya ingin menjalankan backup sekarang` | Orchestrator, Executor, Security, Ops |
+
+## Domain Guard
+
+Topik personal, sosial, sekolah, dan emotional support selalu menang atas konteks teknis lama. Contoh keyword: `guru`, `sekolah`, `dimarahin`, `minta maaf`, `telat`, `marah besar`, `takut`, dan `capek`.
+
+Untuk domain ini:
+
+- visible agents: `orchestrator`, `reflection`;
+- optional internal risk check: `critic`;
+- muted: `coder`, `ops`, `executor`, dan technical tool agent kecuali user memang menyebut coding/error/deploy/terminal/database;
+- memory teknis seperti Render, Python, PostgreSQL, atau regression context tidak disuntikkan ke jawaban personal.
+
+Short follow-up seperti `Solusinya apa?` memakai replied message atau topik user terakhir di chat. Jika konteks sebelumnya adalah guru/sekolah, jawaban tetap tentang situasi itu, bukan kembali ke error Python/deploy.
 
 ## Council Integration
 

@@ -358,6 +358,18 @@ const Api = {
     return this.apiGet('/agent-evaluation/latest');
   },
 
+  async getEvaluationRun(runId) {
+    return this.apiGet(`/agent-evaluation/runs/${encodeURIComponent(runId)}`);
+  },
+
+  async getEvaluationQualityGates() {
+    return this.apiGet('/agent-evaluation/quality-gates');
+  },
+
+  async compareEvaluationRuns() {
+    return this.apiGet('/agent-evaluation/compare');
+  },
+
   async listTools(filters = {}) {
     const params = new URLSearchParams();
     ['category', 'riskLevel', 'source', 'enabled', 'q', 'limit'].forEach(key => {

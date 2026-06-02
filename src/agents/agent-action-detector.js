@@ -157,6 +157,7 @@ function inferActionRisk(actionType = '', text = '') {
   const raw = `${actionType} ${text}`.toLowerCase();
   if (/\b(shell|code execution|javascript|env|config|permission|admin|token|secret|delete|hard delete|drop)\b/.test(raw)) return 'danger';
   if (/\b(restore|import|overwrite|bulk|external api write)\b/.test(raw)) return 'danger';
+  if (/\b(decision\.apply|delegation\.apply|proposal\.create)\b/.test(raw)) return 'medium';
   if (/\b(backup\.create|planner\.task|workflow\.step|goal\.progress|benchmark|write|archive)\b/.test(raw)) return 'medium';
   if (/\b(diagnostics|integrity|recovery|report|preview)\b/.test(raw)) return 'low';
   return utils.inferRiskFromText(text);

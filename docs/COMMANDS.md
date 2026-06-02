@@ -99,6 +99,8 @@ Phase 25 menambahkan action-aware natural chat. Pesan seperti `jalankan backup s
 | `/evalagents` | Jalankan evaluation suite dry-run untuk routing, risk, proposal, dan safety. |
 | `/evalagent <caseId>` | Jalankan satu evaluation case. |
 | `/evalsummary` | Lihat summary evaluation terbaru. |
+| `/evalgates` | Lihat status quality gates evaluation v2. |
+| `/evalcompare` | Bandingkan dua evaluation run terakhir dan tampilkan regresi. |
 
 ## Tool Registry
 
