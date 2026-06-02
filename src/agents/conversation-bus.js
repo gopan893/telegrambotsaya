@@ -3,6 +3,7 @@
 const agentRegistry = require('./agent-registry');
 const agentRouter = require('./agent-router');
 const promptComposer = require('./agent-prompt-composer');
+const responseRenderer = require('./agent-response-renderer');
 const policy = require('./response-policy');
 const telegramClient = require('../multibot/telegram-client');
 const {
@@ -164,6 +165,20 @@ async function collectAgentDrafts(event = {}, routeOrPolicy = {}, services = {})
 }
 
 async function sendAgentResponses(event = {}, route = {}, responses = [], services = {}) {
+  const mode = route.policy?.mode || route.mode || route.commandMode || 'natural_smart';
+  if (!['council', 'debate', 'allagents'].includes(mode) && !services.debugAgentRouting) {
+    const text = responseRenderer.renderNaturalSmartReply(event, route, responses, {
+      event,
+      route,
+      text: event.text,
+      topics: route.topics || []
+    }, services);
+    await telegramClient.sendMessageAsBot(event.botId || 'default', event.chatId, text, {
+      reply_to_message_id: event.messageId || undefined,
+      disable_web_page_preview: true
+    }, services);
+    return { sent: 1 };
+  }
   const order = policy.buildResponseOrder(route.policy || route);
   const visible = responses.filter(item => (route.selectedAgents || []).includes(item.agentId));
   const sorted = visible.sort((a, b) => order.indexOf(a.agentId) - order.indexOf(b.agentId));

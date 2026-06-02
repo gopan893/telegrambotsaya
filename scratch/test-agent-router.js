@@ -51,4 +51,9 @@ assert.ok(all.selectedAgents.includes('executor'));
 
 assert.ok(selected('Halo').selectedAgents.length <= 3);
 
+const debug = agents.agentResponseRenderer.renderDebugRouterReply(selected('saya bingung lanjut phase berapa'));
+assert.ok(/Smart Agent Router/i.test(debug));
+assert.ok(/Mode:/i.test(debug));
+assert.ok(/Agent:/i.test(debug));
+
 console.log('test-agent-router: ok');

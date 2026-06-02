@@ -8,6 +8,7 @@ module.exports = {
   agentPreferences: require('./agent-preferences'),
   agentProfileStore: require('./agent-profile-store'),
   agentPromptComposer: require('./agent-prompt-composer'),
+  agentResponseRenderer: require('./agent-response-renderer'),
   agentRouter: require('./agent-router'),
   agentScoring: require('./agent-scoring'),
   agentStyleBuilder: require('./agent-style-builder'),

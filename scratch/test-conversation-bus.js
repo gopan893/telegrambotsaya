@@ -10,6 +10,12 @@ function createServices() {
   return {
     env: { TELEGRAM_TOKEN: 'legacy-token' },
     botRegistry: multibot.botRegistry,
+    telegramClient: {
+      sendMessageAsBot: async (botId, chatId, text) => {
+        sent.push({ botId, chatId, text });
+        return { ok: true };
+      }
+    },
     __agentMemory: db,
     safeSendMessage: async (chatId, text) => {
       sent.push({ chatId, text });
@@ -49,6 +55,13 @@ function createServices() {
   const drafts = await agents.conversationBus.collectAgentDrafts(event, smart.route, services);
   const order = drafts.filter(d => smart.route.selectedAgents.includes(d.agentId)).map(d => d.agentId);
   assert.equal(order[0], 'orchestrator');
+  const sentResult = await agents.conversationBus.sendAgentResponses(event, smart.route, drafts, services);
+  assert.equal(sentResult.sent, 1);
+  assert.ok(services.sent[0].text);
+  assert.ok(!/Smart Agent Router/i.test(services.sent[0].text));
+  assert.ok(!/Mode:/i.test(services.sent[0].text));
+  assert.ok(!/^Agent:/im.test(services.sent[0].text));
+  assert.ok(!/Saya bertindak sebagai/i.test(services.sent[0].text));
 
   const emotionalEvent = agents.conversationBus.createConversationEvent({
     message: {

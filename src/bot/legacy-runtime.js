@@ -3443,25 +3443,27 @@ async function renderAgentRoutePreview(text, mode, chatId, userId) {
     userId,
     groupSettings: settings
   }, services);
-  await smartAgentSystem.conversationBus.recordAgentActivity({
+  const event = {
     chatId: String(chatId),
     userId: String(userId),
     botId: 'default',
     text,
     createdAt: new Date().toISOString()
-  }, route, [], services);
-  return [
-    `Mode: ${route.policy?.mode || route.commandMode}`,
-    `Topics: ${(route.topics || []).join(', ') || '-'}`,
-    `Risk: ${route.risk?.level || 'low'}`,
-    `Selected: ${(route.selectedAgents || []).join(', ') || '-'}`,
-    `Internal: ${(route.internalOnlyAgents || []).join(', ') || '-'}`,
-    `Muted: ${(route.mutedAgents || []).slice(0, 8).join(', ') || '-'}`,
-    '',
-    route.approvalRequired
-      ? 'Aksi write/external/danger tidak dijalankan langsung. Buat proposal dan approve eksplisit sebelum run.'
-      : 'Tidak ada aksi berbahaya yang dijalankan.'
-  ].join('\n');
+  };
+  const drafts = ['council', 'debate', 'allagents'].includes(mode)
+    ? await smartAgentSystem.conversationBus.collectAgentDrafts(event, route, services)
+    : [];
+  await smartAgentSystem.conversationBus.recordAgentActivity(event, route, drafts, services);
+  if (['council', 'debate', 'allagents'].includes(mode)) {
+    return [
+      'Agent Council',
+      '',
+      smartAgentSystem.agentResponseRenderer.renderCouncilReply(drafts, { route, event })
+    ].join('\n');
+  }
+  return smartAgentSystem.agentResponseRenderer.renderDebugRouterReply(route, route.scores || [], {
+    reason: route.reason || route.policy?.reason || ''
+  });
 }
 
 async function formatAgentProfile(agentId, services) {
@@ -3698,6 +3700,10 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
   }
 
   if (cmd === '/router' || cmd === '/routermode') {
+    if (args) {
+      await sendChunkedMessage(chatId, await renderAgentRoutePreview(args, 'natural_smart', chatId, userId), replyOpt);
+      return true;
+    }
     await sendChunkedMessage(chatId, await formatRouterStatus(chatId), replyOpt);
     return true;
   }
@@ -3776,18 +3782,13 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
   const drafts = await smartAgentSystem.conversationBus.collectAgentDrafts(event, route, services);
   await smartAgentSystem.conversationBus.recordAgentActivity(event, route, drafts, services);
 
-  const selectedDrafts = drafts.filter(draft => (route.selectedAgents || []).includes(draft.agentId));
-  const visibleText = [
-    'Smart Agent Router',
-    `Mode: ${route.policy?.mode || 'natural_smart'} | Risk: ${route.risk?.level || 'low'}`,
-    `Agent: ${(route.selectedAgents || []).join(', ')}`,
-    '',
-    ...selectedDrafts.map(draft => `• ${draft.text}`),
-    '',
-    route.approvalRequired
-      ? 'Catatan: request ini mengandung aksi/risk. Saya tidak akan menjalankan apa pun tanpa approval eksplisit.'
-      : ''
-  ].filter(Boolean).join('\n');
+  const visibleText = smartAgentSystem.agentResponseRenderer.renderNaturalSmartReply(event, route, drafts, {
+    text: userText,
+    chatId,
+    userId,
+    route,
+    topics: route.topics || []
+  }, services);
 
   await sendChunkedMessage(chatId, visibleText, { reply_to_message_id: msg.message_id });
   return { handled: true, answer: visibleText, route };
