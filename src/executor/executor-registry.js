@@ -6,6 +6,10 @@ function getPlanner() {
   return require('../planner');
 }
 
+function getBackup() {
+  return require('../backup');
+}
+
 function getDashboardActions() {
   return require('../dashboard/dashboard-actions');
 }
@@ -204,6 +208,116 @@ registerExecutor('memory.suggest_archive', async (action) => ({
   }
 }), {
   description: 'Suggest memory archive without archiving.',
+  riskLevel: 'low',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
+registerExecutor('backup.create', async (action, services) => {
+  const backup = getBackup();
+  const payload = action.payload || {};
+  const result = await backup.backupEngine.createWorkspaceBackup(payload.workspaceId || action.workspaceId, {
+    actorId: services.actorId || action.userId,
+    userId: action.userId,
+    createdBy: services.actorId || action.userId
+  }, services);
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Create a safe workspace backup.',
+  riskLevel: 'medium',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
+registerExecutor('backup.validate', async (action, services) => {
+  const backupId = action.payload?.backupId || action.targetId;
+  if (!backupId) return { ok: false, error: 'BACKUP_ID_REQUIRED' };
+  const result = await getBackup().backupEngine.validateBackup(backupId, services);
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Validate a backup manifest.',
+  riskLevel: 'low',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
+registerExecutor('recovery.check', async (_action, services) => {
+  const result = await getBackup().disasterRecovery.runDisasterRecoveryCheck(services);
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Run disaster recovery check.',
+  riskLevel: 'low',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
+registerExecutor('integrity.check', async (action, services) => {
+  const result = await getBackup().integrityChecker.runIntegrityCheck({
+    workspaceId: action.workspaceId,
+    userId: action.userId,
+    scope: action.payload?.scope || 'workspace'
+  }, services);
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Run data integrity check.',
+  riskLevel: 'low',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
+registerExecutor('restore.run', async () => ({
+  ok: false,
+  error: 'RESTORE_REQUIRES_DASHBOARD_CONFIRMATION',
+  result: {
+    message: 'Restore tidak dijalankan oleh agent executor. Gunakan dashboard restore plan dengan confirmation text RESTORE.'
+  }
+}), {
+  description: 'Restore request placeholder; dashboard confirmation required.',
+  riskLevel: 'danger',
+  requiresApproval: true,
+  permissionsRequired: ['danger']
+});
+
+registerExecutor('import.run', async () => ({
+  ok: false,
+  error: 'IMPORT_REQUIRES_VALIDATION_AND_CONFIRMATION',
+  result: {
+    message: 'Import tidak dijalankan oleh agent executor. Validasi import dan restore plan wajib lewat dashboard.'
+  }
+}), {
+  description: 'Import request placeholder; validation and confirmation required.',
+  riskLevel: 'danger',
+  requiresApproval: true,
+  permissionsRequired: ['danger']
+});
+
+registerExecutor('tool.preview', async (action, services) => {
+  const tools = require('../tools');
+  const result = await tools.toolRunner.previewToolRun(action.payload?.toolId || action.targetId, action.payload?.input || {}, {
+    approvedExecution: true,
+    actorId: services.actorId || action.userId,
+    userId: action.userId,
+    workspaceId: action.workspaceId
+  }, services);
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Preview a registered tool safely.',
+  riskLevel: 'low',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
+registerExecutor('tool.run_safe_readonly', async (action, services) => {
+  const tools = require('../tools');
+  const result = await tools.toolRunner.runTool(action.payload?.toolId || action.targetId, action.payload?.input || {}, {
+    approvedExecution: true,
+    actorId: services.actorId || action.userId,
+    userId: action.userId,
+    workspaceId: action.workspaceId
+  }, services);
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Run a safe read-only tool after approval.',
   riskLevel: 'low',
   requiresApproval: true,
   permissionsRequired: ['write']

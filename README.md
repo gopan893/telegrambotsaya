@@ -154,6 +154,12 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /risk restore backup production
 /confidence pakai 10 bot langsung
 /decisions
+/propose_action jalankan backup sekarang
+/actionplans
+/proposalstatus exec_xxx
+/evalagents
+/evalagent eval_backup_proposal
+/evalsummary
 ```
 
 Multi-bot visible replies bisa diaktifkan di grup dengan `/multibot_on`. Specialist bot hanya bicara jika dipilih router, maksimal default 2 agent, dan token tidak pernah ditampilkan. Gunakan env seperti `TELEGRAM_TOKEN_PLANNER`, `TELEGRAM_TOKEN_CODER`, dan `TELEGRAM_TOKEN_CRITIC`; typo `TELEGRAM_TOKEN_PLANNE` akan diberi warning aman.
@@ -166,6 +172,14 @@ Phase 23/24 menambahkan agent delegation dan decision system:
 - `/rundelegation` menjalankan reasoning task aman dan menyatukan hasilnya menjadi jawaban final.
 - `/decision`, `/compare`, `/proscons`, `/risk`, dan `/confidence` membuat analisis opsi, tradeoff, risk score, confidence, dan next step.
 - Delegation dan decision system tidak menjalankan shell, restore, import, write action, atau external action. Aksi berisiko tetap lewat executor approval.
+
+Phase 25 menghubungkan agent reasoning ke executor secara aman:
+
+- `jalankan backup sekarang` membuat action plan dan proposal backup, tetapi belum menjalankan backup.
+- `/approve <proposalId>` hanya approve.
+- `/runexec <proposalId>` baru menjalankan proposal yang sudah approved.
+- Agent tidak bisa self-approve atau self-run.
+- `/evalagents` menjalankan evaluation harness dry-run untuk mengecek routing, delegation, decision, risk, proposal, dan kebocoran secret sebelum menambah integrasi eksternal yang lebih kuat.
 
 ## Catatan Penting
 

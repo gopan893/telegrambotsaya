@@ -1492,11 +1492,106 @@ const UI = {
         <div id="executor-list">${UI.renderEmptyState('✅', 'Load Executor', 'Masukkan User ID untuk melihat proposal.')}</div>
         <div id="executor-runs">${UI.renderEmptyState('📋', 'Recent Runs', 'Run executor akan muncul di sini.')}</div>
       </div>
+      <div class="grid grid-2" style="gap:18px; align-items:start; margin-top:18px;">
+        <section class="panel">
+          <h3>Agent Executor Bridge</h3>
+          <p class="text-muted">Buat action plan dari natural request. Proposal tidak menjalankan action sampai di-approve dan di-run.</p>
+          <textarea id="agent-action-text" rows="3" placeholder="Contoh: jalankan backup sekarang"></textarea>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+            <button class="btn btn-primary" id="btn-agent-action-create">Create Action Plan</button>
+            <button class="btn btn-outline" id="btn-agent-action-load">Load Action Plans</button>
+          </div>
+          <div id="agent-action-plans" style="margin-top:12px;">${UI.renderEmptyState('🧩', 'Action Plans', 'Action plan agent akan muncul di sini.')}</div>
+        </section>
+        <section class="panel">
+          <h3>Agent Evaluation Harness</h3>
+          <p class="text-muted">Dry-run evaluation. Tidak ada action yang dieksekusi.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-outline" id="btn-eval-cases">Load Cases</button>
+            <button class="btn btn-primary" id="btn-eval-suite">Run Suite</button>
+            <button class="btn btn-outline" id="btn-eval-runs">Latest Runs</button>
+          </div>
+          <div id="agent-evaluation-result" style="margin-top:12px;">${UI.renderEmptyState('🧪', 'Evaluation Ready', 'Jalankan suite untuk mengukur routing, risk, proposal, dan safety.')}</div>
+        </section>
+      </div>
     `;
     targetEl.innerHTML = html;
     document.getElementById('btn-load-executor').addEventListener('click', loadExecutor);
     document.getElementById('btn-executor-create').addEventListener('click', createManualProposal);
     document.getElementById('btn-executor-propose-task').addEventListener('click', proposeTask);
+    const renderActionPlans = (items = []) => items.length ? items.map(plan => `
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <strong>${Utils.escapeHtml(plan.title || '-')}</strong>
+          ${UI.renderBadge(plan.status || 'draft')}
+        </div>
+        <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(plan.id || '-')}</div>
+        <p class="text-muted">${Utils.escapeHtml(plan.description || '')}</p>
+        <div class="kv-list">
+          <div class="kv-item"><span class="kv-key">Risk</span><span>${Utils.escapeHtml(plan.riskLevel || 'medium')}</span></div>
+          <div class="kv-item"><span class="kv-key">Actions</span><span>${(plan.actions || []).length}</span></div>
+          <div class="kv-item"><span class="kv-key">Proposal</span><span>${Utils.escapeHtml(plan.executorProposalId || '-')}</span></div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+          <button class="btn btn-outline" data-agent-plan-action="preflight" data-id="${Utils.escapeHtml(plan.id || '')}">Preflight</button>
+          <button class="btn btn-primary" data-agent-plan-action="propose" data-id="${Utils.escapeHtml(plan.id || '')}">Create Proposal</button>
+        </div>
+      </div>
+    `).join('') : UI.renderEmptyState('🧩', 'Belum Ada Action Plan', 'Buat dari natural action request.');
+    const bindActionPlanButtons = () => {
+      document.querySelectorAll('[data-agent-plan-action]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const action = btn.getAttribute('data-agent-plan-action');
+          const filters = getFilters();
+          const res = action === 'preflight'
+            ? await Api.preflightAgentActionPlan(id, filters)
+            : await Api.proposeAgentActionPlan(id, filters);
+          Utils.showToast(res?.ok && res.data?.ok !== false ? `${action} selesai.` : `${action} gagal.`, res?.ok && res.data?.ok !== false ? 'success' : 'danger');
+          if (action === 'preflight') {
+            document.getElementById('agent-action-plans').insertAdjacentHTML('beforeend', `<div class="alert alert-info" style="margin-top:8px;"><pre>${Utils.escapeHtml(JSON.stringify(res.data?.preflight || res.data, null, 2))}</pre></div>`);
+          } else {
+            await loadActionPlans();
+            await loadExecutor();
+          }
+        });
+      });
+    };
+    const loadActionPlans = async () => {
+      const filters = getFilters();
+      const res = await Api.listAgentActionPlans({ ...filters, limit: 20 });
+      const target = document.getElementById('agent-action-plans');
+      target.innerHTML = res.ok && res.data?.ok ? renderActionPlans(res.data.items || []) : UI.renderError('Gagal memuat action plan.');
+      bindActionPlanButtons();
+    };
+    document.getElementById('btn-agent-action-create').addEventListener('click', async () => {
+      const filters = getFilters();
+      const text = document.getElementById('agent-action-text').value.trim();
+      if (!text) return Utils.showToast('Isi action request dulu.', 'warning');
+      const res = await Api.createAgentActionPlan({ ...filters, text });
+      Utils.showToast(res?.ok && res.data?.ok ? 'Action plan dibuat.' : 'Gagal membuat action plan.', res?.ok && res.data?.ok ? 'success' : 'danger');
+      await loadActionPlans();
+    });
+    document.getElementById('btn-agent-action-load').addEventListener('click', loadActionPlans);
+    document.getElementById('btn-eval-cases').addEventListener('click', async () => {
+      const res = await Api.listEvaluationCases();
+      const items = res.data?.items || [];
+      document.getElementById('agent-evaluation-result').innerHTML = items.length
+        ? items.map(item => `<div class="card"><strong>${Utils.escapeHtml(item.id)}</strong><p>${Utils.escapeHtml(item.input)}</p><button class="btn btn-outline" data-eval-case="${Utils.escapeHtml(item.id)}">Run Case</button></div>`).join('')
+        : UI.renderEmptyState('🧪', 'No Cases', 'Evaluation case tidak tersedia.');
+      document.querySelectorAll('[data-eval-case]').forEach(btn => btn.addEventListener('click', async () => {
+        const run = await Api.runEvaluationCase(btn.getAttribute('data-eval-case'));
+        document.getElementById('agent-evaluation-result').insertAdjacentHTML('beforeend', `<div class="alert alert-info"><pre>${Utils.escapeHtml(JSON.stringify(run.data?.result || run.data, null, 2))}</pre></div>`);
+      }));
+    });
+    document.getElementById('btn-eval-suite').addEventListener('click', async () => {
+      const res = await Api.runEvaluationSuite({ limit: 20 });
+      document.getElementById('agent-evaluation-result').innerHTML = `<div class="card"><h3>Suite Result</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data?.summary || res.data, null, 2))}</pre></div>`;
+    });
+    document.getElementById('btn-eval-runs').addEventListener('click', async () => {
+      const res = await Api.listEvaluationRuns({ limit: 5 });
+      document.getElementById('agent-evaluation-result').innerHTML = `<pre>${Utils.escapeHtml(JSON.stringify(res.data?.items || [], null, 2))}</pre>`;
+    });
   },
 
   async renderAgents(targetEl) {

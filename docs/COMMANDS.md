@@ -76,12 +76,29 @@ Natural chat yang diarahkan ke planner: `apa prioritas saya?`, `langkah berikutn
 | `/executions` | Daftar proposal eksekusi terbaru untuk workspace user. |
 | `/pending` | Daftar proposal yang menunggu approval. |
 | `/propose <taskId>` | Buat proposal eksekusi dari planner task. Tidak menjalankan aksi. |
+| `/propose_action <aksi>` | Buat action plan dan proposal executor dari natural action request. |
+| `/actionplans` | Daftar action plan agent. |
+| `/actionplan <actionPlanId>` | Detail action plan dan action di dalamnya. |
+| `/propose_decision <decisionId>` | Buat proposal dari decision record. |
+| `/propose_delegation <delegationId>` | Buat proposal dari delegation session. |
+| `/propose_task <taskId>` | Buat proposal dari agent task. |
+| `/proposalstatus <proposalId>` | Cek status approval/proposal. |
 | `/approve <proposalId>` | Approve proposal. Approval tidak otomatis menjalankan aksi. |
 | `/runexec <proposalId>` | Jalankan proposal yang sudah approved. |
 | `/reject <proposalId> | <reason>` | Reject proposal. |
 | `/cancel_exec <proposalId>` | Cancel proposal pending/approved. |
 
 Natural chat seperti `jalankan task ini`, `eksekusi langkah berikutnya`, dan `buatkan proposal eksekusi` diarahkan ke executor. Bot hanya membuat proposal atau menjelaskan alur approval; tidak ada aksi write/eksternal yang berjalan tanpa `/approve` dan `/runexec`.
+
+Phase 25 menambahkan action-aware natural chat. Pesan seperti `jalankan backup sekarang`, `restore backup lama`, atau `kerjakan keputusan tadi` akan dibuatkan action plan/proposal, tetapi tetap belum dijalankan.
+
+## Agent Evaluation
+
+| Command | Fungsi |
+| --- | --- |
+| `/evalagents` | Jalankan evaluation suite dry-run untuk routing, risk, proposal, dan safety. |
+| `/evalagent <caseId>` | Jalankan satu evaluation case. |
+| `/evalsummary` | Lihat summary evaluation terbaru. |
 
 ## Tool Registry
 

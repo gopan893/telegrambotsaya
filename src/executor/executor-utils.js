@@ -57,7 +57,20 @@ function normalizeProposalStatus(value = 'pending_approval') {
 
 function normalizeSourceType(value = 'manual') {
   const clean = String(value || 'manual').toLowerCase();
-  return ['manual', 'planner_task', 'goal', 'workflow', 'ops', 'dashboard'].includes(clean) ? clean : 'manual';
+  return [
+    'manual',
+    'planner_task',
+    'goal',
+    'workflow',
+    'ops',
+    'dashboard',
+    'agent_action_plan',
+    'decision',
+    'council',
+    'delegation',
+    'agent_task',
+    'natural_chat'
+  ].includes(clean) ? clean : 'manual';
 }
 
 function normalizeActionStatus(value = 'pending_approval') {

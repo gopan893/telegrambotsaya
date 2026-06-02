@@ -299,6 +299,65 @@ const Api = {
     return this.apiGet(`/executor/runs${query ? `?${query}` : ''}`);
   },
 
+  async listAgentActionPlans(filters = {}) {
+    const params = new URLSearchParams();
+    ['userId', 'workspaceId', 'status', 'source', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/agent-executor/action-plans${query ? `?${query}` : ''}`);
+  },
+
+  async createAgentActionPlan(payload = {}) {
+    return this.apiPost('/agent-executor/action-plans/create', payload);
+  },
+
+  async preflightAgentActionPlan(planId, payload = {}) {
+    return this.apiPost(`/agent-executor/action-plans/${encodeURIComponent(planId)}/preflight`, payload);
+  },
+
+  async proposeAgentActionPlan(planId, payload = {}) {
+    return this.apiPost(`/agent-executor/action-plans/${encodeURIComponent(planId)}/propose`, payload);
+  },
+
+  async proposeAgentFromDecision(decisionId, payload = {}) {
+    return this.apiPost(`/agent-executor/from-decision/${encodeURIComponent(decisionId)}`, payload);
+  },
+
+  async proposeAgentFromDelegation(delegationId, payload = {}) {
+    return this.apiPost(`/agent-executor/from-delegation/${encodeURIComponent(delegationId)}`, payload);
+  },
+
+  async proposeAgentFromTask(taskId, payload = {}) {
+    return this.apiPost(`/agent-executor/from-task/${encodeURIComponent(taskId)}`, payload);
+  },
+
+  async listEvaluationCases(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.category) params.set('category', filters.category);
+    const query = params.toString();
+    return this.apiGet(`/agent-evaluation/cases${query ? `?${query}` : ''}`);
+  },
+
+  async runEvaluationCase(caseId, payload = {}) {
+    return this.apiPost('/agent-evaluation/run', { ...payload, caseId });
+  },
+
+  async runEvaluationSuite(payload = {}) {
+    return this.apiPost('/agent-evaluation/run-suite', payload);
+  },
+
+  async listEvaluationRuns(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.limit) params.set('limit', filters.limit);
+    const query = params.toString();
+    return this.apiGet(`/agent-evaluation/runs${query ? `?${query}` : ''}`);
+  },
+
+  async getLatestEvaluationRun() {
+    return this.apiGet('/agent-evaluation/latest');
+  },
+
   async listTools(filters = {}) {
     const params = new URLSearchParams();
     ['category', 'riskLevel', 'source', 'enabled', 'q', 'limit'].forEach(key => {

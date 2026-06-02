@@ -157,6 +157,14 @@ async function runApprovedExecution(proposalId, services = {}) {
       status: finalStatus,
       afterSummary: utils.summarizeRun(updatedRun)
     });
+    try {
+      await require('../agents/executor-result-router').routeExecutorResultToSource(proposalId, {
+        ok: result.ok,
+        proposal: updatedProposal,
+        run: updatedRun,
+        actionResults
+      }, services);
+    } catch (_) {}
     return { ok: result.ok, proposal: updatedProposal, run: updatedRun, actionResults };
   } catch (err) {
     await markExecutionFailed(proposalId, err, services);

@@ -22,6 +22,8 @@ const councilRoutes = require('./council-routes');
 const agentRoutes = require('./agent-routes');
 const agentTaskRoutes = require('./agent-task-routes');
 const decisionRoutes = require('./decision-routes');
+const agentExecutorRoutes = require('./agent-executor-routes');
+const agentEvaluationRoutes = require('./agent-evaluation-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -325,6 +327,8 @@ function registerDashboardRoutes(app, rawServices = {}) {
   agentRoutes.registerAgentRoutes(router, services);
   agentTaskRoutes.registerAgentTaskRoutes(router, services);
   decisionRoutes.registerDecisionRoutes(router, services);
+  agentExecutorRoutes.registerAgentExecutorRoutes(router, services);
+  agentEvaluationRoutes.registerAgentEvaluationRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

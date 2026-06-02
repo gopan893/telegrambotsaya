@@ -68,6 +68,11 @@ async function listPendingApprovals(options = {}, services = {}) {
 async function approveExecution(proposalId, approverId, services = {}) {
   const proposal = await getProposal(proposalId, services);
   if (!proposal) return { ok: false, reason: 'PROPOSAL_NOT_FOUND', status: 404 };
+  try {
+    const approvalFlow = require('../agents/agent-approval-flow');
+    const human = approvalFlow.validateHumanApprovalActor(approverId);
+    if (!human.ok) return { ok: false, reason: human.reason, status: 403 };
+  } catch (_) {}
   if (utils.isExpired(proposal)) {
     const expired = await store.updateExecutionItem(store.EXECUTOR_PROPOSALS_KEY, proposalId, { status: 'expired' }, services);
     return { ok: false, reason: 'PROPOSAL_EXPIRED', status: 400, proposal: expired };
@@ -97,6 +102,11 @@ async function approveExecution(proposalId, approverId, services = {}) {
 async function rejectExecution(proposalId, approverId, reason = '', services = {}) {
   const proposal = await getProposal(proposalId, services);
   if (!proposal) return { ok: false, reason: 'PROPOSAL_NOT_FOUND', status: 404 };
+  try {
+    const approvalFlow = require('../agents/agent-approval-flow');
+    const human = approvalFlow.validateHumanApprovalActor(approverId);
+    if (!human.ok) return { ok: false, reason: human.reason, status: 403 };
+  } catch (_) {}
   if (!['pending_approval', 'approved', 'draft'].includes(proposal.status)) return { ok: false, reason: `INVALID_STATUS_${proposal.status}`, status: 400 };
   const access = await guards.enforceExecutionPermission({
     actorId: approverId,

@@ -3670,6 +3670,15 @@ function formatDecisionTelegramResult(result = {}) {
   return sanitizeOutgoingText(lines.filter(Boolean).join('\n'), { userText: decision.question || '' });
 }
 
+function formatAgentActionPlanLine(plan = {}, index = 0) {
+  const prefix = index ? `${index}. ` : '';
+  return `${prefix}${plan.id} [${plan.status}/${plan.riskLevel}] ${plan.title || '-'} (${(plan.actions || []).length} action)`;
+}
+
+function formatAgentProposalResult(result = {}) {
+  return smartAgentSystem.agentApprovalFlow.formatProposalCreatedReply(result);
+}
+
 async function runDecisionTelegramCommand(chatId, userId, args, msg, mode = 'decision') {
   const services = getAgentServices(userId);
   const result = await smartAgentSystem.decisionStore.analyzeDecision({
@@ -3962,6 +3971,145 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
     return true;
   }
 
+  if (cmd === '/propose_action') {
+    const text = String(args || '').trim();
+    if (!text) {
+      await safeSendMessage(chatId, 'Format: /propose_action <aksi>\nContoh: /propose_action jalankan backup sekarang', replyOpt);
+      return true;
+    }
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const result = await smartAgentSystem.agentExecutorBridge.createProposalFromNaturalText(text, {
+      workspaceId,
+      userId,
+      source: 'natural_chat',
+      createdByAgentId: 'executor'
+    }, getAgentServices(userId));
+    await sendChunkedMessage(chatId, formatAgentProposalResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/actionplans') {
+    const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+    const items = await smartAgentSystem.agentActionPlan.listActionPlans({ workspaceId, userId, limit: 12 }, getAgentServices(userId));
+    await sendChunkedMessage(chatId, buildPlannerCommandText(
+      'Agent Action Plans',
+      items.map(formatAgentActionPlanLine),
+      'Belum ada action plan. Buat dengan /propose_action <aksi>.'
+    ), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/actionplan') {
+    const planId = String(args || '').trim();
+    if (!planId) {
+      await safeSendMessage(chatId, 'Format: /actionplan <actionPlanId>', replyOpt);
+      return true;
+    }
+    const plan = await smartAgentSystem.agentActionPlan.getActionPlan(planId, getAgentServices(userId));
+    if (!plan) {
+      await safeSendMessage(chatId, `Action plan tidak ditemukan: ${planId}`, replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, [
+      formatAgentActionPlanLine(plan),
+      '',
+      plan.description || '-',
+      '',
+      'Actions:',
+      ...(plan.actions || []).map((action, index) => `${index + 1}. ${action.type} [${action.riskLevel}] ${action.description}`),
+      '',
+      plan.executorProposalId ? `Proposal: ${plan.executorProposalId}` : `Buat proposal: /propose_action ${plan.title}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_decision') {
+    const decisionId = String(args || '').trim();
+    if (!decisionId) {
+      await safeSendMessage(chatId, 'Format: /propose_decision <decisionId>', replyOpt);
+      return true;
+    }
+    const result = await smartAgentSystem.agentExecutorBridge.createProposalFromDecision(decisionId, { userId, actorId: userId }, getAgentServices(userId));
+    await sendChunkedMessage(chatId, formatAgentProposalResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_delegation') {
+    const delegationId = String(args || '').trim();
+    if (!delegationId) {
+      await safeSendMessage(chatId, 'Format: /propose_delegation <delegationId>', replyOpt);
+      return true;
+    }
+    const result = await smartAgentSystem.agentExecutorBridge.createProposalFromDelegation(delegationId, { userId, actorId: userId }, getAgentServices(userId));
+    await sendChunkedMessage(chatId, formatAgentProposalResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_task') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, 'Format: /propose_task <agentTaskId>', replyOpt);
+      return true;
+    }
+    const result = await smartAgentSystem.agentExecutorBridge.createProposalFromAgentTask(taskId, { userId, actorId: userId }, getAgentServices(userId));
+    await sendChunkedMessage(chatId, formatAgentProposalResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/proposalstatus') {
+    const proposalId = String(args || '').trim();
+    if (!proposalId) {
+      await safeSendMessage(chatId, 'Format: /proposalstatus <proposalId>', replyOpt);
+      return true;
+    }
+    const status = await executorSystem.executionQueue.getApprovalStatus(proposalId, getExecutorServices(userId));
+    await safeSendMessage(chatId, status.ok ? smartAgentSystem.agentApprovalFlow.formatApprovalStatus(status.proposal) : `Proposal tidak ditemukan: ${status.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/evalagents') {
+    const result = await smartAgentSystem.agentEvaluationHarness.runEvaluationSuite({ limit: 20 }, getAgentServices(userId));
+    await sendChunkedMessage(chatId, [
+      'Agent Evaluation Suite',
+      `Status: ${result.summary.status}`,
+      `Score rata-rata: ${result.summary.average}%`,
+      `Passed: ${result.summary.passed}/${result.summary.total}`,
+      '',
+      'Evaluasi dry-run saja. Tidak ada action yang dieksekusi.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/evalagent') {
+    const caseId = String(args || '').trim();
+    if (!caseId) {
+      await safeSendMessage(chatId, 'Format: /evalagent <caseId>', replyOpt);
+      return true;
+    }
+    const result = await smartAgentSystem.agentEvaluationHarness.runEvaluationCase(caseId, getAgentServices(userId));
+    await sendChunkedMessage(chatId, result.ok === false ? `Evaluation gagal: ${result.reason}` : [
+      `Evaluation: ${result.case.id}`,
+      `Score: ${result.score.percentage}% (${result.score.passed ? 'passed' : 'failed'})`,
+      `Agents: ${(result.selectedAgents || []).join(', ') || '-'}`,
+      `Risk: ${result.riskLevel}`,
+      `Action: ${result.actionType || '-'}`,
+      `Approval: ${result.approvalRequired ? 'required' : 'no'}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/evalsummary') {
+    const latest = await smartAgentSystem.agentEvaluationHarness.getLatestEvaluationRun(getAgentServices(userId));
+    await sendChunkedMessage(chatId, latest ? [
+      'Latest Agent Evaluation',
+      `Run: ${latest.id}`,
+      `Status: ${latest.summary.status}`,
+      `Average: ${latest.summary.average}%`,
+      `Passed: ${latest.summary.passed}/${latest.summary.total}`
+    ].join('\n') : 'Belum ada evaluation run. Jalankan /evalagents.', replyOpt);
+    return true;
+  }
+
   if (cmd === '/decisions' || cmd === '/decisionhistory') {
     const items = await smartAgentSystem.decisionStore.listDecisionRecords({ workspaceId: 'default', userId, limit: 10 }, services);
     await sendChunkedMessage(chatId, [
@@ -4239,6 +4387,32 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
   const canReply = await smartAgentSystem.conversationBus.preventDuplicateReplies(event, services);
   if (!canReply) return { handled: true, answer: '', reason: 'duplicate_agent_route' };
+
+  try {
+    const actionNeed = smartAgentSystem.agentActionDetector.shouldUseAgentExecutor(userText, {
+      workspaceId: 'default',
+      userId,
+      source: 'natural_chat'
+    }, services);
+    if (actionNeed.needed) {
+      const result = await smartAgentSystem.agentExecutorBridge.createProposalFromNaturalText(userText, {
+        workspaceId: 'default',
+        userId,
+        source: 'natural_chat',
+        createdByAgentId: 'executor'
+      }, services);
+      const answer = smartAgentSystem.agentApprovalFlow.formatProposalCreatedReply(result);
+      await smartAgentSystem.conversationBus.recordAgentActivity(event, {
+        ...route,
+        reason: `agent_executor:${actionNeed.reason}`,
+        selectedAgents: ['orchestrator', 'executor', ...(result.preflight?.securityReviewRequired ? ['security'] : [])]
+      }, [], services);
+      await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id, userText });
+      return { handled: true, answer, route, actionPlanId: result.actionPlan?.id, proposalId: result.proposal?.id };
+    }
+  } catch (err) {
+    log.warn('Natural agent executor fallback:', err.message);
+  }
 
   try {
     const decisionNeed = smartAgentSystem.decisionDetector.shouldTriggerDecisionSystem(userText, route, {}, {}, services);
@@ -7489,6 +7663,16 @@ async function handleHelp(chatId, msg) {
 /executions - daftar proposal eksekusi
 /pending - approval eksekusi yang menunggu
 /propose taskId - buat proposal dari task planner
+/propose_action aksi - buat action plan + proposal dari natural action
+/actionplans - daftar action plan agent
+/actionplan actionPlanId - detail action plan
+/propose_decision decisionId - proposal dari decision
+/propose_delegation delegationId - proposal dari delegation
+/propose_task taskId - proposal dari agent task
+/proposalstatus proposalId - status proposal
+/evalagents - run evaluation suite dry-run
+/evalagent caseId - run satu evaluation case
+/evalsummary - summary evaluation terbaru
 /approve proposalId - approve tanpa menjalankan
 /runexec proposalId - jalankan proposal yang sudah approved
 /reject proposalId | reason
@@ -7724,6 +7908,16 @@ function isUnknownCommand(cmd) {
     '/executions',
     '/pending',
     '/propose',
+    '/propose_action',
+    '/actionplans',
+    '/actionplan',
+    '/propose_decision',
+    '/propose_delegation',
+    '/propose_task',
+    '/proposalstatus',
+    '/evalagents',
+    '/evalagent',
+    '/evalsummary',
     '/approve',
     '/reject',
     '/runexec',
