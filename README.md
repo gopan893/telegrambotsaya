@@ -20,6 +20,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Conversation continuity layer agar follow-up seperti `iya`, `lanjut`, `jelaskan`, dan pergantian topik dipahami natural
 - Interaction layer dengan inline keyboard, menu cepat, callback handler, dan confirmation flow untuk aksi penting
 - Human judgment safety layer untuk topik kesehatan, hukum, keuangan, keselamatan, dan keputusan besar
+- **Multi-Agent Coding Workspace** untuk analisis coding request, change planning, risk review, test planning, Codex prompt generation, dan GitHub proposal (Phase 29)
 
 ## Mulai Cepat
 

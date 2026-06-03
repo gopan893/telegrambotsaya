@@ -87,6 +87,39 @@ Command ops bersifat admin-only jika sensitif.
 | `/perf` | Performance summary. |
 | `/tokens` | Token estimate/usage. |
 
+## Coding Workspace (Phase 29)
+
+| Command | Fungsi |
+| --- | --- |
+| `/coding` | Tampilkan status coding workspace. |
+| `/codereq <text>` | Classify dan analisis coding request. |
+| `/codeplan <text>` | Buat code change plan dari request. |
+| `/codetasks` | Tampilkan daftar coding tasks. |
+| `/codeprompt <planId>` | Generate Codex-ready prompt dari plan. |
+| `/testplan <planId>` | Generate test plan dari plan. |
+| `/riskreview_code <planId>` | Jalankan risk review multi-agent. |
+| `/propose_github_issue_from_plan <planId>` | Buat proposal GitHub issue (Evaluation v2 + approval required). |
+| `/propose_github_pr_from_plan <planId>` | Buat proposal GitHub PR (Evaluation v2 + approval required). |
+
+### Natural Chat Coding
+
+Bot dapat mendeteksi coding request secara natural:
+
+- `buat prompt phase 30`
+- `menu Agents masih masuk Overview`
+- `buat issue GitHub untuk bug dashboard`
+- `buat PR untuk fix domain routing`
+- `bot saya error Python`
+- `tambahkan fitur reminder di bot`
+
+### Keamanan Coding Workspace
+
+- Tidak ada eksekusi shell
+- Tidak ada mutasi repo langsung
+- Tidak ada push/commit langsung
+- GitHub write harus melalui Evaluation v2 + executor approval
+- Semua output di-redact dari secrets
+
 ## Natural Chat Yang Didukung
 
 Bot dapat memakai AI OS context secara natural untuk pesan seperti:

@@ -385,5 +385,6 @@ function registerDashboardRoutes(app, rawServices = {}) {
 }
 
 module.exports = {
-  registerDashboardRoutes
+  registerDashboardRoutes,
+  registerCodingWorkspaceRoutes: require('./coding-workspace-routes').registerCodingWorkspaceRoutes
 };
