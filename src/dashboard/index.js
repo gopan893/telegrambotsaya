@@ -1,6 +1,6 @@
 'use strict';
 
-const { registerDashboardRoutes, registerCodingWorkspaceRoutes } = require('./dashboard-routes');
+const dashboardRoutes = require('./dashboard-routes');
 const auth = require('./dashboard-auth');
 const guards = require('./dashboard-guards');
 const serializers = require('./dashboard-serializers');
@@ -26,8 +26,8 @@ const evaluationRoutes = require('./evaluation-routes');
 const integrationExecutionRoutes = require('./integration-execution-routes');
 
 module.exports = {
-  registerDashboardRoutes,
-  registerCodingWorkspaceRoutes,
+  registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
+  registerCodingWorkspaceRoutes: (...args) => dashboardRoutes.registerCodingWorkspaceRoutes(...args),
   auth,
   guards,
   auditLog,
