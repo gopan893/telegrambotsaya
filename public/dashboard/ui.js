@@ -1605,5 +1605,108 @@ const UI = {
     document.getElementById('btn-refresh-release')?.addEventListener('click', () => {
       UI.renderRelease(targetEl);
     });
+  },
+
+  async renderRoutines(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat routine center...');
+
+    const routinesRes = await Api.apiGet('/routines');
+    if (!routinesRes.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Routine Center', 'Server tidak merespons atau token tidak valid.');
+      return;
+    }
+
+    const routines = routinesRes.data.routines || [];
+
+    let html = UI.renderSectionHeader('⏰ Routine Center', `
+      <button class="btn btn-outline" id="btn-refresh-routines">🔄 Refresh</button>
+    `);
+
+    // Routine Status Overview
+    const enabledCount = routines.filter(r => r.enabled).length;
+    const disabledCount = routines.filter(r => !r.enabled).length;
+    html += `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Total Routines</div>
+          <div class="card-value">${routines.length}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Enabled</div>
+          <div class="card-value" style="color:var(--color-success);">${enabledCount}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Disabled</div>
+          <div class="card-value" style="color:var(--text-muted);">${disabledCount}</div>
+        </div>
+      </div>
+    `;
+
+    // Routine List
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">Routines List</h3>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Schedule</th>
+                <th>Risk</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${routines.length === 0 ? '<tr><td colspan="6" class="text-center text-muted">No routines configured.</td></tr>' : routines.map(r => `
+                <tr>
+                  <td><strong>${Utils.escapeHtml(r.name)}</strong></td>
+                  <td><code>${Utils.escapeHtml(r.type)}</code></td>
+                  <td><span class="badge badge-none">${Utils.escapeHtml(r.schedule || 'manual')}</span></td>
+                  <td><span class="badge badge-${r.riskLevel === 'low' ? 'healthy' : r.riskLevel === 'medium' ? 'warning' : r.riskLevel === 'high' ? 'degraded' : 'critical'}">${Utils.escapeHtml(r.riskLevel || 'unknown')}</span></td>
+                  <td>${r.enabled ? UI.renderBadge('healthy') : UI.renderBadge('disabled')}</td>
+                  <td>
+                    <button class="btn btn-outline btn-sm" data-routine-id="${r.id}" data-action="run">Run</button>
+                    <button class="btn btn-outline btn-sm" data-routine-id="${r.id}" data-action="dry-run">Dry-Run</button>
+                    <button class="btn btn-outline btn-sm" data-routine-id="${r.id}" data-action="${r.enabled ? 'disable' : 'enable'}">${r.enabled ? 'Disable' : 'Enable'}</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    targetEl.innerHTML = html;
+
+    // Action buttons
+    targetEl.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-routine-id');
+        const action = btn.getAttribute('data-action');
+        const endpoints = {
+          run: `/routines/${id}/run`,
+          'dry-run': `/routines/${id}/dry-run`,
+          enable: `/routines/${id}/enable`,
+          disable: `/routines/${id}/disable`
+        };
+        const ep = endpoints[action];
+        if (!ep) return;
+        Utils.showToast(`${action} routine...`, 'info');
+        const res = await Api.apiPost(ep);
+        if (res.ok && (res.data.ok || res.data.status === 'completed')) {
+          Utils.showToast(`Routine ${action} berhasil!`, 'success');
+          UI.renderRoutines(targetEl);
+        } else {
+          Utils.showToast(`Gagal ${action} routine: ${res.data?.error || 'unknown'}`, 'danger');
+        }
+      });
+    });
+
+    document.getElementById('btn-refresh-routines')?.addEventListener('click', () => {
+      UI.renderRoutines(targetEl);
+    });
   }
 };

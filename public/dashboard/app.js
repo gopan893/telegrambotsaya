@@ -119,6 +119,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'release':
         await UI.renderRelease(tabContent);
         break;
+      case 'routines':
+        await UI.renderRoutines(tabContent);
+        break;
       default:
         await UI.renderOverview(tabContent);
     }
