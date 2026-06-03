@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.classList.add('active');
         window.location.hash = `#${tab}`;
         if (sidebar) sidebar.classList.remove('open');
+        e.preventDefault();
       }
     });
   });
@@ -58,7 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const hash = window.location.hash.substring(1) || 'overview';
+    const rawHash = window.location.hash.substring(1) || '';
+    const hash = normalizeTabAlias(rawHash);
     currentTab = hash;
 
     // Highlight nav item
@@ -123,9 +125,35 @@ document.addEventListener('DOMContentLoaded', () => {
         await UI.renderRoutines(tabContent);
         break;
       default:
-        await UI.renderOverview(tabContent);
+        // Known tabs that are missing their renderer show a placeholder
+        if (hash && hash !== 'overview') {
+          tabContent.innerHTML = `
+            <div class="error-state">
+              <span style="font-size:32px; display:block; margin-bottom:12px;">🚧</span>
+              <h3>Page module belum tersedia atau belum termuat.</h3>
+              <p style="color:var(--text-secondary); margin-top:8px;">Tab "${Utils.escapeHtml(hash)}" dikenal tetapi kontennya belum tersedia.</p>
+            </div>
+          `;
+        } else {
+          await UI.renderOverview(tabContent);
+        }
     }
   };
+
+  function normalizeTabAlias(hash) {
+    const map = {
+      'coding-workspace': 'coding',
+      'codingworkspace': 'coding',
+      'coding_workspace': 'coding',
+      'code-workspace': 'coding',
+      'release-health': 'release',
+      'releasecheck': 'release',
+      'release-check': 'release',
+      'routines': 'routines'
+    };
+    if (map[hash]) return map[hash];
+    return hash || 'overview';
+  }
 
   // Check server health and update login view state alerts
   const checkServerAndUpdateLoginUI = async () => {

@@ -360,6 +360,109 @@ body.dark-mode {
   color: var(--color-info);
 }
 
+/* ==============================
+   Dark Form Controls (Global)
+   ============================== */
+
+input, select, textarea, .form-control, .dashboard-input, .dashboard-select, .dashboard-textarea {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  width: 100%;
+}
+
+input:focus, select:focus, textarea:focus,
+.form-control:focus, .dashboard-input:focus, .dashboard-select:focus, .dashboard-textarea:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+input::placeholder, textarea::placeholder, .form-control::placeholder, .dashboard-input::placeholder, .dashboard-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Select dropdown arrow + option styling */
+select {
+  appearance: auto;
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
+  cursor: pointer;
+  background-image: none;
+}
+
+select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 8px;
+}
+
+/* Textarea */
+textarea {
+  min-height: 80px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* Interactive field area */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.field-help {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Form grid layouts */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.form-row > .field,
+.form-row > .form-group,
+.form-row > input,
+.form-row > select,
+.form-row > textarea {
+  flex: 1;
+  min-width: 180px;
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
 /* Inline code elements inside alerts / login footer */
 .alert code, .login-footer code {
   font-family: var(--font-mono);
@@ -914,6 +1017,31 @@ tr:hover td {
 .graph-node:hover,
 .graph-node.is-active {
   opacity: 0.82;
+}
+
+/* Mobile form: full-width inputs, larger touch targets */
+@media (max-width: 768px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-row > .field,
+  .form-row > .form-group,
+  .form-row > input,
+  .form-row > select,
+  .form-row > textarea {
+    min-width: 0;
+  }
+
+  input, select, textarea, .form-control, .dashboard-input, .dashboard-select, .dashboard-textarea {
+    font-size: 16px;
+    padding: 14px;
+  }
 }
 
 /* Responsive Styles */
