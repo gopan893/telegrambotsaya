@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const navItems = document.querySelectorAll('.nav-item');
   const versionEl = document.getElementById('app-version');
 
-  let currentTab = 'overview';
   let serverOnline = false;
 
   // Ensure confirm-modal is hidden on startup
@@ -40,12 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close mobile sidebar when a nav item is clicked
   navItems.forEach(item => {
     item.addEventListener('click', (e) => {
-      const tab = item.getAttribute('data-tab');
-      if (tab) {
-        currentTab = tab;
-        navItems.forEach(nav => nav.classList.remove('active'));
-        item.classList.add('active');
-        window.location.hash = `#${tab}`;
+      const tabId = item.getAttribute('data-tab');
+      if (tabId) {
+        const canonical = DashboardState.normalizeCanonicalTabId(tabId);
+        if (canonical) {
+          window.location.hash = `#${canonical}`;
+        }
         if (sidebar) sidebar.classList.remove('open');
         e.preventDefault();
       }
@@ -60,99 +59,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const rawHash = window.location.hash.substring(1) || '';
-    const hash = normalizeTabAlias(rawHash);
-    currentTab = hash;
+    const tabId = DashboardState.findTabId(rawHash) || '';
+    const canonical = tabId || DashboardState.restoreLastTab();
+
+    // Save and set active tab
+    DashboardState.setActiveTab(canonical);
 
     // Highlight nav item
     navItems.forEach(nav => {
-      if (nav.getAttribute('data-tab') === currentTab) {
+      if (nav.getAttribute('data-tab') === canonical) {
         nav.classList.add('active');
       } else {
         nav.classList.remove('active');
       }
     });
 
-    switch (currentTab) {
-      case 'overview':
-        await UI.renderOverview(tabContent);
-        break;
-      case 'ops':
-        await UI.renderOps(tabContent);
-        break;
-      case 'memory':
-        await UI.renderMemory(tabContent);
-        break;
-      case 'goals':
-        await UI.renderGoals(tabContent);
-        break;
-      case 'workflows':
-        await UI.renderWorkflows(tabContent);
-        break;
-      case 'insights':
-        await UI.renderInsights(tabContent);
-        break;
-      case 'graph':
-        await UI.renderGraph(tabContent);
-        break;
-      case 'benchmarks':
-        await UI.renderBenchmarks(tabContent);
-        break;
-      case 'incidents':
-        await UI.renderIncidents(tabContent);
-        break;
-      case 'commands':
-        await UI.renderCommands(tabContent);
-        break;
-      case 'env':
-        await UI.renderEnv(tabContent);
-        break;
-      case 'settings':
-        UI.renderSettings(tabContent);
-        break;
-      case 'agents':
-        await UI.renderAgents(tabContent);
-        break;
-      case 'integrations':
-        await UI.renderIntegrations(tabContent);
-        break;
-      case 'coding':
-        await UI.renderCodingWorkspace(tabContent);
-        break;
-      case 'release':
-        await UI.renderRelease(tabContent);
-        break;
-      case 'routines':
-        await UI.renderRoutines(tabContent);
-        break;
-      default:
-        // Known tabs that are missing their renderer show a placeholder
-        if (hash && hash !== 'overview') {
-          tabContent.innerHTML = `
-            <div class="error-state">
-              <span style="font-size:32px; display:block; margin-bottom:12px;">🚧</span>
-              <h3>Page module belum tersedia atau belum termuat.</h3>
-              <p style="color:var(--text-secondary); margin-top:8px;">Tab "${Utils.escapeHtml(hash)}" dikenal tetapi kontennya belum tersedia.</p>
-            </div>
-          `;
-        } else {
-          await UI.renderOverview(tabContent);
-        }
-    }
+    // Render the tab
+    await renderTabContent(canonical);
   };
 
-  function normalizeTabAlias(hash) {
-    const map = {
-      'coding-workspace': 'coding',
-      'codingworkspace': 'coding',
-      'coding_workspace': 'coding',
-      'code-workspace': 'coding',
-      'release-health': 'release',
-      'releasecheck': 'release',
-      'release-check': 'release',
-      'routines': 'routines'
-    };
-    if (map[hash]) return map[hash];
-    return hash || 'overview';
+  async function renderTabContent(tabId) {
+    const config = DashboardState.getTabConfig(tabId);
+    if (!config) {
+      return UI.renderOverview(tabContent);
+    }
+
+    const rendererName = config.renderer;
+    const renderFn = UI[rendererName];
+
+    if (typeof renderFn === 'function') {
+      try {
+        if (renderFn.constructor.name === 'AsyncFunction' || renderFn.toString().includes('async')) {
+          await renderFn.call(UI, tabContent);
+        } else {
+          renderFn.call(UI, tabContent);
+        }
+      } catch (err) {
+        console.error(`Error rendering tab "${tabId}":`, err);
+        tabContent.innerHTML = `
+          <div class="error-state">
+            <span style="font-size:32px; display:block; margin-bottom:12px;">⚠️</span>
+            <h3>Error loading "${Utils.escapeHtml(config.title || tabId)}"</h3>
+            <p style="color:var(--text-secondary); margin-top:8px;">${Utils.escapeHtml(err.message)}</p>
+          </div>
+        `;
+      }
+    } else {
+      // Known tab but renderer missing — show placeholder
+      tabContent.innerHTML = `
+        <div style="padding:40px 24px;">
+          <div class="section-header" style="margin-bottom:24px;">
+            <h2>${Utils.escapeHtml(config.title || tabId)}</h2>
+          </div>
+          <div class="empty-state">
+            <span class="empty-state-emoji">📄</span>
+            <h3>${Utils.escapeHtml(config.title || 'Page')}</h3>
+            <p>Page module belum tersedia atau belum termuat.</p>
+          </div>
+        </div>
+      `;
+    }
   }
 
   // Check server health and update login view state alerts
@@ -200,6 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const showAppView = async () => {
     loginContainer.classList.add('hidden');
     appContainer.classList.remove('hidden');
+    // On first load, if no hash, restore last tab
+    if (!window.location.hash || window.location.hash === '#') {
+      const lastTab = DashboardState.restoreLastTab();
+      window.location.hash = `#${lastTab}`;
+    }
     await routeTab();
   };
 

@@ -1,4 +1,207 @@
-/* Dashboard lightweight state store */
+/* Dashboard lightweight state store + tab registry */
+
+const DASHBOARD_TABS = {
+  overview: {
+    label: 'Overview',
+    title: 'System Overview',
+    navIcon: '📊',
+    navVisible: true,
+    aliases: ['home', 'system-overview', 'system_overview'],
+    renderer: 'renderOverview'
+  },
+  ops: {
+    label: 'Ops Viewer',
+    title: 'Ops Viewer',
+    navIcon: '⚙️',
+    navVisible: true,
+    aliases: ['ops-viewer', 'opsviewer', 'ops_viewer'],
+    renderer: 'renderOps'
+  },
+  workspaces: {
+    label: 'Workspaces',
+    title: 'Workspaces',
+    navIcon: '🏢',
+    navVisible: true,
+    aliases: ['workspace', 'beranda'],
+    renderer: 'renderWorkspaces'
+  },
+  users: {
+    label: 'Users',
+    title: 'Users',
+    navIcon: '👥',
+    navVisible: true,
+    aliases: ['user', 'pengguna'],
+    renderer: 'renderUsers'
+  },
+  permissions: {
+    label: 'Permissions',
+    title: 'Permissions',
+    navIcon: '🛡️',
+    navVisible: true,
+    aliases: ['permission', 'izin'],
+    renderer: 'renderPermissions'
+  },
+  memory: {
+    label: 'Memory',
+    title: 'Memory Records',
+    navIcon: '🧠',
+    navVisible: true,
+    aliases: ['memories', 'memori'],
+    renderer: 'renderMemory'
+  },
+  goals: {
+    label: 'Goals',
+    title: 'Goals',
+    navIcon: '🎯',
+    navVisible: true,
+    aliases: ['goal', 'tujuan'],
+    renderer: 'renderGoals'
+  },
+  workflows: {
+    label: 'Workflows',
+    title: 'Workflows',
+    navIcon: '🔄',
+    navVisible: true,
+    aliases: ['workflow', 'alur'],
+    renderer: 'renderWorkflows'
+  },
+  planner: {
+    label: 'Planner',
+    title: 'Planner',
+    navIcon: '🗺️',
+    navVisible: true,
+    aliases: ['plans', 'plan', 'perencana'],
+    renderer: 'renderPlanner'
+  },
+  executor: {
+    label: 'Executor',
+    title: 'Executor',
+    navIcon: '✅',
+    navVisible: true,
+    aliases: ['executions', 'eksekusi', 'eksekutor'],
+    renderer: 'renderExecutor'
+  },
+  agents: {
+    label: 'Agents',
+    title: 'Agents / Multi-Bot',
+    navIcon: '🤖',
+    navVisible: true,
+    aliases: ['agent', 'multibot', 'multi-bot', 'agen'],
+    renderer: 'renderAgents'
+  },
+  tools: {
+    label: 'Tools',
+    title: 'Tools',
+    navIcon: '🧰',
+    navVisible: true,
+    aliases: ['tool', 'tool-registry', 'alat'],
+    renderer: 'renderTools'
+  },
+  integrations: {
+    label: 'Integrations',
+    title: 'External Integrations',
+    navIcon: '🔌',
+    navVisible: true,
+    aliases: ['integration', 'connectors', 'connector', 'integrasi'],
+    renderer: 'renderIntegrations'
+  },
+  backup: {
+    label: 'Backup',
+    title: 'Backup & Recovery',
+    navIcon: '💾',
+    navVisible: true,
+    aliases: ['backups', 'recovery', 'cadangan'],
+    renderer: 'renderBackup'
+  },
+  insights: {
+    label: 'Insights',
+    title: 'Cognitive Insights',
+    navIcon: '💡',
+    navVisible: true,
+    aliases: ['insight', 'wawasan'],
+    renderer: 'renderInsights'
+  },
+  graph: {
+    label: 'Knowledge Graph',
+    title: 'Knowledge Graph',
+    navIcon: '🕸️',
+    navVisible: true,
+    aliases: ['knowledge-graph', 'kgraph', 'graf'],
+    renderer: 'renderGraph'
+  },
+  benchmarks: {
+    label: 'Benchmarks',
+    title: 'Benchmarks Audit',
+    navIcon: '⚡',
+    navVisible: true,
+    aliases: ['benchmark', 'tolok-ukur'],
+    renderer: 'renderBenchmarks'
+  },
+  incidents: {
+    label: 'Incidents',
+    title: 'Incidents Log',
+    navIcon: '⚠️',
+    navVisible: true,
+    aliases: ['incident', 'kejadian', 'insiden'],
+    renderer: 'renderIncidents'
+  },
+  audit: {
+    label: 'Audit Log',
+    title: 'Audit Log',
+    navIcon: '🧾',
+    navVisible: true,
+    aliases: ['audit-log', 'auditlog', 'catatan'],
+    renderer: 'renderAuditLog'
+  },
+  commands: {
+    label: 'Commands',
+    title: 'Command Catalog',
+    navIcon: '📜',
+    navVisible: true,
+    aliases: ['command', 'perintah'],
+    renderer: 'renderCommands'
+  },
+  env: {
+    label: 'Env Check',
+    title: 'Environment Check',
+    navIcon: '🔒',
+    navVisible: true,
+    aliases: ['env-check', 'environment', 'lingkungan'],
+    renderer: 'renderEnv'
+  },
+  settings: {
+    label: 'Settings',
+    title: 'Settings Control',
+    navIcon: '🔧',
+    navVisible: true,
+    aliases: ['setting', 'pengaturan'],
+    renderer: 'renderSettings'
+  },
+  'coding': {
+    label: 'Coding Workspace',
+    title: 'Coding Workspace',
+    navIcon: '💻',
+    navVisible: true,
+    aliases: ['coding-workspace', 'codingworkspace', 'coding_workspace', 'codingWorkspace', 'code-workspace', 'coding-ws'],
+    renderer: 'renderCodingWorkspace'
+  },
+  release: {
+    label: 'Release',
+    title: 'Release / Health',
+    navIcon: '🚀',
+    navVisible: true,
+    aliases: ['release-health', 'releasecheck', 'release-check', 'health-release', 'rilis'],
+    renderer: 'renderRelease'
+  },
+  routines: {
+    label: 'Routines',
+    title: 'Routine Center',
+    navIcon: '⏰',
+    navVisible: true,
+    aliases: ['routine', 'routine-center', 'daily-ops', 'rutinitas'],
+    renderer: 'renderRoutines'
+  }
+};
 
 const DashboardState = (() => {
   const listeners = new Set();
@@ -35,7 +238,11 @@ const DashboardState = (() => {
   }
 
   function setActiveTab(tab) {
-    return setState({ activeTab: String(tab || 'overview') });
+    const canonical = normalizeCanonicalTabId(tab);
+    if (canonical) {
+      localStorage.setItem('dashboard_last_tab', canonical);
+    }
+    return setState({ activeTab: String(canonical || 'overview') });
   }
 
   function setCurrentUserId(userId) {
@@ -61,6 +268,44 @@ const DashboardState = (() => {
     }
   }
 
+  function getTabConfig(tabId) {
+    return DASHBOARD_TABS[tabId] || null;
+  }
+
+  function getTabIds() {
+    return Object.keys(DASHBOARD_TABS);
+  }
+
+  function getNavTabs() {
+    return Object.entries(DASHBOARD_TABS)
+      .filter(([_, config]) => config.navVisible !== false)
+      .map(([id, config]) => ({ id, ...config }));
+  }
+
+  function findTabId(hash) {
+    const clean = String(hash || '').replace(/^#/, '').trim().toLowerCase();
+    if (!clean) return 'overview';
+    if (DASHBOARD_TABS[clean]) return clean;
+    for (const [id, config] of Object.entries(DASHBOARD_TABS)) {
+      if ((config.aliases || []).some(a => a.toLowerCase() === clean)) {
+        return id;
+      }
+    }
+    return null;
+  }
+
+  function normalizeCanonicalTabId(tabId) {
+    return findTabId(tabId) || 'overview';
+  }
+
+  function restoreLastTab() {
+    try {
+      const saved = localStorage.getItem('dashboard_last_tab');
+      if (saved && DASHBOARD_TABS[saved]) return saved;
+    } catch (_) {}
+    return 'overview';
+  }
+
   return {
     getState,
     setState,
@@ -68,8 +313,15 @@ const DashboardState = (() => {
     setActiveTab,
     setCurrentUserId,
     saveUserPreferences,
-    loadUserPreferences
+    loadUserPreferences,
+    getTabConfig,
+    getTabIds,
+    getNavTabs,
+    findTabId,
+    normalizeCanonicalTabId,
+    restoreLastTab
   };
 })();
 
 window.DashboardState = DashboardState;
+window.DASHBOARD_TABS = DASHBOARD_TABS;

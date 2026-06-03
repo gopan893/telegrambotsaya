@@ -1708,5 +1708,95 @@ const UI = {
     document.getElementById('btn-refresh-routines')?.addEventListener('click', () => {
       UI.renderRoutines(targetEl);
     });
+  },
+
+  // --- Placeholder renderers for tabs without full implementation ---
+
+  async renderWorkspaces(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('🏢 Workspaces');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">🏢</span>
+        <h3>Workspaces</h3>
+        <p>Workspace module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderUsers(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('👥 Users');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">👥</span>
+        <h3>Users</h3>
+        <p>User management module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderPermissions(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('🛡️ Permissions');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">🛡️</span>
+        <h3>Permissions</h3>
+        <p>Permission management module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderPlanner(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('🗺️ Planner');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">🗺️</span>
+        <h3>Planner</h3>
+        <p>Planner module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderExecutor(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('✅ Executor');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">✅</span>
+        <h3>Executor</h3>
+        <p>Executor module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderTools(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('🧰 Tools');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">🧰</span>
+        <h3>Tools</h3>
+        <p>Tool registry module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderBackup(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('💾 Backup & Recovery');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">💾</span>
+        <h3>Backup & Recovery</h3>
+        <p>Backup module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+  },
+
+  async renderAuditLog(targetEl) {
+    targetEl.innerHTML = UI.renderSectionHeader('🧾 Audit Log');
+    targetEl.innerHTML += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">🧾</span>
+        <h3>Audit Log</h3>
+        <p>Audit log module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
   }
 };
