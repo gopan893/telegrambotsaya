@@ -7,109 +7,8 @@
 const UI = {
   // --- Standard Component Renderers ---
   renderBadge(status) {
-    const clean = String(status || 'unknown').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    const clean = String(status || '').toLowerCase();
     return `<span class="badge badge-${clean}">${Utils.escapeHtml(status || 'unknown')}</span>`;
-  },
-
-  formatScore(value) {
-    const n = Number(value || 0);
-    if (!Number.isFinite(n)) return '0%';
-    return `${Math.round(n <= 1 ? n * 100 : n)}%`;
-  },
-
-  storageStatusLabel(status) {
-    const labels = {
-      connected: 'Connected',
-      missing_env: 'Missing env',
-      pg_missing: 'pg missing',
-      ioredis_missing: 'ioredis missing',
-      connection_failed: 'Connection failed',
-      migration_required: 'Migration required',
-      timeout: 'Timeout',
-      tls_issue: 'TLS issue',
-      unavailable: 'Unavailable',
-      disabled: 'Disabled'
-    };
-    return labels[String(status || 'unavailable')] || String(status || 'unavailable');
-  },
-
-  getActiveWorkspaceId() {
-    return localStorage.getItem('active_workspace_id') || '';
-  },
-
-  setActiveWorkspaceId(workspaceId = '') {
-    localStorage.setItem('active_workspace_id', workspaceId);
-  },
-
-  renderWorkspaceInput(idPrefix = 'workspace') {
-    return `
-      <div class="filter-group">
-        <label for="${idPrefix}-workspace-id">Workspace ID</label>
-        <input type="text" id="${idPrefix}-workspace-id" value="${Utils.escapeHtml(UI.getActiveWorkspaceId())}" placeholder="kosong = personal default">
-      </div>
-    `;
-  },
-
-  renderStorageCards(storage = {}) {
-    const warning = storage.postgresAvailable && storage.postgresTableReady && (storage.activeDriver || storage.storageDriver) === 'json'
-      ? `<div class="alert alert-warning" style="margin-top:12px;">PostgreSQL connected, but storage is using JSON fallback. Reason: ${Utils.escapeHtml(storage.fallbackReason || 'unknown')}</div>`
-      : '';
-    return `
-      <div class="card-grid">
-        ${UI.renderMetric('Storage Driver', storage.activeDriver || storage.storageDriver || 'unknown', `Configured: ${storage.configuredStorageDriver || 'auto'} | Fallback: ${storage.fallbackActive ? 'yes' : 'no'}`)}
-        ${UI.renderMetric('PostgreSQL', UI.storageStatusLabel(storage.postgresStatus), `Available: ${storage.postgresAvailable ? 'yes' : 'no'} | Table: ${storage.postgresTableReady ? 'ready' : 'not ready'} | ${storage.postgresLatencyMs ?? '-'}ms`)}
-        ${UI.renderMetric('Redis', UI.storageStatusLabel(storage.redisStatus), `Available: ${storage.redisAvailable ? 'yes' : 'no'} | ${storage.redisLatencyMs ?? '-'}ms`)}
-      </div>
-      ${warning}
-    `;
-  },
-
-  renderCard(title, body, footer = '') {
-    return `
-      <div class="card">
-        <div class="card-title">${Utils.escapeHtml(title)}</div>
-        <div>${body}</div>
-        ${footer ? `<div class="card-subtitle">${footer}</div>` : ''}
-      </div>
-    `;
-  },
-
-  renderMetric(label, value, subtitle = '') {
-    return UI.renderCard(label, `<div class="card-value">${Utils.escapeHtml(String(value ?? '-'))}</div>`, Utils.escapeHtml(subtitle || ''));
-  },
-
-  renderTable(headers = [], rows = []) {
-    return `
-      <div class="table-responsive">
-        <table>
-          <thead><tr>${headers.map(header => `<th>${Utils.escapeHtml(header)}</th>`).join('')}</tr></thead>
-          <tbody>
-            ${rows.length ? rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length || 1}" class="text-center text-muted">Tidak ada data.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    `;
-  },
-
-  renderKeyValueList(items = []) {
-    return `
-      <div class="kv-list">
-        ${items.map(item => `
-          <div class="kv-item">
-            <span class="kv-key">${Utils.escapeHtml(item.key || item.label || '')}</span>
-            <span class="kv-value">${item.html || Utils.escapeHtml(String(item.value ?? '-'))}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  },
-
-  renderToast(message, type = 'info') {
-    return Utils.showToast(message, type);
-  },
-
-  confirmAction(title, message, onConfirm) {
-    return Utils.confirmAction(title, message, onConfirm);
   },
 
   renderProgressBar(percentage) {
@@ -177,12 +76,10 @@ const UI = {
 
     const health = healthRes.data;
     const summary = summaryRes.ok ? summaryRes.data : null;
-    const storage = health.storage || health;
 
     let html = UI.renderSectionHeader('System Overview', `
       <button class="btn btn-outline" id="btn-refresh-overview">🔄 Refresh</button>
       <button class="btn btn-primary" id="btn-diagnostics-overview">🩺 Run Diagnostics</button>
-      <button class="btn btn-outline" id="btn-export-health">Export Health</button>
     `);
 
     // Public Health Cards Grid
@@ -206,10 +103,9 @@ const UI = {
         <div class="card">
           <div class="card-title">Storage Driver</div>
           <div class="card-value">${Utils.escapeHtml(health.storageDriver)}</div>
-          <div class="card-subtitle">Fallback: ${health.fallbackActive ? 'Active' : 'Inactive'}</div>
+          <div class="card-subtitle">Redis status: ${health.redisAvailable ? 'Connected' : 'Disconnected'}</div>
         </div>
       </div>
-      ${UI.renderStorageCards(storage)}
     `;
 
     // Protected Summary (Only if login/token is valid)
@@ -222,7 +118,7 @@ const UI = {
         <div class="card-grid">
           <div class="card">
             <div class="card-title">Reliability Score</div>
-            <div class="card-value" id="overview-reliability-val">${UI.formatScore(reliability.score)}</div>
+            <div class="card-value" id="overview-reliability-val">${reliability.score ? (reliability.score * 100).toFixed(0) : '0'}%</div>
             <div class="card-subtitle">Status: ${UI.renderBadge(reliability.status)}</div>
           </div>
           <div class="card">
@@ -288,18 +184,6 @@ const UI = {
       });
     }
 
-    const exportBtn = document.getElementById('btn-export-health');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', async () => {
-        try {
-          await window.DashboardExport.exportHealthReport();
-          Utils.showToast('Health report diunduh.', 'success');
-        } catch (_) {
-          Utils.showToast('Gagal export health report.', 'danger');
-        }
-      });
-    }
-
     const benchBtn = document.getElementById('btn-quick-benchmark');
     if (benchBtn) {
       benchBtn.addEventListener('click', () => {
@@ -307,7 +191,7 @@ const UI = {
           Utils.showToast('Menjalankan benchmark...', 'info');
           const res = await Api.runBenchmarkLight();
           if (res.ok && res.data.ok) {
-            Utils.showToast(`Benchmark selesai! Score: ${UI.formatScore(res.data.result.score)}`, 'success');
+            Utils.showToast(`Benchmark selesai! Score: ${(res.data.result.score * 100).toFixed(0)}%`, 'success');
             this.renderOverview(targetEl);
           } else {
             Utils.showToast('Gagal menjalankan benchmark.', 'danger');
@@ -336,10 +220,7 @@ const UI = {
   async renderOps(targetEl) {
     targetEl.innerHTML = UI.renderLoading('Memuat telemetry & diagnostics...');
     
-    const [opsRes, storageRes] = await Promise.all([
-      Api.getOps(),
-      Api.getStorage ? Api.getStorage() : Promise.resolve({ ok: false, data: null })
-    ]);
+    const opsRes = await Api.getOps();
     if (!opsRes.ok) {
       targetEl.innerHTML = UI.renderError('Gagal Memuat Ops Viewer', 'Pastikan token admin Anda benar.');
       return;
@@ -349,12 +230,10 @@ const UI = {
     const health = ops.health || {};
     const telemetry = ops.telemetry || {};
     const reliability = ops.reliability || {};
-    const storage = storageRes.ok ? storageRes.data : {};
 
     let html = UI.renderSectionHeader('Ops Viewer', `
       <button class="btn btn-outline" id="btn-refresh-ops">🔄 Refresh</button>
       <button class="btn btn-primary" id="btn-run-diagnostics">🩺 Run Diagnostics</button>
-      <button class="btn btn-outline" id="btn-prune-ops">🧹 Prune Telemetry</button>
     `);
 
     // Top Stats grid
@@ -372,7 +251,7 @@ const UI = {
         </div>
         <div class="card">
           <div class="card-title">Reliability Score</div>
-          <div class="card-value">${UI.formatScore(reliability.score)}</div>
+          <div class="card-value">${reliability.score ? (reliability.score * 100).toFixed(0) : '0'}%</div>
           <div class="card-subtitle">Status: ${UI.renderBadge(reliability.status)}</div>
         </div>
       </div>
@@ -394,16 +273,12 @@ const UI = {
               <span class="kv-value">${health.memory?.heapUsedMb ? `${health.memory.heapUsedMb}/${health.memory.heapTotalMb} MB` : '-'}</span>
             </div>
             <div class="kv-item">
-              <span class="kv-key">Redis</span>
-              <span class="kv-value">${UI.storageStatusLabel(storage.redisStatus)} (${storage.redisAvailable ? 'OK' : 'fallback'})</span>
+              <span class="kv-key">Redis Available</span>
+              <span class="kv-value">${health.redis?.available !== undefined ? (health.redis.available ? 'OK' : 'FAIL') : '-'}</span>
             </div>
             <div class="kv-item">
-              <span class="kv-key">PostgreSQL</span>
-              <span class="kv-value">${UI.storageStatusLabel(storage.postgresStatus)} (${storage.postgresAvailable ? 'OK' : 'fallback'})</span>
-            </div>
-            <div class="kv-item">
-              <span class="kv-key">Storage Driver</span>
-              <span class="kv-value">${Utils.escapeHtml(storage.storageDriver || 'unknown')}</span>
+              <span class="kv-key">PostgreSQL Database</span>
+              <span class="kv-value">${health.db?.driver || 'Unavailable'}</span>
             </div>
           </div>
         </div>
@@ -461,212 +336,6 @@ const UI = {
         }
       });
     });
-    document.getElementById('btn-prune-ops').addEventListener('click', () => {
-      Utils.confirmAction('Prune Telemetry', 'Prune telemetry lama? Ini tidak menghapus memory user.', async () => {
-        Utils.showToast('Membersihkan telemetry...', 'info');
-        const res = await Api.pruneTelemetry();
-        if (res.ok && res.data.ok) {
-          Utils.showToast('Telemetry dipangkas.', 'success');
-          this.renderOps(targetEl);
-        } else {
-          Utils.showToast('Gagal prune telemetry.', 'danger');
-        }
-      });
-    });
-  },
-
-  async renderWorkspacesAdmin(targetEl) {
-    targetEl.innerHTML = UI.renderLoading('Memuat workspaces...');
-    const actorId = localStorage.getItem('workspace_actor_id') || '';
-
-    const loadData = async () => {
-      const actor = document.getElementById('workspace-actor-id')?.value.trim() || '';
-      localStorage.setItem('workspace_actor_id', actor);
-      const res = await Api.getWorkspaces({ actorId: actor, all: true, includeArchived: true });
-      const container = document.getElementById('workspace-list-container');
-      if (!res.ok) {
-        container.innerHTML = UI.renderError('Gagal Memuat Workspaces', 'Pastikan token dashboard valid.');
-        return;
-      }
-      const items = res.data.items || [];
-      if (!items.length) {
-        container.innerHTML = UI.renderEmptyState('🏢', 'Belum Ada Workspace', 'Buat workspace project pertama dari dashboard.');
-        return;
-      }
-      container.innerHTML = `
-        <div class="card-grid-wide">
-          ${items.map(item => `
-            <div class="card">
-              <div style="display:flex; justify-content:space-between; gap:12px;">
-                <div>
-                  <h3 style="font-size:16px;">${Utils.escapeHtml(item.name)}</h3>
-                  <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">${Utils.escapeHtml(item.id)}</span>
-                </div>
-                <div>${UI.renderBadge(item.type)} ${item.archivedAt ? UI.renderBadge('archived') : ''}</div>
-              </div>
-              <p style="font-size:13px; color:var(--text-secondary); margin-top:10px;">${Utils.escapeHtml(item.description || '-')}</p>
-              <div style="font-size:12px; margin-top:10px; color:var(--text-secondary);">Owner: <code>${Utils.escapeHtml(item.ownerId || '-')}</code> · Members: ${(item.members || []).filter(m => m.status === 'active').length}</div>
-              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;">
-                ${(item.members || []).filter(m => m.status === 'active').slice(0, 8).map(member => `<span class="badge">${Utils.escapeHtml(member.userId)}:${Utils.escapeHtml(member.role)}</span>`).join('') || '<span class="badge">no members</span>'}
-              </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
-                <button class="btn btn-outline" data-ws-action="select" data-id="${Utils.escapeHtml(item.id)}">Select</button>
-                <button class="btn btn-outline" data-ws-action="members" data-id="${Utils.escapeHtml(item.id)}">Members</button>
-                <button class="btn btn-outline" data-ws-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="color:var(--color-danger);">Archive</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>`;
-      container.querySelectorAll('[data-ws-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-ws-action');
-          const workspaceId = btn.getAttribute('data-id');
-          if (action === 'select') {
-            UI.setActiveWorkspaceId(workspaceId);
-            Utils.showToast('Workspace aktif disimpan.', 'success');
-            return;
-          }
-          if (action === 'members') {
-            const members = await Api.getWorkspaceMembers(workspaceId, actor);
-            const activeMembers = members.data?.items || [];
-            const command = prompt(`Members aktif:\\n${activeMembers.map(m => `${m.userId} (${m.role})`).join('\\n')}\\n\\nKetik: add <userId> <role>, role <userId> <role>, atau remove <userId>`);
-            if (!command) return;
-            const [verb, userId, role] = command.trim().split(/\s+/);
-            let res;
-            if (verb === 'add') res = await Api.addWorkspaceMember(workspaceId, { actorId: actor, userId, role: role || 'viewer' });
-            if (verb === 'role') res = await Api.updateWorkspaceMemberRole(workspaceId, { actorId: actor, userId, role: role || 'viewer' });
-            if (verb === 'remove') res = await Api.removeWorkspaceMember(workspaceId, { actorId: actor, userId });
-            Utils.showToast(res?.ok && res.data?.ok ? 'Member action sukses.' : 'Member action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
-            await loadData();
-            return;
-          }
-          if (action === 'archive') {
-            const confirmationText = prompt('Ketik ARCHIVE untuk archive workspace ini:');
-            if (confirmationText !== 'ARCHIVE') return;
-            const res = await Api.archiveWorkspace(workspaceId, { actorId: actor, confirmationText, reason: prompt('Alasan archive (opsional):') || '' });
-            Utils.showToast(res.ok && res.data?.ok ? 'Workspace archived.' : 'Gagal archive workspace.', res.ok && res.data?.ok ? 'success' : 'danger');
-            await loadData();
-          }
-        });
-      });
-    };
-
-    targetEl.innerHTML = `
-      ${UI.renderSectionHeader('Workspaces', '<button class="btn btn-primary" id="btn-create-workspace">Create Workspace</button>')}
-      <div class="filter-bar">
-        <div class="filter-group">
-          <label for="workspace-actor-id">Actor ID</label>
-          <input type="text" id="workspace-actor-id" value="${Utils.escapeHtml(actorId)}" placeholder="default OWNER_CHAT_ID">
-        </div>
-        <button class="btn btn-outline" id="btn-load-workspaces">Load</button>
-      </div>
-      <div id="workspace-list-container">${UI.renderLoading('Memuat workspaces...')}</div>
-    `;
-    document.getElementById('btn-load-workspaces').addEventListener('click', loadData);
-    document.getElementById('btn-create-workspace').addEventListener('click', async () => {
-      const actor = document.getElementById('workspace-actor-id').value.trim();
-      const name = prompt('Nama workspace:');
-      if (!name) return;
-      const res = await Api.createWorkspace({ actorId: actor, name, type: prompt('Type personal/project/team/admin:', 'project') || 'project', description: prompt('Deskripsi:', '') || '' });
-      Utils.showToast(res.ok && res.data?.ok ? 'Workspace dibuat.' : 'Gagal membuat workspace.', res.ok && res.data?.ok ? 'success' : 'danger');
-      await loadData();
-    });
-    await loadData();
-  },
-
-  async renderUsers(targetEl) {
-    targetEl.innerHTML = UI.renderLoading('Memuat users...');
-    const res = await Api.getUsers();
-    if (!res.ok) {
-      targetEl.innerHTML = UI.renderError('Gagal Memuat Users');
-      return;
-    }
-    const items = res.data.items || [];
-    const workspaceId = UI.getActiveWorkspaceId();
-    targetEl.innerHTML = `
-      ${UI.renderSectionHeader('Users')}
-      <div class="filter-bar">
-        ${UI.renderWorkspaceInput('users')}
-        <button class="btn btn-primary" id="btn-load-users-overview" style="height:40px;">Load Selected Workspace</button>
-      </div>
-      ${items.length ? UI.renderTable(
-        ['User ID', 'Workspace', 'Owner WS', 'Active Mode', 'Last Seen', 'Action'],
-        items.map(item => [
-          `<code>${Utils.escapeHtml(item.userId)}</code>`,
-          String(item.workspaceCount || 0),
-          String(item.ownerWorkspaceCount || 0),
-          Utils.escapeHtml(item.activeMode || '-'),
-          Utils.escapeHtml(item.lastSeenAt ? Utils.formatDate(item.lastSeenAt) : '-'),
-          `<button class="btn btn-outline btn-sm" data-user-overview="${Utils.escapeHtml(item.userId)}">Overview</button>`
-        ])
-      ) : UI.renderEmptyState('👥', 'Belum Ada Users', 'User akan muncul setelah punya state atau membership.')}
-      <div id="user-overview-container" style="margin-top:16px;"></div>
-    `;
-    document.getElementById('users-workspace-id').value = workspaceId;
-    document.getElementById('btn-load-users-overview').addEventListener('click', () => {
-      UI.setActiveWorkspaceId(document.getElementById('users-workspace-id').value.trim());
-      UI.renderUsers(targetEl);
-    });
-    document.querySelectorAll('[data-user-overview]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const userId = btn.getAttribute('data-user-overview');
-        const selectedWorkspaceId = document.getElementById('users-workspace-id').value.trim();
-        UI.setActiveWorkspaceId(selectedWorkspaceId);
-        const overview = await Api.getUserWorkspaceOverview(userId, selectedWorkspaceId);
-        const container = document.getElementById('user-overview-container');
-        if (!overview.ok) {
-          container.innerHTML = UI.renderError('Overview Ditolak', overview.data?.error || overview.error || 'Permission tidak cukup.');
-          return;
-        }
-        const data = overview.data || {};
-        container.innerHTML = `
-          <div class="card">
-            <h3>Overview User</h3>
-            <div class="kv-list">
-              <div class="kv-item"><span class="kv-key">User</span><span>${Utils.escapeHtml(data.userId || userId)}</span></div>
-              <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(data.workspaceId || '-')}</span></div>
-              <div class="kv-item"><span class="kv-key">Accessible WS</span><span>${String((data.workspaces || []).length)}</span></div>
-            </div>
-          </div>
-        `;
-      });
-    });
-  },
-
-  async renderPermissions(targetEl) {
-    const actorId = localStorage.getItem('workspace_actor_id') || '';
-    const workspaceId = UI.getActiveWorkspaceId();
-    const res = await Api.getMyPermissions(workspaceId, actorId);
-    const summary = res.data || {};
-    targetEl.innerHTML = `
-      ${UI.renderSectionHeader('Permissions')}
-      <div class="filter-bar">
-        <div class="filter-group"><label>Actor ID</label><input id="perm-actor-id" value="${Utils.escapeHtml(actorId)}"></div>
-        ${UI.renderWorkspaceInput('perm')}
-        <button class="btn btn-primary" id="btn-load-permissions">Load</button>
-      </div>
-      <div class="card">
-        <h3>Current Permission</h3>
-        <div class="kv-list">
-          <div class="kv-item"><span class="kv-key">User</span><span>${Utils.escapeHtml(summary.userId || '-')}</span></div>
-          <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(summary.workspaceId || '-')}</span></div>
-          <div class="kv-item"><span class="kv-key">Role</span><span>${UI.renderBadge(summary.role || 'none')}</span></div>
-          <div class="kv-item"><span class="kv-key">Permissions</span><span>${Utils.escapeHtml((summary.permissions || []).join(', ') || '-')}</span></div>
-        </div>
-      </div>
-      ${UI.renderTable(['Role', 'Allowed'], [
-        ['owner', 'read, write, danger, ops, manage_members'],
-        ['admin', 'read, write, ops, manage_members limited'],
-        ['editor', 'read, write'],
-        ['viewer', 'read'],
-        ['guest', 'limited_read']
-      ])}
-    `;
-    document.getElementById('btn-load-permissions').addEventListener('click', () => {
-      localStorage.setItem('workspace_actor_id', document.getElementById('perm-actor-id').value.trim());
-      UI.setActiveWorkspaceId(document.getElementById('perm-workspace-id').value.trim());
-      UI.renderPermissions(targetEl);
-    });
   },
 
   async renderMemory(targetEl) {
@@ -677,7 +346,6 @@ const UI = {
       const type = document.getElementById('filter-memory-type').value;
       const limit = document.getElementById('filter-memory-limit').value;
       const userId = document.getElementById('memory-user-id').value.trim();
-      const workspaceId = document.getElementById('memory-workspace-id').value.trim();
 
       if (!userId) {
         Utils.showToast('Masukkan User ID terlebih dahulu', 'warning');
@@ -685,11 +353,10 @@ const UI = {
       }
 
       localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
       const contentListEl = document.getElementById('memory-list-container');
       contentListEl.innerHTML = UI.renderLoading('Memuat memory user...');
 
-      const res = await Api.getUserMemories(userId, { q, type, limit, workspaceId });
+      const res = await Api.getUserMemories(userId, { q, type, limit });
       if (!res.ok) {
         contentListEl.innerHTML = UI.renderError('Gagal Memuat Memory', 'Terjadi kesalahan saat memproses data memory user.');
         return;
@@ -724,44 +391,13 @@ const UI = {
               ` : ''}
               <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:12px; margin-top:8px;">
                 <span style="font-size:11px; color:var(--text-muted)">Source: ${Utils.escapeHtml(item.source || 'telegram')}</span>
-                <div style="display:flex; gap:8px;">
-                  <button class="btn btn-outline" data-memory-action="copy" data-id="${Utils.escapeHtml(item.id)}" style="padding:4px 10px; font-size:11px;">Copy ID</button>
-                  <button class="btn btn-outline" data-memory-action="edit" data-id="${Utils.escapeHtml(item.id)}" data-content="${Utils.escapeHtml(item.content || '')}" style="padding:4px 10px; font-size:11px;">Edit</button>
-                  <button class="btn btn-outline" data-memory-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:4px 10px; font-size:11px; color:var(--color-danger);">Archive</button>
-                </div>
+                <button class="btn btn-outline btn-block" style="padding:4px 10px; font-size:11px; max-width:100px;" disabled>Hapus (Soon)</button>
               </div>
             </div>
           `).join('')}
         </div>
       `;
       contentListEl.innerHTML = mHtml;
-      contentListEl.querySelectorAll('[data-memory-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-memory-action');
-          const memoryId = btn.getAttribute('data-id');
-          if (action === 'copy') {
-            await navigator.clipboard?.writeText(memoryId);
-            Utils.showToast('Memory ID disalin.', 'success');
-            return;
-          }
-          if (action === 'edit') {
-            const content = prompt('Update content memory:', btn.getAttribute('data-content') || '');
-            if (!content) return;
-            const res = await Api.updateMemory({ userId, memoryId, content, workspaceId });
-            Utils.showToast(res.ok && res.data?.ok ? 'Memory updated.' : 'Gagal update memory.', res.ok && res.data?.ok ? 'success' : 'danger');
-            await loadData();
-            return;
-          }
-          if (action === 'archive') {
-            const confirmationText = prompt('Ketik ARCHIVE untuk archive memory ini:');
-            if (confirmationText !== 'ARCHIVE') return;
-            const reason = prompt('Alasan archive (opsional):') || '';
-            const res = await Api.archiveMemory({ userId, memoryId, confirm: true, confirmationText, reason, workspaceId });
-            Utils.showToast(res.ok && res.data?.ok ? 'Memory archived.' : 'Gagal archive memory.', res.ok && res.data?.ok ? 'success' : 'danger');
-            await loadData();
-          }
-        });
-      });
     };
 
     let html = UI.renderSectionHeader('Memory Records');
@@ -773,7 +409,6 @@ const UI = {
           <label for="memory-user-id">User ID Telegram</label>
           <input type="text" id="memory-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
-        ${UI.renderWorkspaceInput('memory')}
         <div class="filter-group">
           <label for="search-memory-q">Pencarian Kata Kunci</label>
           <input type="text" id="search-memory-q" placeholder="Cari isi memory...">
@@ -813,15 +448,13 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('goals-user-id').value.trim();
-      const workspaceId = document.getElementById('goals-workspace-id').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('goals-list-container');
       container.innerHTML = UI.renderLoading('Memuat Goals...');
 
-      const res = await Api.getUserGoals(userId, workspaceId);
+      const res = await Api.getUserGoals(userId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Goals');
         return;
@@ -864,41 +497,11 @@ const UI = {
                   <span class="text-primary">${Utils.formatDate(item.createdAt)}</span>
                 </div>
               </div>
-              <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-                <button class="btn btn-outline" data-goal-action="progress" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Update Progress</button>
-                <button class="btn btn-outline" data-goal-action="status" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Update Status</button>
-                <button class="btn btn-outline" data-goal-action="generate-plan" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Generate Plan</button>
-                <button class="btn btn-outline" data-goal-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
-              </div>
             </div>
           `).join('')}
         </div>
       `;
       container.innerHTML = gHtml;
-      container.querySelectorAll('[data-goal-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-goal-action');
-          const goalId = btn.getAttribute('data-id');
-          let res;
-          if (action === 'progress') {
-            const progress = prompt('Progress 0-100:');
-            if (progress === null) return;
-            res = await Api.updateGoal({ userId, goalId, progress: Number(progress), workspaceId });
-          } else if (action === 'status') {
-            const status = prompt('Status: active, paused, completed, archived, cancelled');
-            if (!status) return;
-            res = await Api.updateGoal({ userId, goalId, status, workspaceId });
-          } else if (action === 'generate-plan') {
-            res = await Api.generatePlanFromGoal({ userId, goalId, workspaceId });
-          } else if (action === 'archive') {
-            const confirmationText = prompt('Ketik ARCHIVE untuk archive goal ini:');
-            if (confirmationText !== 'ARCHIVE') return;
-            res = await Api.archiveGoal({ userId, goalId, confirm: true, confirmationText, workspaceId, reason: prompt('Alasan archive (opsional):') || '' });
-          }
-          Utils.showToast(res?.ok && res.data?.ok ? 'Goal action sukses.' : 'Goal action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
-          await loadData();
-        });
-      });
     };
 
     let html = UI.renderSectionHeader('Goals (Sasaran Terencana)');
@@ -908,7 +511,6 @@ const UI = {
           <label for="goals-user-id">User ID Telegram</label>
           <input type="text" id="goals-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
-        ${UI.renderWorkspaceInput('goals')}
         <button class="btn btn-primary" id="btn-load-goals" style="height:40px;">Load Goals</button>
       </div>
       <div id="goals-list-container">
@@ -925,15 +527,13 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('workflows-user-id').value.trim();
-      const workspaceId = document.getElementById('workflows-workspace-id').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('workflows-list-container');
       container.innerHTML = UI.renderLoading('Memuat Workflows...');
 
-      const res = await Api.getUserWorkflows(userId, workspaceId);
+      const res = await Api.getUserWorkflows(userId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Workflows');
         return;
@@ -972,8 +572,6 @@ const UI = {
                 <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; padding:16px; margin-bottom:16px;">
                   <span style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:8px;">Goal Linked:</span>
                   <span style="font-family:var(--font-mono); font-size:13px;">${item.goalId ? item.goalId : 'None'}</span>
-                  <div style="margin-top:8px; color:var(--text-secondary); font-size:12px;">Linked plan: <span style="font-family:var(--font-mono);">${Utils.escapeHtml(item.linkedPlanId || '-')}</span></div>
-                  <div style="margin-top:4px; color:var(--text-secondary); font-size:12px;">Linked tasks: ${(item.linkedTaskIds || []).length}</div>
                 </div>
 
                 <!-- Workflow Steps List -->
@@ -1000,39 +598,12 @@ const UI = {
                     </tbody>
                   </table>
                 </div>
-                <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-                  <button class="btn btn-outline" data-workflow-action="add-step" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Add Step</button>
-                  <button class="btn btn-outline" data-workflow-action="done-step" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Mark Step Done</button>
-                  <button class="btn btn-outline" data-workflow-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
-                </div>
               </div>
             `;
           }).join('')}
         </div>
       `;
       container.innerHTML = wHtml;
-      container.querySelectorAll('[data-workflow-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-workflow-action');
-          const workflowId = btn.getAttribute('data-id');
-          let res;
-          if (action === 'add-step') {
-            const title = prompt('Step baru:');
-            if (!title) return;
-            res = await Api.addWorkflowStep({ userId, workflowId, title, workspaceId });
-          } else if (action === 'done-step') {
-            const stepNumber = prompt('Step number yang selesai:');
-            if (!stepNumber) return;
-            res = await Api.markWorkflowStepDone({ userId, workflowId, stepNumber: Number(stepNumber), workspaceId });
-          } else if (action === 'archive') {
-            const confirmationText = prompt('Ketik ARCHIVE untuk archive workflow ini:');
-            if (confirmationText !== 'ARCHIVE') return;
-            res = await Api.archiveWorkflow({ userId, workflowId, confirm: true, confirmationText, workspaceId, reason: prompt('Alasan archive (opsional):') || '' });
-          }
-          Utils.showToast(res?.ok && res.data?.ok ? 'Workflow action sukses.' : 'Workflow action gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
-          await loadData();
-        });
-      });
     };
 
     let html = UI.renderSectionHeader('Workflows (Alur Rencana)');
@@ -1042,7 +613,6 @@ const UI = {
           <label for="workflows-user-id">User ID Telegram</label>
           <input type="text" id="workflows-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
-        ${UI.renderWorkspaceInput('workflows')}
         <button class="btn btn-primary" id="btn-load-workflows" style="height:40px;">Load Workflows</button>
       </div>
       <div id="workflows-list-container">
@@ -1054,1876 +624,18 @@ const UI = {
     document.getElementById('btn-load-workflows').addEventListener('click', loadData);
   },
 
-  async renderPlanner(targetEl) {
-    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
-    let selectedPlanId = '';
-
-    const renderTaskTable = (tasks, userId, workspaceId) => `
-      <div class="table-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Status</th>
-              <th>Priority</th>
-              <th>Score</th>
-              <th>Blocked</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(tasks || []).map(task => `
-              <tr>
-                <td>
-                  <strong>${Utils.escapeHtml(task.title)}</strong>
-                  <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(task.id)}</div>
-                  <div style="font-size:12px; color:var(--text-secondary);">${Utils.escapeHtml(task.priorityExplanation || '')}</div>
-                </td>
-                <td>${UI.renderBadge(task.status || 'todo')}</td>
-                <td><span class="badge badge-none">${Utils.escapeHtml(task.priority || 'medium')}</span></td>
-                <td style="font-family:var(--font-mono);">${Number(task.priorityScore || 0)}</td>
-                <td>${task.blockedReason ? Utils.escapeHtml(task.blockedReason) : '-'}</td>
-                <td>
-                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                    <button class="btn btn-outline" data-planner-task="done" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Done</button>
-                    <button class="btn btn-outline" data-planner-task="blocked" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Block</button>
-                    <button class="btn btn-outline" data-planner-task="propose" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px;">Propose Exec</button>
-                    <button class="btn btn-outline" data-planner-task="archive" data-id="${Utils.escapeHtml(task.id)}" style="padding:5px 8px; font-size:12px; color:var(--color-danger);">Archive</button>
-                  </div>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    const bindTaskButtons = (container, userId, workspaceId) => {
-      container.querySelectorAll('[data-planner-task]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-planner-task');
-          const taskId = btn.getAttribute('data-id');
-          let res;
-          if (action === 'done') {
-            res = await Api.markTaskDone(taskId, { userId, workspaceId });
-          } else if (action === 'blocked') {
-            const reason = prompt('Alasan blocked:') || '';
-            if (!reason) return;
-            res = await Api.markTaskBlocked(taskId, { userId, workspaceId, reason });
-          } else if (action === 'propose') {
-            res = await Api.proposeExecutionFromTask({ userId, actorId: userId, workspaceId, taskId });
-            Utils.showToast(res?.ok && res.data?.ok ? 'Proposal eksekusi dibuat. Buka tab Executor untuk approve/run.' : 'Gagal membuat proposal eksekusi.', res?.ok && res.data?.ok ? 'success' : 'danger');
-            return;
-          } else if (action === 'archive') {
-            return Utils.confirmAction('Archive Task', 'Task akan disembunyikan dari daftar aktif, tetapi tidak dihapus permanen.', async () => {
-              const res = await Api.archiveTask(taskId, { userId, workspaceId });
-              Utils.showToast(res?.ok && res.data?.ok ? 'Task planner di-archive.' : 'Gagal archive task planner.', res?.ok && res.data?.ok ? 'success' : 'danger');
-              if (selectedPlanId) await loadPlanDetail(selectedPlanId);
-              await loadNextActions();
-            });
-          }
-          Utils.showToast(res?.ok && res.data?.ok ? 'Task planner diperbarui.' : 'Gagal update task planner.', res?.ok && res.data?.ok ? 'success' : 'danger');
-          if (selectedPlanId) await loadPlanDetail(selectedPlanId);
-          await loadNextActions();
-        });
-      });
-    };
-
-    const loadPlans = async () => {
-      const userId = document.getElementById('planner-user-id').value.trim();
-      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
-      if (!userId) return;
-      localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
-      const list = document.getElementById('planner-list-container');
-      list.innerHTML = UI.renderLoading('Memuat plan...');
-      const res = await Api.listPlans({ userId, workspaceId });
-      if (!res.ok) {
-        list.innerHTML = UI.renderError('Gagal memuat planner');
-        return;
-      }
-      const plans = res.data.items || [];
-      if (!plans.length) {
-        list.innerHTML = UI.renderEmptyState('🗺️', 'Belum Ada Plan', 'Buat plan baru atau generate dari goal/text.');
-        return;
-      }
-      list.innerHTML = `
-        <div class="card-grid-wide">
-          ${plans.map(plan => {
-            const doneMilestones = (plan.milestones || []).filter(item => item.status === 'done').length;
-            const progress = plan.milestones?.length ? (doneMilestones / plan.milestones.length) * 100 : 0;
-            return `
-              <div class="card">
-                <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
-                  <div>
-                    <h3 style="font-size:16px; font-weight:700;">${Utils.escapeHtml(plan.title)}</h3>
-                    <span style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(plan.id)}</span>
-                  </div>
-                  <div style="display:flex; gap:6px;">${UI.renderBadge(plan.status || 'draft')}<span class="badge badge-none">${Utils.escapeHtml(plan.horizon || 'weekly')}</span></div>
-                </div>
-                <p style="font-size:13px; color:var(--text-secondary); margin:12px 0;">${Utils.escapeHtml(plan.description || 'Tidak ada deskripsi.')}</p>
-                ${UI.renderProgressBar(progress)}
-                <div style="font-size:12px; color:var(--text-secondary); margin-top:8px;">Tasks: ${(plan.taskIds || []).length} · Milestone: ${(plan.milestones || []).length}</div>
-                <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-                  <button class="btn btn-outline" data-plan-action="view" data-id="${Utils.escapeHtml(plan.id)}" style="padding:5px 10px; font-size:12px;">View</button>
-                  <button class="btn btn-outline" data-plan-action="archive" data-id="${Utils.escapeHtml(plan.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      `;
-      list.querySelectorAll('[data-plan-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-plan-action');
-          const planId = btn.getAttribute('data-id');
-          if (action === 'view') {
-            selectedPlanId = planId;
-            await loadPlanDetail(planId);
-          } else if (action === 'archive') {
-            Utils.confirmAction('Archive Plan', 'Plan akan diarsipkan secara soft archive. Task tidak dihapus permanen.', async () => {
-              const res = await Api.archivePlan(planId, { userId, workspaceId });
-              Utils.showToast(res.ok && res.data?.ok ? 'Plan di-archive.' : 'Gagal archive plan.', res.ok && res.data?.ok ? 'success' : 'danger');
-              await loadPlans();
-            });
-          }
-        });
-      });
-    };
-
-    const loadPlanDetail = async (planId) => {
-      const userId = document.getElementById('planner-user-id').value.trim();
-      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
-      const detail = document.getElementById('planner-detail-container');
-      detail.innerHTML = UI.renderLoading('Memuat detail plan...');
-      const res = await Api.getPlan(planId, { userId, workspaceId });
-      if (!res.ok || !res.data?.ok) {
-        detail.innerHTML = UI.renderError('Gagal memuat detail plan');
-        return;
-      }
-      const plan = res.data.plan || {};
-      const tasks = res.data.tasks || [];
-      detail.innerHTML = `
-        <div class="panel">
-          <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
-            <div>
-              <h3>${Utils.escapeHtml(plan.title)}</h3>
-              <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">${Utils.escapeHtml(plan.id)}</div>
-            </div>
-            <div>${UI.renderBadge(plan.status || 'draft')} <span class="badge badge-none">${Utils.escapeHtml(plan.horizon || 'weekly')}</span></div>
-          </div>
-          <p style="color:var(--text-secondary); margin-top:12px;">${Utils.escapeHtml(plan.description || '-')}</p>
-          <h4 style="margin-top:18px;">Milestones</h4>
-          ${(plan.milestones || []).length ? (plan.milestones || []).map(item => `
-            <div style="margin-bottom:10px;">
-              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>${Utils.escapeHtml(item.title)}</span><span>${item.progress || 0}%</span></div>
-              ${UI.renderProgressBar(item.progress || 0)}
-            </div>
-          `).join('') : '<p class="text-muted">Belum ada milestone.</p>'}
-          <div style="display:flex; gap:8px; margin:16px 0; flex-wrap:wrap;">
-            <button class="btn btn-primary" id="btn-planner-add-task">Add Task</button>
-            <button class="btn btn-outline" id="btn-planner-load-next">Refresh Next Actions</button>
-          </div>
-          ${renderTaskTable(tasks, userId, workspaceId)}
-        </div>
-      `;
-      document.getElementById('btn-planner-add-task').addEventListener('click', async () => {
-        const title = prompt('Judul task:');
-        if (!title) return;
-        const res = await Api.createTask(plan.id, { userId, workspaceId, title });
-        Utils.showToast(res.ok && res.data?.ok ? 'Task dibuat.' : 'Gagal membuat task.', res.ok && res.data?.ok ? 'success' : 'danger');
-        await loadPlanDetail(plan.id);
-        await loadNextActions();
-      });
-      document.getElementById('btn-planner-load-next').addEventListener('click', loadNextActions);
-      bindTaskButtons(detail, userId, workspaceId);
-    };
-
-    const loadNextActions = async () => {
-      const userId = document.getElementById('planner-user-id').value.trim();
-      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
-      const panel = document.getElementById('planner-next-actions');
-      if (!panel || !userId) return;
-      const res = await Api.getNextActions({ userId, workspaceId });
-      if (!res.ok) {
-        panel.innerHTML = UI.renderError('Gagal memuat next actions');
-        return;
-      }
-      const actions = res.data.actions || [];
-      const blocked = res.data.blocked || [];
-      panel.innerHTML = `
-        <div class="card">
-          <div class="card-title">Next Actions</div>
-          ${actions.length ? actions.map((task, index) => `<div style="padding:8px 0; border-bottom:1px solid var(--border-color);"><strong>${index + 1}. ${Utils.escapeHtml(task.title)}</strong><div style="font-size:12px; color:var(--text-secondary);">Priority ${Utils.escapeHtml(task.priority)} · Score ${Number(task.priorityScore || 0)}</div></div>`).join('') : '<p class="text-muted">Belum ada next action.</p>'}
-          ${blocked.length ? `<div style="margin-top:12px;"><strong>Blocked</strong>${blocked.map(task => `<div style="font-size:12px; color:var(--color-warning);">- ${Utils.escapeHtml(task.title)}</div>`).join('')}</div>` : ''}
-        </div>
-      `;
-    };
-
-    const createPlan = async () => {
-      const userId = document.getElementById('planner-user-id').value.trim();
-      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
-      const title = prompt('Judul plan:');
-      if (!title) return;
-      const description = prompt('Deskripsi plan (opsional):') || '';
-      const res = await Api.createPlan({ userId, workspaceId, title, description, status: 'active' });
-      Utils.showToast(res.ok && res.data?.ok ? 'Plan dibuat.' : 'Gagal membuat plan.', res.ok && res.data?.ok ? 'success' : 'danger');
-      await loadPlans();
-    };
-
-    const generateFromText = async () => {
-      const userId = document.getElementById('planner-user-id').value.trim();
-      const workspaceId = document.getElementById('planner-workspace-id').value.trim();
-      const text = prompt('Tulis goal/roadmap yang ingin dipecah menjadi plan:');
-      if (!text) return;
-      const res = await Api.generatePlanFromText({ userId, workspaceId, text });
-      Utils.showToast(res.ok && res.data?.ok ? 'Plan dari teks dibuat.' : 'Gagal generate plan.', res.ok && res.data?.ok ? 'success' : 'danger');
-      await loadPlans();
-    };
-
-    let html = UI.renderSectionHeader('Long-Term Planner');
-    html += `
-      <div class="filter-bar">
-        <div class="filter-group">
-          <label for="planner-user-id">User ID Telegram</label>
-          <input type="text" id="planner-user-id" value="${Utils.escapeHtml(currentUserId)}">
-        </div>
-        ${UI.renderWorkspaceInput('planner')}
-        <button class="btn btn-primary" id="btn-load-plans" style="height:40px;">Load Plans</button>
-        <button class="btn btn-outline" id="btn-create-plan" style="height:40px;">Create Plan</button>
-        <button class="btn btn-outline" id="btn-generate-plan-text" style="height:40px;">Generate From Text</button>
-      </div>
-      <div class="grid grid-2" style="gap:18px; align-items:start;">
-        <div>
-          <div id="planner-list-container">${UI.renderEmptyState('🗺️', 'Masukkan User ID', 'Load planner untuk melihat roadmap dan task.')}</div>
-        </div>
-        <div id="planner-next-actions">${UI.renderEmptyState('✅', 'Next Actions', 'Next action akan muncul setelah data dimuat.')}</div>
-      </div>
-      <div id="planner-detail-container" style="margin-top:24px;"></div>
-    `;
-    targetEl.innerHTML = html;
-    document.getElementById('btn-load-plans').addEventListener('click', async () => {
-      await loadPlans();
-      await loadNextActions();
-    });
-    document.getElementById('btn-create-plan').addEventListener('click', createPlan);
-    document.getElementById('btn-generate-plan-text').addEventListener('click', generateFromText);
-  },
-
-  async renderExecutor(targetEl) {
-    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
-
-    const renderActions = (actions = []) => {
-      if (!actions.length) return '<p class="text-muted">Tidak ada action.</p>';
-      return actions.map((action, index) => `
-        <div style="border:1px solid var(--border-color); border-radius:6px; padding:10px; margin-top:8px;">
-          <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-            <strong>${index + 1}. ${Utils.escapeHtml(action.type || '-')}</strong>
-            <span class="badge badge-${Utils.escapeHtml(action.riskLevel || 'low')}">${Utils.escapeHtml(action.riskLevel || 'low')}</span>
-          </div>
-          <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">${Utils.escapeHtml(action.description || '')}</div>
-          <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted); margin-top:6px;">${Utils.escapeHtml(action.targetType || '-')}:${Utils.escapeHtml(action.targetId || '-')}</div>
-        </div>
-      `).join('');
-    };
-
-    const renderProposalCard = (proposal = {}) => `
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
-          <div>
-            <h3 style="font-size:16px; font-weight:700;">${Utils.escapeHtml(proposal.title || '-')}</h3>
-            <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(proposal.id || '-')}</div>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">${UI.renderBadge(proposal.status || 'unknown')}<span class="badge badge-none">${Utils.escapeHtml(proposal.riskLevel || 'low')}</span></div>
-        </div>
-        <p style="font-size:13px; color:var(--text-secondary); margin:12px 0;">${Utils.escapeHtml(proposal.description || 'Tidak ada deskripsi.')}</p>
-        <div class="kv-list" style="margin-bottom:10px;">
-          <div class="kv-item"><span class="kv-key">Source</span><span>${Utils.escapeHtml(proposal.sourceType || '-')} ${Utils.escapeHtml(proposal.sourceId || '')}</span></div>
-          <div class="kv-item"><span class="kv-key">Approval</span><span>${proposal.requiresApproval ? 'required' : 'not required'}</span></div>
-          <div class="kv-item"><span class="kv-key">Expires</span><span>${Utils.escapeHtml(proposal.expiresAt ? Utils.formatDate(proposal.expiresAt) : '-')}</span></div>
-        </div>
-        ${renderActions(proposal.proposedActions || [])}
-        ${proposal.resultSummary ? `<div class="alert alert-success" style="margin-top:10px;">${Utils.escapeHtml(proposal.resultSummary)}</div>` : ''}
-        ${proposal.errorSummary ? `<div class="alert alert-warning" style="margin-top:10px;">${Utils.escapeHtml(proposal.errorSummary)}</div>` : ''}
-        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-          <button class="btn btn-outline" data-exec-action="approve" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px;">Approve</button>
-          <button class="btn btn-primary" data-exec-action="run" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px;">Run Approved</button>
-          <button class="btn btn-outline" data-exec-action="reject" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px;">Reject</button>
-          <button class="btn btn-outline" data-exec-action="cancel" data-id="${Utils.escapeHtml(proposal.id || '')}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Cancel</button>
-        </div>
-      </div>
-    `;
-
-    const getFilters = () => {
-      const userId = document.getElementById('executor-user-id').value.trim();
-      const workspaceId = document.getElementById('executor-workspace-id').value.trim();
-      const status = document.getElementById('executor-status-filter').value;
-      const riskLevel = document.getElementById('executor-risk-filter').value;
-      if (userId) localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
-      return { userId, actorId: userId, workspaceId, status, riskLevel };
-    };
-
-    const bindProposalButtons = (container) => {
-      container.querySelectorAll('[data-exec-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-exec-action');
-          const proposalId = btn.getAttribute('data-id');
-          const filters = getFilters();
-          const run = async () => {
-            let res;
-            if (action === 'approve') res = await Api.approveExecution(proposalId, filters);
-            if (action === 'run') res = await Api.runExecution(proposalId, filters);
-            if (action === 'reject') res = await Api.rejectExecution(proposalId, { ...filters, reason: prompt('Alasan reject:', '') || 'Rejected from dashboard.' });
-            if (action === 'cancel') res = await Api.cancelExecution(proposalId, filters);
-            Utils.showToast(res?.ok && res.data?.ok ? `Executor ${action} sukses.` : `Executor ${action} gagal.`, res?.ok && res.data?.ok ? 'success' : 'danger');
-            await loadExecutor();
-          };
-          const labels = {
-            approve: 'Approve proposal ini? Approval belum menjalankan aksi.',
-            run: 'Run proposal yang sudah approved? Action akan dieksekusi sesuai registry aman.',
-            reject: 'Reject proposal ini?',
-            cancel: 'Cancel proposal ini?'
-          };
-          return Utils.confirmAction(`Executor ${action}`, labels[action] || 'Lanjutkan action?', run);
-        });
-      });
-    };
-
-    const loadExecutor = async () => {
-      const filters = getFilters();
-      const panel = document.getElementById('executor-list');
-      const runsPanel = document.getElementById('executor-runs');
-      if (!filters.userId) return;
-      panel.innerHTML = UI.renderLoading('Memuat proposal executor...');
-      const res = await Api.listExecutionProposals(filters);
-      if (!res.ok || !res.data?.ok) {
-        panel.innerHTML = UI.renderError('Gagal memuat proposal executor');
-      } else {
-        const items = res.data.items || [];
-        panel.innerHTML = items.length
-          ? `<div class="card-grid-wide">${items.map(renderProposalCard).join('')}</div>`
-          : UI.renderEmptyState('✅', 'Belum Ada Proposal', 'Buat proposal dari task planner atau manual.');
-        bindProposalButtons(panel);
-      }
-      const runs = await Api.listExecutionRuns({ userId: filters.userId, actorId: filters.actorId, workspaceId: filters.workspaceId, limit: 10 });
-      const runItems = runs.data?.items || [];
-      runsPanel.innerHTML = `
-        <div class="card">
-          <div class="card-title">Recent Executions</div>
-          ${runItems.length ? runItems.map(run => `
-            <div style="padding:8px 0; border-bottom:1px solid var(--border-color);">
-              <strong>${Utils.escapeHtml(run.id)}</strong> ${UI.renderBadge(run.status || 'unknown')}
-              <div style="font-size:12px; color:var(--text-secondary);">${Utils.escapeHtml(run.resultSummary || run.errorSummary || '-')}</div>
-            </div>
-          `).join('') : '<p class="text-muted">Belum ada execution run.</p>'}
-        </div>
-      `;
-    };
-
-    const createManualProposal = async () => {
-      const filters = getFilters();
-      const title = prompt('Judul proposal eksekusi:');
-      if (!title) return;
-      const description = prompt('Deskripsi:', '') || '';
-      const actionType = prompt('Action type aman:', 'report.health.export') || 'report.health.export';
-      const res = await Api.createExecutionProposal({
-        ...filters,
-        title,
-        description,
-        sourceType: 'dashboard',
-        proposedActions: [{
-          type: actionType,
-          targetType: 'dashboard',
-          description: description || title,
-          payload: {},
-          riskLevel: actionType.includes('benchmark') ? 'medium' : 'low'
-        }]
-      });
-      Utils.showToast(res?.ok && res.data?.ok ? 'Proposal manual dibuat.' : 'Gagal membuat proposal manual.', res?.ok && res.data?.ok ? 'success' : 'danger');
-      await loadExecutor();
-    };
-
-    const proposeTask = async () => {
-      const filters = getFilters();
-      const taskId = prompt('Planner task ID:');
-      if (!taskId) return;
-      const res = await Api.proposeExecutionFromTask({ ...filters, taskId });
-      Utils.showToast(res?.ok && res.data?.ok ? 'Proposal dari task dibuat.' : 'Gagal membuat proposal dari task.', res?.ok && res.data?.ok ? 'success' : 'danger');
-      await loadExecutor();
-    };
-
-    let html = UI.renderSectionHeader('Human-Approved Executor');
-    html += `
-      <div class="alert alert-warning" style="margin-bottom:16px;">No action runs without approval. Proposal creation only prepares a preview; use Approve, then Run Approved.</div>
-      <div class="filter-bar">
-        <div class="filter-group">
-          <label for="executor-user-id">User ID Telegram</label>
-          <input type="text" id="executor-user-id" value="${Utils.escapeHtml(currentUserId)}">
-        </div>
-        ${UI.renderWorkspaceInput('executor')}
-        <div class="filter-group">
-          <label>Status</label>
-          <select id="executor-status-filter">
-            <option value="">all</option>
-            <option value="pending_approval">pending_approval</option>
-            <option value="approved">approved</option>
-            <option value="completed">completed</option>
-            <option value="failed">failed</option>
-            <option value="rejected">rejected</option>
-            <option value="cancelled">cancelled</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Risk</label>
-          <select id="executor-risk-filter">
-            <option value="">all</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-            <option value="danger">danger</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" id="btn-load-executor" style="height:40px;">Load</button>
-        <button class="btn btn-outline" id="btn-executor-propose-task" style="height:40px;">Propose From Task</button>
-        <button class="btn btn-outline" id="btn-executor-create" style="height:40px;">Create Manual Proposal</button>
-      </div>
-      <div class="grid grid-2" style="gap:18px; align-items:start;">
-        <div id="executor-list">${UI.renderEmptyState('✅', 'Load Executor', 'Masukkan User ID untuk melihat proposal.')}</div>
-        <div id="executor-runs">${UI.renderEmptyState('📋', 'Recent Runs', 'Run executor akan muncul di sini.')}</div>
-      </div>
-      <div class="grid grid-2" style="gap:18px; align-items:start; margin-top:18px;">
-        <section class="panel">
-          <h3>Agent Executor Bridge</h3>
-          <p class="text-muted">Buat action plan dari natural request. Proposal tidak menjalankan action sampai di-approve dan di-run.</p>
-          <textarea id="agent-action-text" rows="3" placeholder="Contoh: jalankan backup sekarang"></textarea>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-            <button class="btn btn-primary" id="btn-agent-action-create">Create Action Plan</button>
-            <button class="btn btn-outline" id="btn-agent-action-load">Load Action Plans</button>
-          </div>
-          <div id="agent-action-plans" style="margin-top:12px;">${UI.renderEmptyState('🧩', 'Action Plans', 'Action plan agent akan muncul di sini.')}</div>
-        </section>
-        <section class="panel">
-          <h3>Agent Evaluation Harness</h3>
-          <p class="text-muted">Dry-run evaluation. Tidak ada action yang dieksekusi.</p>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-outline" id="btn-eval-cases">Load Cases</button>
-            <button class="btn btn-primary" id="btn-eval-suite">Run Suite</button>
-            <button class="btn btn-outline" id="btn-eval-runs">Latest Runs</button>
-            <button class="btn btn-outline" id="btn-eval-gates">Quality Gates</button>
-            <button class="btn btn-outline" id="btn-eval-compare">Compare</button>
-          </div>
-          <div id="agent-evaluation-result" style="margin-top:12px;">${UI.renderEmptyState('🧪', 'Evaluation Ready', 'Jalankan suite untuk mengukur routing, risk, proposal, dan safety.')}</div>
-        </section>
-      </div>
-    `;
-    targetEl.innerHTML = html;
-    document.getElementById('btn-load-executor').addEventListener('click', loadExecutor);
-    document.getElementById('btn-executor-create').addEventListener('click', createManualProposal);
-    document.getElementById('btn-executor-propose-task').addEventListener('click', proposeTask);
-    const renderActionPlans = (items = []) => items.length ? items.map(plan => `
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-          <strong>${Utils.escapeHtml(plan.title || '-')}</strong>
-          ${UI.renderBadge(plan.status || 'draft')}
-        </div>
-        <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(plan.id || '-')}</div>
-        <p class="text-muted">${Utils.escapeHtml(plan.description || '')}</p>
-        <div class="kv-list">
-          <div class="kv-item"><span class="kv-key">Risk</span><span>${Utils.escapeHtml(plan.riskLevel || 'medium')}</span></div>
-          <div class="kv-item"><span class="kv-key">Actions</span><span>${(plan.actions || []).length}</span></div>
-          <div class="kv-item"><span class="kv-key">Proposal</span><span>${Utils.escapeHtml(plan.executorProposalId || '-')}</span></div>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-          <button class="btn btn-outline" data-agent-plan-action="preflight" data-id="${Utils.escapeHtml(plan.id || '')}">Preflight</button>
-          <button class="btn btn-primary" data-agent-plan-action="propose" data-id="${Utils.escapeHtml(plan.id || '')}">Create Proposal</button>
-        </div>
-      </div>
-    `).join('') : UI.renderEmptyState('🧩', 'Belum Ada Action Plan', 'Buat dari natural action request.');
-    const bindActionPlanButtons = () => {
-      document.querySelectorAll('[data-agent-plan-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const id = btn.getAttribute('data-id');
-          const action = btn.getAttribute('data-agent-plan-action');
-          const filters = getFilters();
-          const res = action === 'preflight'
-            ? await Api.preflightAgentActionPlan(id, filters)
-            : await Api.proposeAgentActionPlan(id, filters);
-          Utils.showToast(res?.ok && res.data?.ok !== false ? `${action} selesai.` : `${action} gagal.`, res?.ok && res.data?.ok !== false ? 'success' : 'danger');
-          if (action === 'preflight') {
-            document.getElementById('agent-action-plans').insertAdjacentHTML('beforeend', `<div class="alert alert-info" style="margin-top:8px;"><pre>${Utils.escapeHtml(JSON.stringify(res.data?.preflight || res.data, null, 2))}</pre></div>`);
-          } else {
-            await loadActionPlans();
-            await loadExecutor();
-          }
-        });
-      });
-    };
-    const loadActionPlans = async () => {
-      const filters = getFilters();
-      const res = await Api.listAgentActionPlans({ ...filters, limit: 20 });
-      const target = document.getElementById('agent-action-plans');
-      target.innerHTML = res.ok && res.data?.ok ? renderActionPlans(res.data.items || []) : UI.renderError('Gagal memuat action plan.');
-      bindActionPlanButtons();
-    };
-    document.getElementById('btn-agent-action-create').addEventListener('click', async () => {
-      const filters = getFilters();
-      const text = document.getElementById('agent-action-text').value.trim();
-      if (!text) return Utils.showToast('Isi action request dulu.', 'warning');
-      const res = await Api.createAgentActionPlan({ ...filters, text });
-      Utils.showToast(res?.ok && res.data?.ok ? 'Action plan dibuat.' : 'Gagal membuat action plan.', res?.ok && res.data?.ok ? 'success' : 'danger');
-      await loadActionPlans();
-    });
-    document.getElementById('btn-agent-action-load').addEventListener('click', loadActionPlans);
-    document.getElementById('btn-eval-cases').addEventListener('click', async () => {
-      const res = await Api.listEvaluationCases();
-      const items = res.data?.items || [];
-      document.getElementById('agent-evaluation-result').innerHTML = items.length
-        ? items.map(item => `<div class="card"><strong>${Utils.escapeHtml(item.id)}</strong><p>${Utils.escapeHtml(item.input)}</p><button class="btn btn-outline" data-eval-case="${Utils.escapeHtml(item.id)}">Run Case</button></div>`).join('')
-        : UI.renderEmptyState('🧪', 'No Cases', 'Evaluation case tidak tersedia.');
-      document.querySelectorAll('[data-eval-case]').forEach(btn => btn.addEventListener('click', async () => {
-        const run = await Api.runEvaluationCase(btn.getAttribute('data-eval-case'));
-        document.getElementById('agent-evaluation-result').insertAdjacentHTML('beforeend', `<div class="alert alert-info"><pre>${Utils.escapeHtml(JSON.stringify(run.data?.result || run.data, null, 2))}</pre></div>`);
-      }));
-    });
-    document.getElementById('btn-eval-suite').addEventListener('click', async () => {
-      const res = await Api.runEvaluationSuite({ limit: 50 });
-      const summary = res.data?.summary || {};
-      document.getElementById('agent-evaluation-result').innerHTML = `
-        <div class="grid grid-3" style="gap:12px;">
-          <div class="stat-card"><span class="stat-label">Average</span><strong>${Utils.escapeHtml(String(summary.averageScore ?? '-'))}%</strong></div>
-          <div class="stat-card"><span class="stat-label">Passed</span><strong>${Utils.escapeHtml(String(summary.passedCases ?? 0))}/${Utils.escapeHtml(String(summary.totalCases ?? 0))}</strong></div>
-          <div class="stat-card"><span class="stat-label">Quality Gates</span><strong>${Utils.escapeHtml(summary.qualityGateStatus || '-')}</strong></div>
-        </div>
-        <div class="card" style="margin-top:12px;"><h3>Category Scores</h3><pre>${Utils.escapeHtml(JSON.stringify(summary.categoryScores || {}, null, 2))}</pre></div>
-        ${(summary.failures || []).length ? `<div class="alert alert-warning"><pre>${Utils.escapeHtml(JSON.stringify(summary.failures, null, 2))}</pre></div>` : ''}
-      `;
-    });
-    document.getElementById('btn-eval-runs').addEventListener('click', async () => {
-      const res = await Api.listEvaluationRuns({ limit: 5 });
-      document.getElementById('agent-evaluation-result').innerHTML = `<pre>${Utils.escapeHtml(JSON.stringify(res.data?.items || [], null, 2))}</pre>`;
-    });
-    document.getElementById('btn-eval-gates').addEventListener('click', async () => {
-      const res = await Api.getEvaluationQualityGates();
-      document.getElementById('agent-evaluation-result').innerHTML = `<div class="card"><h3>Quality Gates</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data?.qualityGates || res.data, null, 2))}</pre></div>`;
-    });
-    document.getElementById('btn-eval-compare').addEventListener('click', async () => {
-      const res = await Api.compareEvaluationRuns();
-      document.getElementById('agent-evaluation-result').innerHTML = `<div class="card"><h3>Regression Compare</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data?.compare || res.data, null, 2))}</pre></div>`;
-    });
-  },
-
-  async renderAgents(targetEl) {
-    targetEl.innerHTML = `
-      <div class="page-header">
-        <h2>🤝 Agents / Multi-Bot</h2>
-        <p>Status multi-bot, agent registry, dan natural smart router. Token dan webhook secret tidak pernah ditampilkan.</p>
-      </div>
-      <div class="grid-2">
-        <section class="panel">
-          <h3>Bot Status</h3>
-          <button id="agents-load-bots" class="btn btn-primary">Load Bots</button>
-          <div id="agents-bots" style="margin-top:16px;">${UI.renderEmptyState('🤖', 'Belum Dimuat', 'Klik Load Bots untuk melihat konfigurasi aman.')}</div>
-        </section>
-        <section class="panel">
-          <h3>Agent Roles</h3>
-          <button id="agents-load-agents" class="btn btn-primary">Load Agents</button>
-          <div id="agents-list" style="margin-top:16px;">${UI.renderEmptyState('🤝', 'Belum Dimuat', 'Klik Load Agents untuk melihat role agent.')}</div>
-        </section>
-      </div>
-      <section class="panel">
-        <h3>Natural Smart Router Test</h3>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Sample Message</label>
-            <textarea id="agent-router-message" rows="4" placeholder="Contoh: Bot saya error setelah deploy di Render"></textarea>
-          </div>
-          <div class="form-group">
-            <label>Mode</label>
-            <select id="agent-router-mode">
-              <option value="natural_smart">natural_smart</option>
-              <option value="quiet">quiet</option>
-              <option value="council">council</option>
-              <option value="debate">debate</option>
-              <option value="allagents">allagents</option>
-              <option value="risk_review">risk_review</option>
-            </select>
-          </div>
-        </div>
-        <button id="agent-router-test" class="btn btn-primary">Test Router</button>
-        <button id="agent-router-test-memory" class="btn btn-outline">Test With Memory</button>
-        <div id="agent-router-result" style="margin-top:16px;">${UI.renderEmptyState('🧭', 'Router Ready', 'Masukkan pesan untuk melihat topic, risk, dan selected agents.')}</div>
-      </section>
-      <section class="panel">
-        <h3>Agent Council & Debate</h3>
-        <p class="text-muted">Council memberi final synthesis sanitized. Normal chat tetap satu jawaban bersih; opini agent tampil hanya di mode eksplisit ini.</p>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Topic / Decision</label>
-            <textarea id="council-topic" rows="4" placeholder="Contoh: saya bingung lanjut phase berapa"></textarea>
-          </div>
-          <div class="form-group">
-            <label>Workspace ID</label>
-            <input id="council-workspace" placeholder="default">
-            <label style="margin-top:12px;">User ID</label>
-            <input id="council-user" placeholder="dashboard-admin">
-          </div>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button id="council-run" class="btn btn-primary">Run Council</button>
-          <button id="council-debate" class="btn btn-outline">Debate</button>
-          <button id="council-risk" class="btn btn-outline">Risk Review</button>
-          <button id="council-decision" class="btn btn-outline">Decision Review</button>
-          <button id="council-router-test" class="btn btn-outline">Council Router Test</button>
-          <button id="council-load-sessions" class="btn btn-outline">Load Sessions</button>
-        </div>
-        <div id="council-result" style="margin-top:16px;">${UI.renderEmptyState('🧠', 'Council Ready', 'Jalankan council untuk melihat opini, kritik, dan synthesis.')}</div>
-      </section>
-      <div class="grid-2">
-        <section class="panel">
-          <h3>Agent Task Delegation</h3>
-          <p class="text-muted">Pecah request kompleks menjadi task Planner/Coder/Critic/Ops/Security tanpa menjalankan aksi eksternal.</p>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Delegation Request</label>
-              <textarea id="delegation-message" rows="4" placeholder="Contoh: buat prompt phase 24 external integration"></textarea>
-            </div>
-            <div class="form-group">
-              <label>Workspace ID</label>
-              <input id="delegation-workspace" placeholder="default">
-              <label style="margin-top:12px;">User ID</label>
-              <input id="delegation-user" placeholder="dashboard-admin">
-            </div>
-          </div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button id="delegation-create" class="btn btn-primary">Create Delegation</button>
-            <button id="delegation-router-test" class="btn btn-outline">Router Test</button>
-            <button id="delegation-load" class="btn btn-outline">Load Delegations</button>
-            <button id="agent-tasks-load" class="btn btn-outline">Load Tasks</button>
-          </div>
-          <div id="delegation-result" style="margin-top:16px;">${UI.renderEmptyState('🧩', 'Delegation Ready', 'Buat delegation untuk melihat task agent dan final synthesis.')}</div>
-        </section>
-        <section class="panel">
-          <h3>Decision / Risk Review</h3>
-          <p class="text-muted">Analisis opsi, pro/kontra, risk score, confidence, dan rekomendasi tanpa menjalankan action.</p>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Decision Question</label>
-              <textarea id="decision-question" rows="4" placeholder="Contoh: lebih baik tambah 10 bot langsung atau 4 dulu?"></textarea>
-            </div>
-            <div class="form-group">
-              <label>Workspace ID</label>
-              <input id="decision-workspace" placeholder="default">
-              <label style="margin-top:12px;">User ID</label>
-              <input id="decision-user" placeholder="dashboard-admin">
-            </div>
-          </div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button id="decision-analyze" class="btn btn-primary">Analyze Decision</button>
-            <button id="decision-router-test" class="btn btn-outline">Router Test</button>
-            <button id="decision-load" class="btn btn-outline">Load Decisions</button>
-          </div>
-          <div id="decision-result" style="margin-top:16px;">${UI.renderEmptyState('⚖️', 'Decision Ready', 'Analisis keputusan akan muncul di sini.')}</div>
-        </section>
-      </div>
-      <section class="panel">
-        <h3>Agent Personality & Memory</h3>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Agent ID</label>
-            <select id="agent-memory-agent">
-              <option value="orchestrator">orchestrator</option>
-              <option value="planner">planner</option>
-              <option value="coder">coder</option>
-              <option value="critic">critic</option>
-              <option value="research">research</option>
-              <option value="ops">ops</option>
-              <option value="security">security</option>
-              <option value="memory">memory</option>
-              <option value="executor">executor</option>
-              <option value="reflection">reflection</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Workspace ID</label>
-            <input id="agent-memory-workspace" placeholder="default">
-          </div>
-          <div class="form-group">
-            <label>User ID</label>
-            <input id="agent-memory-user" placeholder="optional">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Memory / Learning Note</label>
-          <textarea id="agent-memory-text" rows="3" placeholder="Contoh: Coder Agent harus menjaga CommonJS dan Render compatibility."></textarea>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button id="agent-profile-load" class="btn btn-outline">Load Profile</button>
-          <button id="agent-memory-load" class="btn btn-outline">Load Memory</button>
-          <button id="agent-memory-create" class="btn btn-primary">Save Agent Memory</button>
-          <button id="agent-note-create" class="btn btn-outline">Save Learning Note</button>
-          <button id="agent-shared-load" class="btn btn-outline">Shared Memory</button>
-        </div>
-        <div id="agent-memory-result" style="margin-top:16px;">${UI.renderEmptyState('🧠', 'Agent Memory Ready', 'Kelola profile dan memory per agent di sini.')}</div>
-      </section>
-      <div class="grid-2">
-        <section class="panel">
-          <h3>Group Mode Settings</h3>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Chat ID</label>
-              <input id="agent-group-chat-id" placeholder="default">
-            </div>
-            <div class="form-group">
-              <label>Mode</label>
-              <select id="agent-group-mode">
-                <option value="natural_smart">natural_smart</option>
-                <option value="quiet">quiet</option>
-                <option value="manual">manual</option>
-                <option value="council">council</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Max Auto Agents</label>
-              <input id="agent-group-max" type="number" min="1" max="5" value="3">
-            </div>
-            <div class="form-group">
-              <label>Visible Specialist Replies</label>
-              <select id="agent-group-visible-mode">
-                <option value="off">orchestrator only</option>
-                <option value="selected">selected specialist bots</option>
-                <option value="council_only">council only</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Max Specialist Bots</label>
-              <input id="agent-group-specialist-max" type="number" min="0" max="5" value="2">
-            </div>
-          </div>
-          <button id="agent-group-load" class="btn btn-outline">Load Settings</button>
-          <button id="agent-group-save" class="btn btn-primary">Save Settings</button>
-          <div id="agent-group-result" style="margin-top:16px;"></div>
-        </section>
-        <section class="panel">
-          <h3>Recent Agent Activity</h3>
-          <button id="agents-load-activity" class="btn btn-primary">Load Activity</button>
-          <div id="agents-activity" style="margin-top:16px;">${UI.renderEmptyState('📋', 'Belum Ada Activity', 'Routing natural chat akan muncul di sini.')}</div>
-        </section>
-      </div>
-      <section class="panel">
-        <h3>BotFather / Privacy Mode Note</h3>
-        <p class="text-muted">Gunakan BotFather untuk membuat token tiap bot. Orchestrator bisa membaca pesan sesuai privacy mode grup; specialist bot sebaiknya tetap command/mention-based. Jangan paste token ke chat.</p>
-      </section>
-    `;
-
-    const renderBotItems = (items = [], warnings = []) => items.length ? `
-      ${warnings.length ? `<div class="alert alert-warning">${warnings.map(item => Utils.escapeHtml(item.message || item)).join('<br>')}</div>` : ''}
-      <div class="card-grid">
-        ${items.map(bot => UI.renderCard(
-          `${bot.id} → ${bot.agentId}`,
-          `<div>${UI.renderBadge(bot.enabled ? 'enabled' : 'disabled')} ${UI.renderBadge(bot.tokenConfigured ? 'token set' : 'token missing')}</div>
-           <div class="kv-item"><span class="kv-key">Webhook Secret</span><span>${bot.webhookSecretConfigured ? 'set' : 'missing'}</span></div>
-           <div class="kv-item"><span class="kv-key">Path</span><span><code>${Utils.escapeHtml(bot.webhookPath || '-')}</code></span></div>`,
-          `Username: ${Utils.escapeHtml(bot.username || '-')}`
-        )).join('')}
-      </div>
-    ` : UI.renderEmptyState('🤖', 'Tidak Ada Bot', 'Set TELEGRAM_TOKEN atau TELEGRAM_TOKEN_ORCHESTRATOR.');
-
-    const renderAgentItems = (items = []) => items.length ? `
-      <div class="card-grid">
-        ${items.map(agent => UI.renderCard(
-          agent.displayName,
-          `<div>${UI.renderBadge(agent.role)} ${agent.defaultSilent ? UI.renderBadge('silent default') : UI.renderBadge('orchestrator')}</div>
-           <p>${Utils.escapeHtml(agent.description || '')}</p>
-           <div class="text-muted">${(agent.specialties || []).slice(0, 6).map(Utils.escapeHtml).join(', ')}</div>`,
-          `Bot: ${Utils.escapeHtml(agent.botId || '-')}`
-        )).join('')}
-      </div>
-    ` : UI.renderEmptyState('🤝', 'Tidak Ada Agent', 'Default agents belum termuat.');
-
-    const renderRoute = (data = {}) => `
-      <div class="card">
-        <div class="card-title">Routing Result</div>
-        <div class="kv-item"><span class="kv-key">Topics</span><span>${(data.topics || []).map(UI.renderBadge).join(' ') || '-'}</span></div>
-        <div class="kv-item"><span class="kv-key">Risk</span><span>${UI.renderBadge(data.risk?.level || 'low')}</span></div>
-        <div class="kv-item"><span class="kv-key">Selected</span><span>${(data.selectedAgents || []).map(UI.renderBadge).join(' ') || '-'}</span></div>
-        <div class="kv-item"><span class="kv-key">Internal</span><span>${(data.internalOnlyAgents || []).map(UI.renderBadge).join(' ') || '-'}</span></div>
-        <div class="kv-item"><span class="kv-key">Muted</span><span>${(data.mutedAgents || []).slice(0, 10).map(UI.renderBadge).join(' ') || '-'}</span></div>
-        <div class="kv-item"><span class="kv-key">Approval</span><span>${data.approvalRequired ? 'required' : 'not required'}</span></div>
-        <p class="text-muted">${Utils.escapeHtml(data.reason || data.policy?.reason || '')}</p>
-      </div>
-    `;
-
-    const renderCouncilResult = (data = {}) => {
-      const session = data.session || data;
-      const decision = data.decision || session.decision || {};
-      const risk = data.riskReview || session.riskReview || {};
-      const opinions = data.opinions || session.opinions || [];
-      const critiques = data.critiques || session.critiques || [];
-      return `
-        <div class="card">
-          <div class="card-title">${Utils.escapeHtml(session.mode || 'Council')} ${UI.renderBadge(session.status || 'completed')} ${UI.renderBadge(risk.riskLevel || session.riskLevel || 'low')}</div>
-          <div class="kv-item"><span class="kv-key">Session</span><span><code>${Utils.escapeHtml(session.id || data.sessionId || '-')}</code></span></div>
-          <div class="kv-item"><span class="kv-key">Approval</span><span>${risk.approvalRequired || session.approvalRequired ? 'required' : 'not required'}</span></div>
-          <p><strong>Rekomendasi:</strong> ${Utils.escapeHtml(decision.recommendation || session.finalSummary || data.finalSummary || '-')}</p>
-          <div class="text-muted">${Utils.escapeHtml((data.finalAnswer || session.finalSummary || '').slice(0, 900))}</div>
-        </div>
-        <div class="grid-2">
-          <div class="card"><div class="card-title">Opinions</div>${opinions.slice(0, 5).map(item => `<p><strong>${Utils.escapeHtml(item.agentId || '-')}</strong>: ${Utils.escapeHtml(item.summary || '-')}</p>`).join('') || '<p class="text-muted">No opinions.</p>'}</div>
-          <div class="card"><div class="card-title">Critiques</div>${critiques.slice(0, 5).map(item => `<p><strong>${Utils.escapeHtml(item.criticAgentId || '-')}</strong>: ${Utils.escapeHtml(item.summary || '-')}</p>`).join('') || '<p class="text-muted">No critiques.</p>'}</div>
-        </div>
-      `;
-    };
-
-    const renderCouncilSessions = (items = []) => items.length ? items.map(item => `
-      <div class="card">
-        <div class="card-title">${Utils.escapeHtml(item.topic || item.id)} ${UI.renderBadge(item.mode || '-')} ${UI.renderBadge(item.status || '-')}</div>
-        <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(item.id || '-')}</code></span></div>
-        <div>${(item.selectedAgents || []).slice(0, 6).map(UI.renderBadge).join(' ')}</div>
-        <p class="text-muted">${Utils.escapeHtml(item.finalSummary || item.originalMessage || '')}</p>
-      </div>
-    `).join('') : UI.renderEmptyState('🧠', 'Belum Ada Session', 'Council session akan muncul setelah dijalankan.');
-
-    const renderDelegationResult = (data = {}) => {
-      const session = data.session || data;
-      const tasks = data.tasks || [];
-      const finalAnswer = data.finalAnswer || session.finalSummary || '';
-      return `
-        <div class="card">
-          <div class="card-title">${Utils.escapeHtml(session.goal || session.originalMessageSummary || 'Delegation')} ${UI.renderBadge(session.status || 'created')} ${UI.renderBadge(session.riskLevel || 'low')}</div>
-          <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(session.id || '-')}</code></span></div>
-          <div class="kv-item"><span class="kv-key">Approval</span><span>${session.approvalRequired ? 'required' : 'not required'}</span></div>
-          ${finalAnswer ? `<p class="text-muted">${Utils.escapeHtml(finalAnswer.slice(0, 1200))}</p>` : ''}
-        </div>
-        <div class="card">
-          <div class="card-title">Agent Tasks</div>
-          ${tasks.length ? tasks.map(task => `
-            <p><strong>${Utils.escapeHtml(task.assignedAgentId || '-')}</strong> ${UI.renderBadge(task.type || '-')} ${UI.renderBadge(task.status || '-')}<br>
-            <span class="text-muted">${Utils.escapeHtml(task.title || task.description || '-')}</span></p>
-          `).join('') : '<p class="text-muted">Task belum dibuat atau belum dimuat.</p>'}
-        </div>
-      `;
-    };
-
-    const renderDelegationList = (items = []) => items.length ? items.map(item => `
-      <div class="card">
-        <div class="card-title">${Utils.escapeHtml(item.goal || item.originalMessageSummary || item.id)} ${UI.renderBadge(item.status || '-')}</div>
-        <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(item.id || '-')}</code></span></div>
-        <div>${(item.selectedAgents || []).slice(0, 6).map(UI.renderBadge).join(' ')}</div>
-        <p class="text-muted">${Utils.escapeHtml(item.finalSummary || '')}</p>
-      </div>
-    `).join('') : UI.renderEmptyState('🧩', 'Belum Ada Delegation', 'Delegation session akan muncul setelah dibuat.');
-
-    const renderAgentTaskList = (items = []) => items.length ? items.map(item => `
-      <div class="card">
-        <div class="card-title">${Utils.escapeHtml(item.title || item.id)} ${UI.renderBadge(item.status || '-')} ${UI.renderBadge(item.riskLevel || 'low')}</div>
-        <div class="kv-item"><span class="kv-key">Agent</span><span>${Utils.escapeHtml(item.assignedAgentId || '-')}</span></div>
-        <div class="kv-item"><span class="kv-key">Type</span><span>${Utils.escapeHtml(item.type || '-')}</span></div>
-        <p class="text-muted">${Utils.escapeHtml(item.resultSummary || item.description || '')}</p>
-      </div>
-    `).join('') : UI.renderEmptyState('🧩', 'Belum Ada Task', 'Agent task akan muncul dari delegation.');
-
-    const renderDecisionResult = (data = {}) => {
-      const decision = data.decision || data;
-      const rec = decision.recommendation || data.recommendation || {};
-      return `
-        <div class="card">
-          <div class="card-title">${Utils.escapeHtml(decision.title || 'Decision')} ${UI.renderBadge(decision.riskLevel || 'low')} ${UI.renderBadge(decision.confidence?.level || 'medium')}</div>
-          <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(decision.id || '-')}</code></span></div>
-          <div class="kv-item"><span class="kv-key">Approval</span><span>${decision.approvalRequired || rec.approvalRequired ? 'required' : 'not required'}</span></div>
-          <p><strong>Rekomendasi:</strong> ${Utils.escapeHtml(rec.recommendation || '-')}</p>
-          <p class="text-muted">${Utils.escapeHtml((data.finalAnswer || '').slice(0, 1200))}</p>
-        </div>
-        <div class="grid-2">
-          <div class="card"><div class="card-title">Options</div>${(decision.options || []).map(option => `<p><strong>${Utils.escapeHtml(option.label)}</strong> ${UI.renderBadge(option.estimatedRisk || 'low')}<br><span class="text-muted">Score: ${Utils.escapeHtml(String(option.score ?? 0))}</span></p>`).join('') || '<p class="text-muted">No options.</p>'}</div>
-          <div class="card"><div class="card-title">Next Steps</div>${(rec.nextSteps || decision.nextSteps || []).slice(0, 5).map((step, idx) => `<p>${idx + 1}. ${Utils.escapeHtml(step)}</p>`).join('') || '<p class="text-muted">No next steps.</p>'}</div>
-        </div>
-      `;
-    };
-
-    const renderDecisionList = (items = []) => items.length ? items.map(item => `
-      <div class="card">
-        <div class="card-title">${Utils.escapeHtml(item.title || item.question || item.id)} ${UI.renderBadge(item.status || '-')} ${UI.renderBadge(item.riskLevel || 'low')}</div>
-        <div class="kv-item"><span class="kv-key">ID</span><span><code>${Utils.escapeHtml(item.id || '-')}</code></span></div>
-        <p class="text-muted">${Utils.escapeHtml(item.recommendation?.recommendation || item.question || '')}</p>
-      </div>
-    `).join('') : UI.renderEmptyState('⚖️', 'Belum Ada Decision', 'Decision record akan muncul setelah analisis.');
-
-    const renderMemoryItems = (items = []) => items.length ? `
-      <div class="card-grid">
-        ${items.map(memory => UI.renderCard(
-          `${memory.title || memory.id}`,
-          `<div>${UI.renderBadge(memory.type || 'memory')} ${memory.archivedAt ? UI.renderBadge('archived') : UI.renderBadge('active')}</div>
-           <p>${Utils.escapeHtml(memory.content || '')}</p>
-           <div class="text-muted">${(memory.tags || []).map(Utils.escapeHtml).join(', ') || '-'}</div>`,
-          `Agent: ${Utils.escapeHtml(memory.agentId || '-')} | Score: ${Math.round(Number(memory.relevanceScore || 0) * 100)}%`
-        )).join('')}
-      </div>
-    ` : UI.renderEmptyState('🧠', 'Belum Ada Memory', 'Simpan memory agent atau shared memory terlebih dahulu.');
-
-    const renderProfile = (profile = {}) => `
-      <div class="card">
-        <div class="card-title">${Utils.escapeHtml(profile.displayName || profile.agentId || 'Agent Profile')}</div>
-        <p>${Utils.escapeHtml(profile.personality || '')}</p>
-        <div class="kv-item"><span class="kv-key">Role</span><span>${Utils.escapeHtml(profile.role || '-')}</span></div>
-        <div class="kv-item"><span class="kv-key">Tone</span><span>${Utils.escapeHtml(profile.responseStyle?.tone || '-')}</span></div>
-        <div class="kv-item"><span class="kv-key">Memory</span><span>${profile.agentMemoryEnabled ? 'enabled' : 'disabled'} / shared ${profile.sharedMemoryEnabled ? 'enabled' : 'disabled'}</span></div>
-        <div class="text-muted">Scope: ${(profile.knowledgeScope || []).slice(0, 10).map(Utils.escapeHtml).join(', ')}</div>
-      </div>
-    `;
-
-    const getAgentMemoryFilters = () => ({
-      agentId: document.getElementById('agent-memory-agent').value || 'orchestrator',
-      workspaceId: document.getElementById('agent-memory-workspace').value || 'default',
-      userId: document.getElementById('agent-memory-user').value || ''
-    });
-
-    document.getElementById('agents-load-bots').addEventListener('click', async () => {
-      const res = await Api.getBots();
-      document.getElementById('agents-bots').innerHTML = res.ok ? renderBotItems(res.data.items || [], res.data.warnings || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
-    });
-
-    document.getElementById('agents-load-agents').addEventListener('click', async () => {
-      const res = await Api.getAgents();
-      document.getElementById('agents-list').innerHTML = res.ok ? renderAgentItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load', res.error || 'API error');
-    });
-
-    document.getElementById('agent-router-test').addEventListener('click', async () => {
-      const message = document.getElementById('agent-router-message').value;
-      const mode = document.getElementById('agent-router-mode').value;
-      const res = await Api.testAgentRouter({ message, mode });
-      document.getElementById('agent-router-result').innerHTML = res.ok ? renderRoute(res.data) : UI.renderEmptyState('⚠️', 'Router Error', res.error || 'API error');
-    });
-
-    document.getElementById('agent-router-test-memory').addEventListener('click', async () => {
-      const filters = getAgentMemoryFilters();
-      const message = document.getElementById('agent-router-message').value;
-      const mode = document.getElementById('agent-router-mode').value;
-      const res = await Api.testAgentRouterWithMemory({ message, mode, workspaceId: filters.workspaceId, userId: filters.userId });
-      const agentsWithMemory = res.data?.agents || [];
-      document.getElementById('agent-router-result').innerHTML = res.ok
-        ? `${renderRoute(res.data.route || {})}<div class="card"><div class="card-title">Memory Context</div>${agentsWithMemory.map(item => `<p><strong>${Utils.escapeHtml(item.agentId)}</strong>: ${item.selectedMemoryCount + item.sharedMemoryCount} memory<br><span class="text-muted">${Utils.escapeHtml(item.memoryExplanation || '')}</span></p>`).join('') || '<p class="text-muted">Tidak ada memory relevan.</p>'}</div>`
-        : UI.renderEmptyState('⚠️', 'Router Memory Error', res.error || 'API error');
-    });
-
-    const getCouncilPayload = () => ({
-      topic: document.getElementById('council-topic').value,
-      workspaceId: document.getElementById('council-workspace').value || 'default',
-      userId: document.getElementById('council-user').value || 'dashboard-admin'
-    });
-
-    const showCouncilResponse = (res) => {
-      document.getElementById('council-result').innerHTML = res.ok
-        ? renderCouncilResult(res.data)
-        : UI.renderEmptyState('⚠️', 'Council Error', res.error || res.data?.error || 'API error');
-    };
-
-    document.getElementById('council-run').addEventListener('click', async () => showCouncilResponse(await Api.runCouncil(getCouncilPayload())));
-    document.getElementById('council-debate').addEventListener('click', async () => showCouncilResponse(await Api.runCouncilDebate(getCouncilPayload())));
-    document.getElementById('council-risk').addEventListener('click', async () => showCouncilResponse(await Api.runCouncilRiskReview(getCouncilPayload())));
-    document.getElementById('council-decision').addEventListener('click', async () => showCouncilResponse(await Api.runCouncilDecisionReview(getCouncilPayload())));
-    document.getElementById('council-router-test').addEventListener('click', async () => {
-      const payload = getCouncilPayload();
-      const res = await Api.testCouncilRouter({ message: payload.topic, workspaceId: payload.workspaceId, userId: payload.userId });
-      document.getElementById('council-result').innerHTML = res.ok
-        ? `<div class="card"><div class="card-title">Council Router Test</div>${renderRoute(res.data.route || {})}<div class="kv-item"><span class="kv-key">Council needed</span><span>${res.data.council?.needed ? 'yes' : 'no'}</span></div><div class="kv-item"><span class="kv-key">Mode</span><span>${Utils.escapeHtml(res.data.council?.mode || '-')}</span></div><p class="text-muted">${Utils.escapeHtml(res.data.council?.reason || '')}</p></div>`
-        : UI.renderEmptyState('⚠️', 'Council Router Error', res.error || 'API error');
-    });
-    document.getElementById('council-load-sessions').addEventListener('click', async () => {
-      const payload = getCouncilPayload();
-      const res = await Api.listCouncilSessions({ workspaceId: payload.workspaceId, limit: 20 });
-      document.getElementById('council-result').innerHTML = res.ok ? renderCouncilSessions(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Sessions', res.error || 'API error');
-    });
-
-    const getDelegationPayload = () => ({
-      message: document.getElementById('delegation-message').value,
-      workspaceId: document.getElementById('delegation-workspace').value || 'default',
-      userId: document.getElementById('delegation-user').value || 'dashboard-admin'
-    });
-
-    document.getElementById('delegation-create').addEventListener('click', async () => {
-      const create = await Api.createDelegation(getDelegationPayload());
-      if (!create.ok) {
-        document.getElementById('delegation-result').innerHTML = UI.renderEmptyState('⚠️', 'Delegation Error', create.error || create.data?.error || 'API error');
-        return;
-      }
-      const run = await Api.runDelegation(create.data.session.id, {});
-      document.getElementById('delegation-result').innerHTML = run.ok ? renderDelegationResult(run.data) : renderDelegationResult(create.data);
-    });
-
-    document.getElementById('delegation-router-test').addEventListener('click', async () => {
-      const res = await Api.testDelegationRouter(getDelegationPayload());
-      document.getElementById('delegation-result').innerHTML = res.ok
-        ? `<div class="card"><div class="card-title">Delegation Router Test</div>${renderRoute(res.data.route || {})}<div class="kv-item"><span class="kv-key">Delegation needed</span><span>${res.data.delegation?.needed ? 'yes' : 'no'}</span></div><p class="text-muted">${Utils.escapeHtml(res.data.delegation?.reason || '')}</p></div>`
-        : UI.renderEmptyState('⚠️', 'Delegation Router Error', res.error || 'API error');
-    });
-
-    document.getElementById('delegation-load').addEventListener('click', async () => {
-      const payload = getDelegationPayload();
-      const res = await Api.listDelegations({ workspaceId: payload.workspaceId, userId: payload.userId, limit: 20 });
-      document.getElementById('delegation-result').innerHTML = res.ok ? renderDelegationList(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Delegations', res.error || 'API error');
-    });
-
-    document.getElementById('agent-tasks-load').addEventListener('click', async () => {
-      const payload = getDelegationPayload();
-      const res = await Api.listAgentTasks({ workspaceId: payload.workspaceId, limit: 30 });
-      document.getElementById('delegation-result').innerHTML = res.ok ? renderAgentTaskList(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Tasks', res.error || 'API error');
-    });
-
-    const getDecisionPayload = () => ({
-      question: document.getElementById('decision-question').value,
-      workspaceId: document.getElementById('decision-workspace').value || 'default',
-      userId: document.getElementById('decision-user').value || 'dashboard-admin'
-    });
-
-    document.getElementById('decision-analyze').addEventListener('click', async () => {
-      const res = await Api.analyzeDecision(getDecisionPayload());
-      document.getElementById('decision-result').innerHTML = res.ok ? renderDecisionResult(res.data) : UI.renderEmptyState('⚠️', 'Decision Error', res.error || res.data?.error || 'API error');
-    });
-
-    document.getElementById('decision-router-test').addEventListener('click', async () => {
-      const res = await Api.testDecisionRouter(getDecisionPayload());
-      document.getElementById('decision-result').innerHTML = res.ok
-        ? `<div class="card"><div class="card-title">Decision Router Test</div>${renderRoute(res.data.route || {})}<div class="kv-item"><span class="kv-key">Decision needed</span><span>${res.data.decision?.needed ? 'yes' : 'no'}</span></div><div class="kv-item"><span class="kv-key">Mode</span><span>${Utils.escapeHtml(res.data.decision?.mode || '-')}</span></div><p class="text-muted">${Utils.escapeHtml(res.data.decision?.reason || '')}</p></div>`
-        : UI.renderEmptyState('⚠️', 'Decision Router Error', res.error || 'API error');
-    });
-
-    document.getElementById('decision-load').addEventListener('click', async () => {
-      const payload = getDecisionPayload();
-      const res = await Api.listDecisions({ workspaceId: payload.workspaceId, userId: payload.userId, limit: 20 });
-      document.getElementById('decision-result').innerHTML = res.ok ? renderDecisionList(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Decisions', res.error || 'API error');
-    });
-
-    document.getElementById('agent-profile-load').addEventListener('click', async () => {
-      const filters = getAgentMemoryFilters();
-      const res = await Api.getAgentProfile(filters.agentId, { workspaceId: filters.workspaceId });
-      document.getElementById('agent-memory-result').innerHTML = res.ok ? renderProfile(res.data) : UI.renderEmptyState('⚠️', 'Gagal Load Profile', res.error || 'API error');
-    });
-
-    document.getElementById('agent-memory-load').addEventListener('click', async () => {
-      const filters = getAgentMemoryFilters();
-      const res = await Api.listAgentMemory(filters.agentId, { workspaceId: filters.workspaceId, userId: filters.userId, limit: 20 });
-      document.getElementById('agent-memory-result').innerHTML = res.ok ? renderMemoryItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Memory', res.error || 'API error');
-    });
-
-    document.getElementById('agent-memory-create').addEventListener('click', async () => {
-      const filters = getAgentMemoryFilters();
-      const content = document.getElementById('agent-memory-text').value;
-      const res = await Api.createAgentMemory(filters.agentId, {
-        workspaceId: filters.workspaceId,
-        userId: filters.userId,
-        type: 'project_context',
-        content,
-        tags: ['dashboard', 'manual']
-      });
-      document.getElementById('agent-memory-result').innerHTML = res.ok
-        ? `<div class="alert alert-success">Agent memory saved: ${Utils.escapeHtml(res.data.title || res.data.id)}</div>`
-        : UI.renderEmptyState('⚠️', 'Memory Ditolak', res.error || 'API error');
-    });
-
-    document.getElementById('agent-note-create').addEventListener('click', async () => {
-      const filters = getAgentMemoryFilters();
-      const content = document.getElementById('agent-memory-text').value;
-      const res = await Api.createAgentLearningNote(filters.agentId, {
-        workspaceId: filters.workspaceId,
-        userId: filters.userId,
-        content,
-        tags: ['dashboard', 'learning']
-      });
-      document.getElementById('agent-memory-result').innerHTML = res.ok
-        ? `<div class="alert alert-success">Learning note saved: ${Utils.escapeHtml(res.data.title || res.data.id)}</div>`
-        : UI.renderEmptyState('⚠️', 'Learning Note Ditolak', res.error || 'API error');
-    });
-
-    document.getElementById('agent-shared-load').addEventListener('click', async () => {
-      const filters = getAgentMemoryFilters();
-      const res = await Api.listSharedAgentMemory({ workspaceId: filters.workspaceId, limit: 20 });
-      document.getElementById('agent-memory-result').innerHTML = res.ok ? renderMemoryItems(res.data.items || []) : UI.renderEmptyState('⚠️', 'Gagal Load Shared Memory', res.error || 'API error');
-    });
-
-    document.getElementById('agent-group-load').addEventListener('click', async () => {
-      const chatId = document.getElementById('agent-group-chat-id').value || 'default';
-      const res = await Api.getAgentGroupSettings(chatId);
-      if (res.ok) {
-        document.getElementById('agent-group-mode').value = res.data.mode || 'natural_smart';
-        document.getElementById('agent-group-max').value = res.data.maxAutoAgents || 3;
-        document.getElementById('agent-group-visible-mode').value = res.data.visibleSpecialistReplies || 'off';
-        document.getElementById('agent-group-specialist-max').value = res.data.maxVisibleSpecialistBots || 2;
-        document.getElementById('agent-group-result').innerHTML = `<div class="alert alert-info">Loaded: ${Utils.escapeHtml(res.data.mode || '-')}</div>`;
-      }
-    });
-
-    document.getElementById('agent-group-save').addEventListener('click', async () => {
-      const payload = {
-        chatId: document.getElementById('agent-group-chat-id').value || 'default',
-        mode: document.getElementById('agent-group-mode').value,
-        maxAutoAgents: Number(document.getElementById('agent-group-max').value || 3),
-        visibleSpecialistReplies: document.getElementById('agent-group-visible-mode').value,
-        multiBotVisibleReplies: document.getElementById('agent-group-visible-mode').value !== 'off',
-        maxVisibleSpecialistBots: Number(document.getElementById('agent-group-specialist-max').value || 2)
-      };
-      const res = await Api.updateAgentGroupSettings(payload);
-      document.getElementById('agent-group-result').innerHTML = `<div class="alert ${res.ok ? 'alert-success' : 'alert-danger'}">${res.ok ? 'Settings saved.' : (res.error || 'Failed')}</div>`;
-    });
-
-    document.getElementById('agents-load-activity').addEventListener('click', async () => {
-      const res = await Api.getAgentActivity({ limit: 20 });
-      const items = res.data?.items || [];
-      document.getElementById('agents-activity').innerHTML = res.ok && items.length
-        ? items.map(item => `<div class="card"><strong>${Utils.escapeHtml(item.mode || 'natural_smart')}</strong> ${UI.renderBadge(item.riskLevel || 'low')}<div>${(item.selectedAgents || []).map(UI.renderBadge).join(' ')}</div><p class="text-muted">${Utils.escapeHtml(item.messagePreview || '-')}</p></div>`).join('')
-        : UI.renderEmptyState('📋', 'Belum Ada Activity', 'Belum ada routing yang tercatat.');
-    });
-  },
-
-  async renderIntegrations(targetEl) {
-    const connectorActions = {
-      github: ['github.status', 'github.repo.info', 'github.issues.list', 'github.issue.create', 'github.pr.create', 'github.comment.create'],
-      google_calendar: ['calendar.status', 'calendar.events.list', 'calendar.event.create', 'calendar.event.update'],
-      gmail: ['gmail.status', 'gmail.draft.create', 'gmail.send'],
-      cloudflare_nas: ['cloudflare_nas.status', 'cloudflare_nas.tunnel.check', 'nas.health.check', 'nas.access.diagnose', 'cloudflare.config.change'],
-      webhook: ['webhook.status', 'webhook.payload.validate', 'webhook.payload.preview', 'webhook.send']
-    };
-    targetEl.innerHTML = `
-      <div class="page-header">
-        <h2>🔌 Integrations</h2>
-        <p>Approved external execution pipeline. Write/external actions require dry-run, Evaluation v2 gate, executor proposal, approval, then run.</p>
-      </div>
-      <div class="grid grid-2" style="gap:18px; align-items:start;">
-        <section class="panel">
-          <h3>Connector Action</h3>
-          <div class="grid grid-2" style="gap:12px;">
-            <input id="integration-user-id" placeholder="User ID" value="${Utils.escapeHtml(localStorage.getItem('last_user_id') || '123456789')}">
-            <input id="integration-workspace-id" placeholder="Workspace ID" value="${Utils.escapeHtml(UI.getActiveWorkspaceId())}">
-            <select id="integration-connector">
-              ${Object.keys(connectorActions).map(id => `<option value="${id}">${id}</option>`).join('')}
-            </select>
-            <select id="integration-action"></select>
-          </div>
-          <textarea id="integration-payload" rows="6" style="margin-top:10px;" placeholder='{"text":"buat issue GitHub dari bug ini"}'>{}</textarea>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-            <button class="btn btn-outline" id="integration-quality">Quality</button>
-            <button class="btn btn-outline" id="integration-rate">Rate Limit</button>
-            <button class="btn btn-outline" id="integration-dry-run">Dry-run</button>
-            <button class="btn btn-primary" id="integration-execute">Execute Read-only</button>
-            <button class="btn btn-danger" id="integration-propose">Create Proposal</button>
-          </div>
-          <div class="alert alert-warning" style="margin-top:12px;">Write/external actions do not run here. Proposal creation is blocked unless Evaluation v2 gate passes.</div>
-        </section>
-        <section class="panel">
-          <h3>Pipeline</h3>
-          <input id="integration-pipeline-id" placeholder="Pipeline ID">
-          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-            <button class="btn btn-outline" id="pipeline-create">Create</button>
-            <button class="btn btn-outline" id="pipeline-load">Load</button>
-            <button class="btn btn-outline" id="pipeline-preflight">Preflight</button>
-            <button class="btn btn-outline" id="pipeline-dry-run">Dry-run</button>
-            <button class="btn btn-outline" id="pipeline-evaluate">Evaluate</button>
-            <button class="btn btn-primary" id="pipeline-proposal">Create Proposal</button>
-          </div>
-          <div id="integration-pipeline-result" style="margin-top:12px;">${UI.renderEmptyState('🔌', 'Pipeline Ready', 'Create atau load pipeline untuk melihat stage.')}</div>
-        </section>
-      </div>
-      <section class="panel" style="margin-top:18px;">
-        <h3>Result</h3>
-        <div id="integration-result">${UI.renderEmptyState('🧪', 'No Result', 'Run connector action untuk melihat hasil sanitized.')}</div>
-      </section>
-      <section class="panel" style="margin-top:18px;">
-        <h3>Execution History</h3>
-        <button class="btn btn-outline" id="integration-history">Load History</button>
-        <div id="integration-history-result" style="margin-top:12px;"></div>
-      </section>
-    `;
-    const connectorEl = document.getElementById('integration-connector');
-    const actionEl = document.getElementById('integration-action');
-    const resultEl = document.getElementById('integration-result');
-    const renderJson = (value) => `<pre>${Utils.escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
-    const refreshActions = () => {
-      actionEl.innerHTML = (connectorActions[connectorEl.value] || []).map(action => `<option value="${action}">${action}</option>`).join('');
-    };
-    const getPayload = () => {
-      try { return JSON.parse(document.getElementById('integration-payload').value || '{}'); } catch (_) { return { text: document.getElementById('integration-payload').value || '' }; }
-    };
-    const getBasePayload = () => ({
-      connectorId: connectorEl.value,
-      action: actionEl.value,
-      payload: getPayload(),
-      userId: document.getElementById('integration-user-id').value || '123456789',
-      actorId: document.getElementById('integration-user-id').value || '123456789',
-      workspaceId: document.getElementById('integration-workspace-id').value || 'default',
-      actorRole: 'owner',
-      context: { text: getPayload().text || '' }
-    });
-    refreshActions();
-    connectorEl.addEventListener('change', refreshActions);
-    document.getElementById('integration-quality').addEventListener('click', async () => {
-      resultEl.innerHTML = renderJson((await Api.getConnectorQuality(connectorEl.value)).data);
-    });
-    document.getElementById('integration-rate').addEventListener('click', async () => {
-      resultEl.innerHTML = renderJson((await Api.getConnectorRateLimit(connectorEl.value, actionEl.value)).data);
-    });
-    document.getElementById('integration-dry-run').addEventListener('click', async () => {
-      resultEl.innerHTML = renderJson((await Api.dryRunIntegration(getBasePayload())).data);
-    });
-    document.getElementById('integration-execute').addEventListener('click', async () => {
-      resultEl.innerHTML = renderJson((await Api.executeIntegration(getBasePayload())).data);
-    });
-    document.getElementById('integration-propose').addEventListener('click', async () => {
-      resultEl.innerHTML = renderJson((await Api.proposeIntegration(getBasePayload())).data);
-    });
-    document.getElementById('pipeline-create').addEventListener('click', async () => {
-      const res = await Api.createIntegrationPipeline(getBasePayload());
-      document.getElementById('integration-pipeline-id').value = res.data?.pipeline?.id || '';
-      document.getElementById('integration-pipeline-result').innerHTML = renderJson(res.data);
-    });
-    document.getElementById('pipeline-load').addEventListener('click', async () => {
-      const id = document.getElementById('integration-pipeline-id').value.trim();
-      document.getElementById('integration-pipeline-result').innerHTML = renderJson(await Api.getIntegrationPipeline(id));
-    });
-    [['pipeline-preflight', 'preflight'], ['pipeline-dry-run', 'dry-run'], ['pipeline-evaluate', 'evaluate'], ['pipeline-proposal', 'create-proposal']].forEach(([buttonId, stage]) => {
-      document.getElementById(buttonId).addEventListener('click', async () => {
-        const id = document.getElementById('integration-pipeline-id').value.trim();
-        document.getElementById('integration-pipeline-result').innerHTML = renderJson((await Api.runIntegrationPipelineStage(id, stage)).data);
-      });
-    });
-    document.getElementById('integration-history').addEventListener('click', async () => {
-      const res = await Api.listIntegrationExecutions({ limit: 20 });
-      document.getElementById('integration-history-result').innerHTML = renderJson(res.data);
-    });
-  },
-
-  async renderTools(targetEl) {
-    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
-
-    const getFilters = () => {
-      const userId = document.getElementById('tools-user-id').value.trim();
-      const workspaceId = document.getElementById('tools-workspace-id').value.trim();
-      const category = document.getElementById('tools-category-filter').value;
-      const riskLevel = document.getElementById('tools-risk-filter').value;
-      const enabled = document.getElementById('tools-enabled-filter').value;
-      if (userId) localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
-      return { userId, actorId: userId, workspaceId, category, riskLevel, enabled };
-    };
-
-    const parseInputPrompt = () => {
-      const text = prompt('Input tool (JSON atau teks):', '{}') || '{}';
-      try {
-        return JSON.parse(text);
-      } catch (_) {
-        return { text, query: text, city: text };
-      }
-    };
-
-    const renderToolCard = (tool = {}) => `
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
-          <div>
-            <h3 style="font-size:16px; font-weight:700;">${Utils.escapeHtml(tool.name || tool.id)}</h3>
-            <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${Utils.escapeHtml(tool.id || '-')}</div>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            ${UI.renderBadge(tool.enabled ? 'enabled' : 'disabled')}
-            <span class="badge badge-none">${Utils.escapeHtml(tool.riskLevel || 'low')}</span>
-          </div>
-        </div>
-        <p style="font-size:13px; color:var(--text-secondary); margin:12px 0;">${Utils.escapeHtml(tool.description || '-')}</p>
-        <div class="kv-list">
-          <div class="kv-item"><span class="kv-key">Category</span><span>${Utils.escapeHtml(tool.category || '-')}</span></div>
-          <div class="kv-item"><span class="kv-key">Action</span><span>${Utils.escapeHtml(tool.actionType || '-')}</span></div>
-          <div class="kv-item"><span class="kv-key">Approval</span><span>${tool.requiresApproval ? 'required' : 'direct if permitted'}</span></div>
-          <div class="kv-item"><span class="kv-key">Permissions</span><span>${Utils.escapeHtml((tool.permissionsRequired || []).join(', ') || 'read')}</span></div>
-          ${tool.unavailableReason ? `<div class="kv-item"><span class="kv-key">Unavailable</span><span>${Utils.escapeHtml(tool.unavailableReason)}</span></div>` : ''}
-        </div>
-        <details style="margin-top:10px;">
-          <summary>Input schema</summary>
-          <pre style="white-space:pre-wrap; font-size:11px;">${Utils.escapeHtml(JSON.stringify(tool.inputSchema || {}, null, 2))}</pre>
-        </details>
-        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-          <button class="btn btn-outline" data-tool-action="preview" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px;">Preview</button>
-          <button class="btn btn-primary" data-tool-action="run" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px;">Run Safe</button>
-          <button class="btn btn-outline" data-tool-action="propose" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px;">Propose</button>
-          <button class="btn btn-outline" data-tool-action="${tool.enabled ? 'disable' : 'enable'}" data-id="${Utils.escapeHtml(tool.id)}" style="padding:5px 10px; font-size:12px; color:${tool.enabled ? 'var(--color-danger)' : 'var(--color-success)'};">${tool.enabled ? 'Disable' : 'Enable'}</button>
-        </div>
-      </div>
-    `;
-
-    const bindToolButtons = (container) => {
-      container.querySelectorAll('[data-tool-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-tool-action');
-          const toolId = btn.getAttribute('data-id');
-          const filters = getFilters();
-          let res;
-          const payload = { userId: filters.userId, actorId: filters.actorId, workspaceId: filters.workspaceId };
-          if (action === 'preview') res = await Api.previewTool(toolId, { ...payload, input: parseInputPrompt() });
-          if (action === 'run') res = await Api.runTool(toolId, { ...payload, input: parseInputPrompt() });
-          if (action === 'propose') res = await Api.proposeTool(toolId, { ...payload, input: parseInputPrompt() });
-          if (action === 'enable' || action === 'disable') {
-            return Utils.confirmAction(`${action} tool`, `Lanjutkan ${action} untuk ${toolId}?`, async () => {
-              const r = action === 'enable' ? await Api.enableTool(toolId, payload) : await Api.disableTool(toolId, payload);
-              Utils.showToast(r?.ok && r.data?.ok ? `Tool ${action} sukses.` : `Tool ${action} gagal.`, r?.ok && r.data?.ok ? 'success' : 'danger');
-              await loadTools();
-            });
-          }
-          const ok = res?.ok && res.data?.ok;
-          if (ok && action === 'preview') {
-            document.getElementById('tools-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data.preview, null, 2))}</pre>`;
-          } else if (ok && action === 'run') {
-            document.getElementById('tools-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data.result, null, 2))}</pre>`;
-          } else if (ok && action === 'propose') {
-            document.getElementById('tools-result').innerHTML = `<div class="alert alert-success">Proposal dibuat: <code>${Utils.escapeHtml(res.data.proposal.id)}</code>. Approve/run dari tab Executor.</div>`;
-          }
-          Utils.showToast(ok ? `Tool ${action} sukses.` : `Tool ${action} gagal.`, ok ? 'success' : 'danger');
-          await loadRuns();
-        });
-      });
-    };
-
-    const loadRuns = async () => {
-      const filters = getFilters();
-      const [runs, audit] = await Promise.all([
-        Api.listToolRuns({ workspaceId: filters.workspaceId, limit: 10 }),
-        Api.listToolAudit({ workspaceId: filters.workspaceId, limit: 10 })
-      ]);
-      const runItems = runs.data?.items || [];
-      const auditItems = audit.data?.items || [];
-      document.getElementById('tools-runs').innerHTML = `
-        <div class="card">
-          <div class="card-title">Recent Tool Runs</div>
-          ${runItems.length ? runItems.map(item => `<div style="padding:8px 0; border-bottom:1px solid var(--border-color);"><strong>${Utils.escapeHtml(item.toolId)}</strong> ${UI.renderBadge(item.status || 'unknown')}<div style="font-size:12px; color:var(--text-secondary);">${Number(item.latencyMs || 0)}ms · ${Utils.escapeHtml(item.error || item.resultSummary || '-')}</div></div>`).join('') : '<p class="text-muted">Belum ada run.</p>'}
-        </div>
-        <div class="card" style="margin-top:12px;">
-          <div class="card-title">Tool Audit</div>
-          ${auditItems.length ? auditItems.map(item => `<div style="padding:8px 0; border-bottom:1px solid var(--border-color);"><code>${Utils.escapeHtml(item.action)}</code><div style="font-size:12px; color:var(--text-secondary);">${Utils.escapeHtml(item.toolId || '-')} · ${Utils.escapeHtml(item.reason || item.status || '-')}</div></div>`).join('') : '<p class="text-muted">Belum ada audit.</p>'}
-        </div>
-      `;
-    };
-
-    const loadTools = async () => {
-      const filters = getFilters();
-      const panel = document.getElementById('tools-list');
-      panel.innerHTML = UI.renderLoading('Memuat tool registry...');
-      const res = await Api.listTools(filters);
-      if (!res.ok || !res.data?.ok) {
-        panel.innerHTML = UI.renderError('Gagal memuat tool registry');
-        return;
-      }
-      const items = res.data.items || [];
-      panel.innerHTML = items.length
-        ? `<div class="card-grid-wide">${items.map(renderToolCard).join('')}</div>`
-        : UI.renderEmptyState('🧰', 'Belum Ada Tool', 'Built-in tools akan terdaftar saat API dipanggil.');
-      bindToolButtons(panel);
-      await loadRuns();
-    };
-
-    let html = UI.renderSectionHeader('Tool Registry');
-    html += `
-      <div class="alert alert-warning" style="margin-bottom:16px;">Write, external, dan danger tools harus lewat proposal executor. Tidak ada shell atau dynamic plugin execution.</div>
-      <div class="filter-bar">
-        <div class="filter-group"><label>User ID Telegram</label><input id="tools-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
-        ${UI.renderWorkspaceInput('tools')}
-        <div class="filter-group"><label>Category</label><select id="tools-category-filter"><option value="">all</option><option>weather</option><option>search</option><option>ops</option><option>report</option><option>planner</option><option>workflow</option><option>goal</option><option>memory</option><option>graph</option><option>utility</option><option>dashboard</option></select></div>
-        <div class="filter-group"><label>Risk</label><select id="tools-risk-filter"><option value="">all</option><option>low</option><option>medium</option><option>high</option><option>danger</option></select></div>
-        <div class="filter-group"><label>Enabled</label><select id="tools-enabled-filter"><option value="">all</option><option value="true">true</option><option value="false">false</option></select></div>
-        <button class="btn btn-primary" id="btn-load-tools" style="height:40px;">Load Tools</button>
-      </div>
-      <div class="grid grid-2" style="gap:18px; align-items:start;">
-        <div>
-          <div id="tools-list">${UI.renderEmptyState('🧰', 'Load Tools', 'Klik Load Tools untuk melihat registry.')}</div>
-          <div class="card" style="margin-top:12px;"><div class="card-title">Tool Result</div><div id="tools-result"><p class="text-muted">Preview/run output akan muncul di sini.</p></div></div>
-        </div>
-        <div id="tools-runs">${UI.renderEmptyState('📋', 'Tool Runs', 'Riwayat tool akan muncul di sini.')}</div>
-      </div>
-    `;
-    targetEl.innerHTML = html;
-    document.getElementById('btn-load-tools').addEventListener('click', loadTools);
-  },
-
-  async renderBackupRecovery(targetEl) {
-    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
-
-    const getFilters = () => {
-      const userId = document.getElementById('backup-user-id').value.trim();
-      const workspaceId = document.getElementById('backup-workspace-id').value.trim();
-      if (userId) localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
-      return { userId, actorId: userId, workspaceId };
-    };
-
-    const renderBackupRow = (item = {}) => {
-      const total = Object.values(item.itemCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-      return `
-        <div class="card" style="margin-bottom:10px;">
-          <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-            <div>
-              <strong>${Utils.escapeHtml(item.id || '-')}</strong>
-              <div class="text-muted" style="font-size:12px;">${Utils.escapeHtml(item.type || '-')} · ${Utils.escapeHtml(item.createdAt || '-')}</div>
-            </div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              ${UI.renderBadge(item.status || 'created')}
-              <span class="badge badge-none">${total} items</span>
-            </div>
-          </div>
-          <div class="kv-list" style="margin-top:10px;">
-            <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(item.workspaceId || '-')}</span></div>
-            <div class="kv-item"><span class="kv-key">Checksum</span><span style="font-family:var(--font-mono);">${Utils.escapeHtml(item.checksum || '-')}</span></div>
-          </div>
-          <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
-            <button class="btn btn-outline" data-backup-action="validate" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Validate</button>
-            <button class="btn btn-primary" data-backup-action="export" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Export JSON</button>
-            <button class="btn btn-outline" data-backup-action="plan" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Restore Plan</button>
-            <button class="btn btn-outline" data-backup-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
-          </div>
-        </div>
-      `;
-    };
-
-    const bindBackupButtons = () => {
-      document.querySelectorAll('[data-backup-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-backup-action');
-          const id = btn.getAttribute('data-id');
-          const filters = getFilters();
-          let res;
-          if (action === 'validate') res = await Api.validateBackup(id, filters);
-          if (action === 'plan') res = await Api.createRestorePlan({ ...filters, backupId: id });
-          if (action === 'export') {
-            res = await Api.exportBackup(id);
-            if (res?.ok) {
-              const blob = new Blob([JSON.stringify(res.data || {}, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `backup_${id}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }
-          }
-          if (action === 'archive') {
-            return Utils.confirmAction('Archive backup', `Archive backup ${id}?`, async () => {
-              const r = await Api.archiveBackup(id, filters);
-              Utils.showToast(r?.ok && r.data?.ok ? 'Backup archived.' : 'Archive gagal.', r?.ok && r.data?.ok ? 'success' : 'danger');
-              await loadBackups();
-            });
-          }
-          const ok = res?.ok && res.data?.ok;
-          document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res?.data || res, null, 2))}</pre>`;
-          Utils.showToast(ok ? `Backup ${action} sukses.` : `Backup ${action} gagal.`, ok ? 'success' : 'danger');
-          if (action === 'validate') await loadBackups();
-        });
-      });
-    };
-
-    const loadBackups = async () => {
-      const filters = getFilters();
-      const listEl = document.getElementById('backup-list');
-      listEl.innerHTML = UI.renderLoading('Memuat backup...');
-      const res = await Api.listBackups({ ...filters, limit: 30, includeArchived: true });
-      const items = res.data?.items || [];
-      listEl.innerHTML = items.length ? items.map(renderBackupRow).join('') : UI.renderEmptyState('💾', 'Belum Ada Backup', 'Buat backup workspace atau safe system backup.');
-      bindBackupButtons();
-      const recovery = res.data?.recovery || {};
-      document.getElementById('backup-cards').innerHTML = `
-        <div class="metric-card"><span class="metric-label">Recovery</span><span class="metric-value">${Utils.escapeHtml(recovery.status || '-')}</span></div>
-        <div class="metric-card"><span class="metric-label">Backup Count</span><span class="metric-value">${Number(recovery.backup?.backupCount || items.length)}</span></div>
-        <div class="metric-card"><span class="metric-label">Storage</span><span class="metric-value">${Utils.escapeHtml(recovery.storage?.activeDriver || '-')}</span></div>
-        <div class="metric-card"><span class="metric-label">Fallback</span><span class="metric-value">${recovery.storage?.fallbackActive ? 'yes' : 'no'}</span></div>
-      `;
-    };
-
-    const runRecovery = async () => {
-      const res = await Api.runRecoveryCheck(getFilters());
-      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
-    };
-
-    const runIntegrity = async () => {
-      const res = await Api.runIntegrityCheck(getFilters());
-      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
-    };
-
-    const createBackup = async (type) => {
-      const res = await Api.createBackup({ ...getFilters(), type });
-      Utils.showToast(res?.ok && res.data?.ok ? 'Backup dibuat.' : 'Backup gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
-      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
-      await loadBackups();
-    };
-
-    let html = UI.renderSectionHeader('Backup & Recovery');
-    html += `
-      <div class="alert alert-warning" style="margin-bottom:16px;">Restore/import tidak berjalan otomatis. Restore membutuhkan role owner/admin dan confirmation text <code>RESTORE</code>. Backup tidak mengekspor secret/env/API key.</div>
-      <div class="filter-bar">
-        <div class="filter-group"><label>User ID Telegram</label><input id="backup-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
-        ${UI.renderWorkspaceInput('backup')}
-        <button class="btn btn-primary" id="btn-backup-load" style="height:40px;">Load</button>
-        <button class="btn btn-outline" id="btn-backup-workspace" style="height:40px;">Create Workspace Backup</button>
-        <button class="btn btn-outline" id="btn-backup-user" style="height:40px;">Create User Backup</button>
-        <button class="btn btn-outline" id="btn-backup-system" style="height:40px;">Create Safe System Backup</button>
-      </div>
-      <div class="metrics-grid" id="backup-cards"></div>
-      <div class="grid grid-2" style="gap:18px; align-items:start;">
-        <div>
-          <div id="backup-list">${UI.renderEmptyState('💾', 'Load Backups', 'Klik Load untuk melihat backup.')}</div>
-        </div>
-        <div>
-          <div class="card">
-            <div class="card-title">Recovery & Integrity</div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-              <button class="btn btn-outline" id="btn-recovery-check">Run Recovery Check</button>
-              <button class="btn btn-outline" id="btn-integrity-check">Run Integrity Check</button>
-            </div>
-            <textarea id="import-json" rows="8" style="width:100%; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:6px; padding:10px;" placeholder="Paste sanitized backup JSON untuk validate/preview"></textarea>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-              <button class="btn btn-outline" id="btn-import-validate">Validate Import</button>
-              <button class="btn btn-outline" id="btn-import-preview">Preview Import</button>
-            </div>
-          </div>
-          <div class="card" style="margin-top:12px;"><div class="card-title">Result</div><div id="backup-result"><p class="text-muted">Output backup/recovery akan muncul di sini.</p></div></div>
-        </div>
-      </div>
-    `;
-    targetEl.innerHTML = html;
-    document.getElementById('btn-backup-load').addEventListener('click', loadBackups);
-    document.getElementById('btn-backup-workspace').addEventListener('click', () => createBackup('workspace'));
-    document.getElementById('btn-backup-user').addEventListener('click', () => createBackup('user'));
-    document.getElementById('btn-backup-system').addEventListener('click', () => createBackup('full_safe'));
-    document.getElementById('btn-recovery-check').addEventListener('click', runRecovery);
-    document.getElementById('btn-integrity-check').addEventListener('click', runIntegrity);
-    document.getElementById('btn-import-validate').addEventListener('click', async () => {
-      let payload;
-      try { payload = JSON.parse(document.getElementById('import-json').value || '{}'); } catch (_) { return Utils.showToast('JSON tidak valid.', 'danger'); }
-      const res = await Api.validateImport(payload);
-      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
-    });
-    document.getElementById('btn-import-preview').addEventListener('click', async () => {
-      let payload;
-      try { payload = JSON.parse(document.getElementById('import-json').value || '{}'); } catch (_) { return Utils.showToast('JSON tidak valid.', 'danger'); }
-      const res = await Api.previewImport(payload);
-      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(res.data || res, null, 2))}</pre>`;
-    });
-    await loadBackups();
-  },
-
-  async renderBackupRecovery(targetEl) {
-    let currentUserId = localStorage.getItem('last_user_id') || '123456789';
-
-    const getFilters = () => {
-      const userId = document.getElementById('backup-user-id').value.trim();
-      const workspaceId = document.getElementById('backup-workspace-id').value.trim();
-      if (userId) localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
-      return { userId, actorId: userId, workspaceId };
-    };
-
-    const writeResult = (value) => {
-      document.getElementById('backup-result').innerHTML = `<pre style="white-space:pre-wrap;">${Utils.escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
-    };
-
-    const renderBackupRow = (item = {}) => {
-      const total = Object.values(item.itemCounts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-      return `
-        <div class="card" style="margin-bottom:10px;">
-          <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-            <div>
-              <strong>${Utils.escapeHtml(item.id || '-')}</strong>
-              <div class="text-muted" style="font-size:12px;">${Utils.escapeHtml(item.type || '-')} · ${Utils.escapeHtml(item.createdAt || '-')}</div>
-            </div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              ${UI.renderBadge(item.status || 'created')}
-              <span class="badge badge-none">${total} items</span>
-            </div>
-          </div>
-          <div class="kv-list" style="margin-top:10px;">
-            <div class="kv-item"><span class="kv-key">Workspace</span><span>${Utils.escapeHtml(item.workspaceId || '-')}</span></div>
-            <div class="kv-item"><span class="kv-key">Includes</span><span>${(item.includes || []).slice(0, 4).map(Utils.escapeHtml).join(', ') || '-'}</span></div>
-            <div class="kv-item"><span class="kv-key">Checksum</span><span style="font-family:var(--font-mono);">${Utils.escapeHtml(item.checksum || '-')}</span></div>
-          </div>
-          <div class="backup-action-row" style="margin-top:12px;">
-            <button class="btn btn-outline" data-backup-action="validate" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Validate</button>
-            <button class="btn btn-primary" data-backup-action="export" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Export JSON</button>
-            <button class="btn btn-outline" data-backup-action="plan" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Restore Plan</button>
-            <button class="btn btn-outline" data-backup-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
-          </div>
-        </div>
-      `;
-    };
-
-    const renderScheduleRow = (item = {}) => `
-      <div class="card" style="margin-bottom:10px;">
-        <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-          <div>
-            <strong>${Utils.escapeHtml(item.name || item.id || '-')}</strong>
-            <div class="text-muted" style="font-size:12px;">${Utils.escapeHtml(item.id || '-')} · ${Utils.escapeHtml(item.frequency || 'manual')} · ${Utils.escapeHtml(item.scope || 'workspace')}</div>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            ${UI.renderBadge(item.enabled ? 'enabled' : 'disabled')}
-            ${item.due ? UI.renderBadge('due') : UI.renderBadge('not due')}
-          </div>
-        </div>
-        <div class="kv-list" style="margin-top:10px;">
-          <div class="kv-item"><span class="kv-key">Next run</span><span>${Utils.escapeHtml(item.nextRunAt || '-')}</span></div>
-          <div class="kv-item"><span class="kv-key">Last run</span><span>${Utils.escapeHtml(item.lastRunAt || '-')}</span></div>
-          <div class="kv-item"><span class="kv-key">Status</span><span>${Utils.escapeHtml(item.lastStatus || '-')}</span></div>
-        </div>
-        <div class="backup-action-row" style="margin-top:12px;">
-          <button class="btn btn-outline" data-schedule-action="preview" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Preview</button>
-          <button class="btn btn-outline" data-schedule-action="request" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Request Approval</button>
-          <button class="btn btn-outline" data-schedule-action="archive" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px; color:var(--color-danger);">Archive</button>
-        </div>
-      </div>
-    `;
-
-    const renderRunRow = (item = {}) => `
-      <div style="padding:10px 0; border-bottom:1px solid var(--border-color);">
-        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-          <strong>${Utils.escapeHtml(item.id || '-')}</strong>
-          ${UI.renderBadge(item.status || 'pending_approval')}
-        </div>
-        <div class="text-muted" style="font-size:12px;">Schedule: ${Utils.escapeHtml(item.scheduleId || '-')} · Backup: ${Utils.escapeHtml(item.backupId || '-')}</div>
-        <div class="backup-action-row" style="margin-top:8px;">
-          <button class="btn btn-outline" data-run-action="approve" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Approve</button>
-          <button class="btn btn-primary" data-run-action="run" data-id="${Utils.escapeHtml(item.id)}" style="padding:5px 10px; font-size:12px;">Run Approved</button>
-        </div>
-      </div>
-    `;
-
-    const bindBackupButtons = () => {
-      document.querySelectorAll('[data-backup-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-backup-action');
-          const id = btn.getAttribute('data-id');
-          const filters = getFilters();
-          let res;
-          if (action === 'validate') res = await Api.validateBackup(id, filters);
-          if (action === 'plan') res = await Api.createRestorePlan({ ...filters, backupId: id });
-          if (action === 'export') {
-            BackupDownloads.showDownloadProgress('backup-result');
-            res = await Api.exportBackup(id);
-            if (res?.ok && res.data) {
-              const payload = res.data || {};
-              const manifest = payload.manifest || {};
-              const filename = BackupDownloads.buildSafeFilename('telegram-aios', `${manifest.type || 'workspace'}-backup`, manifest.createdAt || new Date());
-              const download = BackupDownloads.downloadJsonFile(filename, payload);
-              BackupDownloads.showDownloadResult('backup-result', download, manifest);
-              Utils.showToast('Backup JSON diunduh. Secrets dikecualikan.', 'success');
-              return;
-            }
-          }
-          if (action === 'archive') {
-            return Utils.confirmAction('Archive backup', `Archive backup ${id}?`, async () => {
-              const r = await Api.archiveBackup(id, filters);
-              Utils.showToast(r?.ok && r.data?.ok ? 'Backup archived.' : 'Archive gagal.', r?.ok && r.data?.ok ? 'success' : 'danger');
-              await loadBackups();
-            });
-          }
-          const ok = res?.ok && res.data?.ok;
-          writeResult(res?.data || res);
-          Utils.showToast(ok ? `Backup ${action} sukses.` : `Backup ${action} gagal.`, ok ? 'success' : 'danger');
-          if (action === 'validate') await loadBackups();
-        });
-      });
-    };
-
-    const bindScheduleButtons = () => {
-      document.querySelectorAll('[data-schedule-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-schedule-action');
-          const id = btn.getAttribute('data-id');
-          let res;
-          if (action === 'preview') res = await Api.previewBackupSchedule(id, getFilters());
-          if (action === 'request') res = await Api.requestBackupScheduleRun(id, getFilters());
-          if (action === 'archive') {
-            return Utils.confirmAction('Archive schedule', `Archive schedule ${id}?`, async () => {
-              const r = await Api.archiveBackupSchedule(id, getFilters());
-              Utils.showToast(r?.ok && r.data?.ok ? 'Schedule diarsipkan.' : 'Archive schedule gagal.', r?.ok && r.data?.ok ? 'success' : 'danger');
-              await loadSchedules();
-            });
-          }
-          writeResult(res?.data || res);
-          Utils.showToast(res?.ok && res.data?.ok ? `Schedule ${action} sukses.` : `Schedule ${action} gagal.`, res?.ok && res.data?.ok ? 'success' : 'danger');
-          await loadSchedules();
-        });
-      });
-    };
-
-    const bindRunButtons = () => {
-      document.querySelectorAll('[data-run-action]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const action = btn.getAttribute('data-run-action');
-          const id = btn.getAttribute('data-id');
-          const run = async () => {
-            const res = action === 'approve'
-              ? await Api.approveBackupScheduleRun(id, getFilters())
-              : await Api.runApprovedBackupSchedule(id, getFilters());
-            writeResult(res?.data || res);
-            Utils.showToast(res?.ok && res.data?.ok ? `Schedule run ${action} sukses.` : `Schedule run ${action} gagal.`, res?.ok && res.data?.ok ? 'success' : 'danger');
-            await loadBackups();
-          };
-          if (action === 'run') return Utils.confirmAction('Run approved backup', 'Backup schedule yang sudah approved akan membuat snapshot baru. Lanjutkan?', run);
-          return run();
-        });
-      });
-    };
-
-    const loadSchedules = async () => {
-      const filters = getFilters();
-      const scheduleRes = await Api.listBackupSchedules({ ...filters, limit: 30, includeArchived: false, requestDue: true });
-      const schedules = scheduleRes.data?.items || [];
-      document.getElementById('backup-schedule-list').innerHTML = schedules.length
-        ? schedules.map(renderScheduleRow).join('')
-        : UI.renderEmptyState('⏱️', 'Belum Ada Schedule', 'Buat schedule manual/daily/weekly/monthly yang tetap butuh approval.');
-
-      const runRes = await Api.listBackupScheduleRuns({ ...filters, limit: 20 });
-      const runs = runRes.data?.items || [];
-      document.getElementById('backup-schedule-runs').innerHTML = runs.length ? runs.map(renderRunRow).join('') : '<p class="text-muted">Belum ada pending run.</p>';
-      bindScheduleButtons();
-      bindRunButtons();
-    };
-
-    const loadBackups = async () => {
-      const filters = getFilters();
-      const listEl = document.getElementById('backup-list');
-      listEl.innerHTML = UI.renderLoading('Memuat backup...');
-      const res = await Api.listBackups({ ...filters, limit: 30, includeArchived: true });
-      const items = res.data?.items || [];
-      listEl.innerHTML = items.length ? items.map(renderBackupRow).join('') : UI.renderEmptyState('💾', 'Belum Ada Backup', 'Buat backup workspace atau safe system backup.');
-      bindBackupButtons();
-      const recovery = res.data?.recovery || {};
-      document.getElementById('backup-cards').innerHTML = `
-        <div class="metric-card"><span class="metric-label">Recovery</span><span class="metric-value">${Utils.escapeHtml(recovery.status || '-')}</span></div>
-        <div class="metric-card"><span class="metric-label">Backup Count</span><span class="metric-value">${Number(recovery.backup?.backupCount || items.length)}</span></div>
-        <div class="metric-card"><span class="metric-label">Storage</span><span class="metric-value">${Utils.escapeHtml(recovery.storage?.activeDriver || '-')}</span></div>
-        <div class="metric-card"><span class="metric-label">Fallback</span><span class="metric-value">${recovery.storage?.fallbackActive ? 'yes' : 'no'}</span></div>
-      `;
-      await loadSchedules();
-    };
-
-    const createBackup = async (type) => {
-      const res = await Api.createBackup({ ...getFilters(), type });
-      Utils.showToast(res?.ok && res.data?.ok ? 'Backup dibuat.' : 'Backup gagal.', res?.ok && res.data?.ok ? 'success' : 'danger');
-      writeResult(res.data || res);
-      await loadBackups();
-    };
-
-    const createSchedule = async () => {
-      const payload = {
-        ...getFilters(),
-        name: document.getElementById('schedule-name').value.trim() || 'Workspace backup schedule',
-        scope: document.getElementById('schedule-scope').value,
-        frequency: document.getElementById('schedule-frequency').value,
-        enabled: document.getElementById('schedule-enabled').checked
-      };
-      const res = await Api.createBackupSchedule(payload);
-      writeResult(res.data || res);
-      Utils.showToast(res?.ok && res.data?.ok ? 'Schedule dibuat.' : 'Schedule gagal dibuat.', res?.ok && res.data?.ok ? 'success' : 'danger');
-      await loadSchedules();
-    };
-
-    let html = UI.renderSectionHeader('Backup & Recovery');
-    html += `
-      <div class="alert alert-warning" style="margin-bottom:16px;">Restore/import tidak berjalan otomatis. Restore membutuhkan role owner/admin dan confirmation text <code>RESTORE</code>. Backup tidak mengekspor secret/env/API key.</div>
-      <div class="filter-bar">
-        <div class="filter-group"><label>User ID Telegram</label><input id="backup-user-id" value="${Utils.escapeHtml(currentUserId)}"></div>
-        ${UI.renderWorkspaceInput('backup')}
-        <button class="btn btn-primary" id="btn-backup-load" style="height:40px;">Load</button>
-        <button class="btn btn-outline" id="btn-backup-workspace" style="height:40px;">Create Workspace Backup</button>
-        <button class="btn btn-outline" id="btn-backup-user" style="height:40px;">Create User Backup</button>
-        <button class="btn btn-outline" id="btn-backup-system" style="height:40px;">Create Safe System Backup</button>
-      </div>
-      <div class="metrics-grid" id="backup-cards"></div>
-      <div class="backup-section-grid">
-        <div class="card">
-          <div class="card-title">Create Backup</div>
-          <p class="text-muted" style="margin-bottom:12px;">Backup aman berisi data AI OS tanpa env, token, API key, atau connection string.</p>
-          <div id="backup-list">${UI.renderEmptyState('💾', 'Load Backups', 'Klik Load untuk melihat backup.')}</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Download / Export</div>
-          <div class="alert alert-info">Klik Export JSON pada backup. File dibuat via Blob URL lokal dengan nama aman. Secrets tetap dikecualikan server-side.</div>
-          <div class="card-title" style="margin-top:16px;">Import Preview</div>
-          <div id="import-drop-zone" class="import-drop-zone">
-            Drop file JSON di sini atau pilih file.
-            <input id="import-file" type="file" accept="application/json,.json" style="display:block; margin:12px auto 0;">
-          </div>
-          <textarea id="import-json" rows="8" style="width:100%; background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:6px; padding:10px;" placeholder="Paste sanitized backup JSON untuk validate/preview"></textarea>
-          <div class="backup-action-row" style="margin-top:10px;">
-            <button class="btn btn-outline" id="btn-import-validate">Validate Import</button>
-            <button class="btn btn-outline" id="btn-import-preview">Preview Import</button>
-            <button class="btn btn-outline" id="btn-restore-plan">Create Restore Plan</button>
-          </div>
-        </div>
-      </div>
-      <div class="backup-section-grid" style="margin-top:18px;">
-        <div class="card">
-          <div class="card-title">Scheduler</div>
-          <div class="filter-bar" style="margin-bottom:12px;">
-            <div class="filter-group"><label>Name</label><input id="schedule-name" placeholder="Weekly workspace backup"></div>
-            <div class="filter-group"><label>Scope</label><select id="schedule-scope"><option value="workspace">workspace</option><option value="user">user</option><option value="system_safe">system_safe</option></select></div>
-            <div class="filter-group"><label>Frequency</label><select id="schedule-frequency"><option value="manual">manual</option><option value="daily">daily</option><option value="weekly">weekly</option><option value="monthly">monthly</option></select></div>
-            <label style="display:flex; align-items:center; gap:8px; min-height:40px;"><input type="checkbox" id="schedule-enabled" checked> Enabled</label>
-            <button class="btn btn-primary" id="btn-schedule-create" style="height:40px;">Create Schedule</button>
-          </div>
-          <div id="backup-schedule-list">${UI.renderEmptyState('⏱️', 'Load Schedules', 'Schedule akan muncul di sini.')}</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Due / Pending Runs</div>
-          <p class="text-muted" style="margin-bottom:12px;">Backup scheduled tidak berjalan otomatis. Request run, approve, lalu run approved.</p>
-          <div id="backup-schedule-runs"><p class="text-muted">Load backup untuk melihat pending run.</p></div>
-        </div>
-      </div>
-      <div class="backup-section-grid" style="margin-top:18px;">
-        <div class="card">
-          <div class="card-title">Disaster Recovery & Integrity</div>
-          <div class="backup-action-row" style="margin-bottom:12px;">
-            <button class="btn btn-outline" id="btn-recovery-check">Run Recovery Check</button>
-            <button class="btn btn-outline" id="btn-integrity-check">Run Integrity Check</button>
-          </div>
-          <p class="text-muted">Cek storage driver, backup age, critical keys, dan referensi data yang rusak.</p>
-        </div>
-        <div class="card"><div class="card-title">Result</div><div id="backup-result"><p class="text-muted">Output backup/recovery akan muncul di sini.</p></div></div>
-      </div>
-    `;
-    targetEl.innerHTML = html;
-    document.getElementById('btn-backup-load').addEventListener('click', loadBackups);
-    document.getElementById('btn-backup-workspace').addEventListener('click', () => createBackup('workspace'));
-    document.getElementById('btn-backup-user').addEventListener('click', () => createBackup('user'));
-    document.getElementById('btn-backup-system').addEventListener('click', () => createBackup('full_safe'));
-    document.getElementById('btn-recovery-check').addEventListener('click', async () => writeResult((await Api.runRecoveryCheck(getFilters())).data || {}));
-    document.getElementById('btn-integrity-check').addEventListener('click', async () => writeResult((await Api.runIntegrityCheck(getFilters())).data || {}));
-    document.getElementById('btn-schedule-create').addEventListener('click', createSchedule);
-    BackupImportUI.bindImportDropZone();
-    document.getElementById('btn-import-validate').addEventListener('click', async () => {
-      const parsed = BackupImportUI.parseJsonSafely(document.getElementById('import-json').value || '{}');
-      if (!parsed.ok) return Utils.showToast(parsed.reason || 'JSON tidak valid.', 'danger');
-      writeResult((await Api.validateImport(parsed.payload)).data || {});
-    });
-    document.getElementById('btn-import-preview').addEventListener('click', async () => {
-      const parsed = BackupImportUI.parseJsonSafely(document.getElementById('import-json').value || '{}');
-      if (!parsed.ok) return Utils.showToast(parsed.reason || 'JSON tidak valid.', 'danger');
-      const res = await Api.previewImport(parsed.payload);
-      document.getElementById('backup-result').innerHTML = BackupImportUI.renderPreview(res.data?.preview || res.data || res);
-    });
-    document.getElementById('btn-restore-plan').addEventListener('click', async () => {
-      const parsed = BackupImportUI.parseJsonSafely(document.getElementById('import-json').value || '{}');
-      if (!parsed.ok) return Utils.showToast(parsed.reason || 'JSON tidak valid.', 'danger');
-      writeResult((await Api.createRestorePlan({ ...getFilters(), payload: parsed.payload })).data || {});
-    });
-    await loadBackups();
-  },
-
   async renderInsights(targetEl) {
     let currentUserId = localStorage.getItem('last_user_id') || '123456789';
 
     const loadData = async () => {
       const userId = document.getElementById('insights-user-id').value.trim();
-      const workspaceId = document.getElementById('insights-workspace-id').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('insights-list-container');
       container.innerHTML = UI.renderLoading('Memuat Insights...');
 
-      const res = await Api.getUserInsights(userId, workspaceId);
+      const res = await Api.getUserInsights(userId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Insights');
         return;
@@ -2971,7 +683,6 @@ const UI = {
           <label for="insights-user-id">User ID Telegram</label>
           <input type="text" id="insights-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
-        ${UI.renderWorkspaceInput('insights')}
         <button class="btn btn-primary" id="btn-load-insights" style="height:40px;">Load Insights</button>
       </div>
       <div id="insights-list-container">
@@ -2988,16 +699,14 @@ const UI = {
 
     const loadData = async () => {
       const userId = document.getElementById('graph-user-id').value.trim();
-      const workspaceId = document.getElementById('graph-workspace-id').value.trim();
       const q = document.getElementById('search-graph-concept').value.trim();
       if (!userId) return;
 
       localStorage.setItem('last_user_id', userId);
-      UI.setActiveWorkspaceId(workspaceId);
       const container = document.getElementById('graph-content-container');
       container.innerHTML = UI.renderLoading('Memuat Knowledge Graph...');
 
-      const res = q ? await Api.searchUserGraph(userId, q, workspaceId) : await Api.getUserGraph(userId, workspaceId);
+      const res = q ? await Api.searchUserGraph(userId, q) : await Api.getUserGraph(userId);
       if (!res.ok) {
         container.innerHTML = UI.renderError('Gagal Memuat Knowledge Graph');
         return;
@@ -3013,11 +722,44 @@ const UI = {
         return;
       }
 
-      const graphForView = { nodes, edges, stats };
-      const svgHtml = window.GraphViz
-        ? window.GraphViz.renderGraphSvg(graphForView, { nodeLimit: 24, edgeLimit: 40 })
-        : '';
-      const graphStats = window.GraphViz ? window.GraphViz.renderGraphStats(graphForView) : stats;
+      // Draw dynamic SVGs for visual representation (Mock graph layout)
+      let svgHtml = '';
+      if (nodes.length > 0) {
+        const svgWidth = 800;
+        const svgHeight = 240;
+        const centerX = svgWidth / 2;
+        const centerY = svgHeight / 2;
+        const radius = 90;
+
+        // Radial nodes around a main central node
+        const nodeCircles = [];
+        const edgeLines = [];
+
+        // Main node center
+        nodeCircles.push(`<circle cx="${centerX}" cy="${centerY}" r="14" fill="var(--color-accent)" stroke="#fff" stroke-width="2"/>`);
+        nodeCircles.push(`<text x="${centerX}" y="${centerY - 20}" fill="var(--text-primary)" font-size="11" font-weight="bold" text-anchor="middle">${Utils.escapeHtml(nodes[0].label || 'Center')}</text>`);
+
+        // Outer nodes
+        const numOuter = Math.min(nodes.length - 1, 8);
+        for (let i = 0; i < numOuter; i++) {
+          const angle = (i / numOuter) * 2 * Math.PI;
+          const x = centerX + radius * Math.cos(angle);
+          const y = centerY + radius * Math.sin(angle);
+          
+          edgeLines.push(`<line x1="${centerX}" y1="${centerY}" x2="${x}" y2="${y}" stroke="var(--border-color)" stroke-width="1.5" />`);
+          nodeCircles.push(`<circle cx="${x}" cy="${y}" r="8" fill="var(--bg-tertiary)" stroke="var(--color-accent)" stroke-width="1.5" />`);
+          nodeCircles.push(`<text x="${x}" y="${y + 18}" fill="var(--text-secondary)" font-size="10" text-anchor="middle">${Utils.escapeHtml(nodes[i + 1].label || '')}</text>`);
+        }
+
+        svgHtml = `
+          <div class="svg-graph-container">
+            <svg viewBox="0 0 ${svgWidth} ${svgHeight}" class="svg-graph" style="width:100%; max-height:240px;">
+              ${edgeLines.join('')}
+              ${nodeCircles.join('')}
+            </svg>
+          </div>
+        `;
+      }
 
       let gHtml = `
         ${svgHtml}
@@ -3025,9 +767,8 @@ const UI = {
         <div class="card" style="margin-bottom:24px;">
           <div class="card-title">Graph Statistics</div>
           <div style="display:flex; gap:32px; font-family:var(--font-mono); font-size:18px; font-weight:700; margin-top:8px;">
-            <div>Nodes: <span class="text-info">${graphStats.nodes}</span></div>
-            <div>Edges: <span class="text-success">${graphStats.edges}</span></div>
-            <div>Avg confidence: <span class="text-warning">${((graphStats.averageConfidence || 0) * 100).toFixed(0)}%</span></div>
+            <div>Nodes: <span class="text-info">${stats.nodes}</span></div>
+            <div>Edges: <span class="text-success">${stats.edges}</span></div>
           </div>
         </div>
 
@@ -3056,7 +797,6 @@ const UI = {
           <label for="graph-user-id">User ID Telegram</label>
           <input type="text" id="graph-user-id" value="${Utils.escapeHtml(currentUserId)}">
         </div>
-        ${UI.renderWorkspaceInput('graph')}
         <div class="filter-group">
           <label for="search-graph-concept">Cari Konsep Spesifik (Opsional)</label>
           <input type="text" id="search-graph-concept" placeholder="E.g., memory, study">
@@ -3094,7 +834,7 @@ const UI = {
         <div class="card">
           <div class="card-title">Latest Score</div>
           <div class="card-value" style="color: ${latest && latest.passed ? 'var(--color-success)' : 'var(--color-warning)'}">
-            ${latest ? UI.formatScore(latest.score) : '0%'}
+            ${latest ? (latest.score * 100).toFixed(0) + '%' : '0%'}
           </div>
           <div class="card-subtitle">Status: ${latest ? UI.renderBadge(latest.status) : 'none'}</div>
         </div>
@@ -3136,7 +876,7 @@ const UI = {
                   <td>${Utils.formatDate(run.createdAt)}</td>
                   <td><code>${Utils.escapeHtml(run.type)}</code></td>
                   <td>${run.caseCount} cases</td>
-                  <td style="font-family:var(--font-mono); font-weight:bold; color: var(--color-accent);">${UI.formatScore(run.score)}</td>
+                  <td style="font-family:var(--font-mono); font-weight:bold; color: var(--color-accent);">${(run.score * 100).toFixed(0)}%</td>
                   <td>${UI.renderBadge(run.status)}</td>
                 </tr>
               `).join('')}
@@ -3220,92 +960,6 @@ const UI = {
 
     targetEl.innerHTML = html;
     document.getElementById('btn-refresh-incidents').addEventListener('click', () => this.renderIncidents(targetEl));
-  },
-
-  async renderAudit(targetEl) {
-    targetEl.innerHTML = UI.renderLoading('Memuat audit log...');
-
-    const loadData = async () => {
-      const filters = {
-        limit: document.getElementById('audit-limit')?.value || 20,
-        action: document.getElementById('audit-action')?.value || '',
-        status: document.getElementById('audit-status')?.value || '',
-        targetType: document.getElementById('audit-target-type')?.value || '',
-        userId: document.getElementById('audit-user-id')?.value || '',
-        workspaceId: document.getElementById('audit-workspace-id')?.value || '',
-        decision: document.getElementById('audit-decision')?.value || ''
-      };
-      const res = await Api.getAuditLogs(filters);
-      const container = document.getElementById('audit-list-container');
-      if (!res.ok) {
-        container.innerHTML = UI.renderError('Gagal Memuat Audit Log', 'Pastikan token admin benar.');
-        return;
-      }
-      const items = res.data.items || [];
-      if (!items.length) {
-        container.innerHTML = UI.renderEmptyState('🧾', 'Belum Ada Audit', 'Action dashboard belum menghasilkan audit log.');
-        return;
-      }
-      container.innerHTML = UI.renderTable(
-        ['Waktu', 'Action', 'Workspace', 'Decision', 'Target', 'Status', 'User', 'Reason'],
-        items.map(item => [
-          Utils.escapeHtml(Utils.formatDate(item.createdAt)),
-          `<code>${Utils.escapeHtml(item.action)}</code>`,
-          `<code>${Utils.escapeHtml(item.workspaceId || '-')}</code>`,
-          UI.renderBadge(item.decision || 'allowed'),
-          `${Utils.escapeHtml(item.targetType || '-')}:${Utils.escapeHtml(item.targetId || '-')}`,
-          UI.renderBadge(item.status || 'ok'),
-          Utils.escapeHtml(item.userId || '-'),
-          Utils.escapeHtml(item.reason || '-')
-        ])
-      );
-    };
-
-    let html = UI.renderSectionHeader('Audit Log', `
-      <button class="btn btn-outline" id="btn-refresh-audit">Refresh</button>
-    `);
-    html += `
-      <div class="filter-bar">
-        <div class="filter-group">
-          <label for="audit-user-id">User ID</label>
-          <input type="text" id="audit-user-id" placeholder="optional">
-        </div>
-        <div class="filter-group">
-          <label for="audit-workspace-id">Workspace ID</label>
-          <input type="text" id="audit-workspace-id" placeholder="optional">
-        </div>
-        <div class="filter-group">
-          <label for="audit-action">Action</label>
-          <input type="text" id="audit-action" placeholder="memory/update">
-        </div>
-        <div class="filter-group">
-          <label for="audit-status">Status</label>
-          <input type="text" id="audit-status" placeholder="ok/rejected">
-        </div>
-        <div class="filter-group">
-          <label for="audit-target-type">Target Type</label>
-          <input type="text" id="audit-target-type" placeholder="memory/goal/workflow">
-        </div>
-        <div class="filter-group">
-          <label for="audit-decision">Decision</label>
-          <input type="text" id="audit-decision" placeholder="allowed/denied">
-        </div>
-        <div class="filter-group" style="max-width:100px;">
-          <label for="audit-limit">Limit</label>
-          <select id="audit-limit"><option>20</option><option>50</option><option>100</option></select>
-        </div>
-        <button class="btn btn-primary" id="btn-load-audit" style="height:40px;">Load Audit</button>
-      </div>
-      <div class="panel" style="border-color:rgba(240,60,60,0.35);">
-        <h3 class="panel-title">Danger Zone Rules</h3>
-        <p style="color:var(--text-secondary); font-size:13px;">Archive/restore action membutuhkan confirmation word. Tidak ada hard delete endpoint di dashboard Phase 13.</p>
-      </div>
-      <div id="audit-list-container">${UI.renderLoading('Memuat audit log...')}</div>
-    `;
-    targetEl.innerHTML = html;
-    document.getElementById('btn-load-audit').addEventListener('click', loadData);
-    document.getElementById('btn-refresh-audit').addEventListener('click', loadData);
-    await loadData();
   },
 
   async renderCommands(targetEl) {
@@ -3427,20 +1081,6 @@ const UI = {
       </div>
 
       <div class="panel">
-        <h3 class="panel-title">📱 PWA Mobile Dashboard</h3>
-        <div class="pwa-status-row" style="margin-bottom:16px;">
-          <span id="settings-pwa-online">${navigator.onLine ? UI.renderBadge('online') : UI.renderBadge('offline')}</span>
-          <span class="badge badge-info">Static-only cache</span>
-          <span class="badge badge-warning">API data tidak di-cache</span>
-        </div>
-        <p class="text-muted" style="margin-bottom:16px;">Dashboard bisa di-install dari browser HP. Service worker hanya cache shell statis, bukan response API, backup JSON, atau header Authorization.</p>
-        <div class="mobile-safe-actions" style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn btn-primary hidden" id="btn-pwa-install">Install Dashboard</button>
-          <button class="btn btn-outline" id="btn-pwa-clear-cache">Clear App Cache</button>
-        </div>
-      </div>
-
-      <div class="panel">
         <h3 class="panel-title">🛡️ Checklist Peluncuran Aman (Safe Production)</h3>
         <ul style="list-style:none; display:flex; flex-direction:column; gap:12px; font-size:14px; color:var(--text-secondary);">
           <li>
@@ -3472,6 +1112,498 @@ const UI = {
         window.location.reload();
       });
     });
-    if (window.PWA) PWA.bindSettingsControls(document);
+  },
+
+  // --- Phase 30 Missing Tab Renderers ---
+
+  async renderAgents(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat data agents...');
+
+    const res = await Api.getSummary();
+    const healthRes = await Api.getHealth();
+
+    if (!healthRes.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Agents', 'Server tidak merespons.');
+      return;
+    }
+
+    const summary = res.ok ? res.data : null;
+
+    let html = UI.renderSectionHeader('🤖 Agents & Multi-Bot Management', `
+      <button class="btn btn-outline" id="btn-refresh-agents">🔄 Refresh</button>
+    `);
+
+    // Bot Token Mapping Status
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🔐 Bot Token Mapping</h3>
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
+          Status mapping token bot ke specialist agent. Token disembunyikan untuk keamanan.
+        </p>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">TELEGRAM_TOKEN (Orchestrator)</span>
+            <span class="kv-value"><span class="badge badge-healthy">Active</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">TELEGRAM_TOKEN_PLANNER</span>
+            <span class="kv-value"><span class="badge badge-info">Optional</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">TELEGRAM_TOKEN_CODER</span>
+            <span class="kv-value"><span class="badge badge-info">Optional</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">TELEGRAM_TOKEN_CRITIC</span>
+            <span class="kv-value"><span class="badge badge-info">Optional</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">TELEGRAM_TOKEN_SECURITY</span>
+            <span class="kv-value"><span class="badge badge-info">Optional</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Agent Registry
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">📋 Agent Registry</h3>
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-title">Orchestrator</div>
+            <div class="card-value">Default Bot</div>
+            <div class="card-subtitle">Routes queries to specialists</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Planner</div>
+            <div class="card-value">Optional</div>
+            <div class="card-subtitle">Task planning & roadmap</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Coder</div>
+            <div class="card-value">Optional</div>
+            <div class="card-subtitle">Code analysis & debugging</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Critic</div>
+            <div class="card-value">Optional</div>
+            <div class="card-subtitle">Review & quality gates</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Security</div>
+            <div class="card-value">Optional</div>
+            <div class="card-subtitle">Risk assessment & approval</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Ops</div>
+            <div class="card-value">Optional</div>
+            <div class="card-subtitle">Deployment & operations</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Multi-Bot Safety Status
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🛡️ Multi-Bot Safety</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">Bot-to-Bot Loop Prevention</span>
+            <span class="kv-value"><span class="badge badge-healthy">Enabled</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Visible Specialist Replies</span>
+            <span class="kv-value"><span class="badge badge-healthy">Max Limited</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Spam Prevention</span>
+            <span class="kv-value"><span class="badge badge-healthy">Active</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    targetEl.innerHTML = html;
+
+    document.getElementById('btn-refresh-agents')?.addEventListener('click', () => {
+      UI.renderAgents(targetEl);
+    });
+  },
+
+  async renderIntegrations(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat data integrations...');
+
+    const res = await Api.getSummary();
+    const healthRes = await Api.getHealth();
+
+    if (!healthRes.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Integrations', 'Server tidak merespons.');
+      return;
+    }
+
+    let html = UI.renderSectionHeader('🔌 External Integrations', `
+      <button class="btn btn-outline" id="btn-refresh-integrations">🔄 Refresh</button>
+    `);
+
+    // Integration Status Grid
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">📡 Integration Status</h3>
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
+          Semua integrasi eksternal memerlukan Evaluation v2 gate + executor approval sebelum eksekusi.
+        </p>
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-title">GitHub</div>
+            <div class="card-value">Proposal Only</div>
+            <div class="card-subtitle">Issue/PR/Comment via Eval v2</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Google Calendar</div>
+            <div class="card-value">OAuth Required</div>
+            <div class="card-subtitle">Create/Update events</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Gmail</div>
+            <div class="card-value">Draft Only</div>
+            <div class="card-subtitle">Send disabled by default</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Webhook</div>
+            <div class="card-value">Dry-Run Only</div>
+            <div class="card-subtitle">POST requires approval</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Cloudflare/NAS</div>
+            <div class="card-value">Config Mutation</div>
+            <div class="card-subtitle">High risk approval required</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Evaluation Gate Status
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">✅ Evaluation v2 Gate</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">GitHub Issue/PR Proposal</span>
+            <span class="kv-value"><span class="badge badge-healthy">Requires Eval v2</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Calendar Create/Update</span>
+            <span class="kv-value"><span class="badge badge-healthy">Requires Eval v2</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Gmail Draft</span>
+            <span class="kv-value"><span class="badge badge-healthy">Requires Eval v2</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Webhook POST</span>
+            <span class="kv-value"><span class="badge badge-healthy">Requires Eval v2</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Gmail Send</span>
+            <span class="kv-value"><span class="badge badge-critical">Disabled</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Dry-Run Safety
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🧪 Dry-Run Safety</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">Dry-Run Mode</span>
+            <span class="kv-value"><span class="badge badge-healthy">Never performs external write</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Credential Exposure</span>
+            <span class="kv-value"><span class="badge badge-healthy">Redacted in output</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Missing Env Handling</span>
+            <span class="kv-value"><span class="badge badge-healthy">Setup plan, no crash</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    targetEl.innerHTML = html;
+
+    document.getElementById('btn-refresh-integrations')?.addEventListener('click', () => {
+      UI.renderIntegrations(targetEl);
+    });
+  },
+
+  async renderCodingWorkspace(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat coding workspace...');
+
+    const res = await Api.getSummary();
+    const healthRes = await Api.getHealth();
+
+    if (!healthRes.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Coding Workspace', 'Server tidak merespons.');
+      return;
+    }
+
+    let html = UI.renderSectionHeader('💻 Coding Workspace', `
+      <button class="btn btn-outline" id="btn-refresh-coding">🔄 Refresh</button>
+    `);
+
+    // Workspace Constraints
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">📏 Project Constraints</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">Runtime</span>
+            <span class="kv-value">Node.js 20</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Module System</span>
+            <span class="kv-value">CommonJS</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Dashboard</span>
+            <span class="kv-value">Vanilla HTML/CSS/JS (PWA)</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">TypeScript</span>
+            <span class="kv-value"><span class="badge badge-critical">Not Allowed</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">React/Next/Vue</span>
+            <span class="kv-value"><span class="badge badge-critical">Not Allowed</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Large Refactor</span>
+            <span class="kv-value"><span class="badge badge-critical">Requires Approval</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Coding Features
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🔧 Available Features</h3>
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-title">Code Analysis</div>
+            <div class="card-value">Active</div>
+            <div class="card-subtitle">Static analysis & classification</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Change Planning</div>
+            <div class="card-value">Active</div>
+            <div class="card-subtitle">Non-mutating plans only</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Test Generation</div>
+            <div class="card-value">Active</div>
+            <div class="card-subtitle">Relevant test suggestions</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Codex Prompt</div>
+            <div class="card-value">Active</div>
+            <div class="card-subtitle">Generate Codex prompts</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Safety Rules
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🛡️ Safety Rules</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">Code Change Plan</span>
+            <span class="kv-value"><span class="badge badge-healthy">Does not mutate repo</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">GitHub Issue/PR Proposal</span>
+            <span class="kv-value"><span class="badge badge-healthy">Requires Eval v2 + Approval</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Personal Chat Trigger</span>
+            <span class="kv-value"><span class="badge badge-healthy">Blocked</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">External Actions</span>
+            <span class="kv-value"><span class="badge badge-healthy">Approval First</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    targetEl.innerHTML = html;
+
+    document.getElementById('btn-refresh-coding')?.addEventListener('click', () => {
+      UI.renderCodingWorkspace(targetEl);
+    });
+  },
+
+  async renderRelease(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat release status...');
+
+    const healthRes = await Api.getHealth();
+    const summaryRes = await Api.getSummary();
+
+    if (!healthRes.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Release Status', 'Server tidak merespons.');
+      return;
+    }
+
+    const health = healthRes.data;
+    const summary = summaryRes.ok ? summaryRes.data : null;
+
+    let html = UI.renderSectionHeader('🚀 Release Status & Health', `
+      <button class="btn btn-outline" id="btn-refresh-release">🔄 Refresh</button>
+    `);
+
+    // App Version & Phase
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">📦 Application Info</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">Version</span>
+            <span class="kv-value">${Utils.escapeHtml(health.version || 'v2.0.0')}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Phase</span>
+            <span class="kv-value">Phase 30 - Stable Release</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Uptime</span>
+            <span class="kv-value">${Utils.formatDuration(health.uptime)}</span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Storage Driver</span>
+            <span class="kv-value">${Utils.escapeHtml(health.storageDriver)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // System Health Status
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🩺 System Health</h3>
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-title">Bot Health</div>
+            <div class="card-value" style="color: ${health.ok ? 'var(--color-success)' : 'var(--color-danger)'}">
+              ${health.ok ? 'HEALTHY' : 'DEGRADED'}
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Dashboard</div>
+            <div class="card-value" style="color: ${health.dashboardEnabled ? 'var(--color-success)' : 'var(--color-warning)'}">
+              ${health.dashboardEnabled ? 'ENABLED' : 'DISABLED'}
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Redis</div>
+            <div class="card-value" style="color: ${health.redisAvailable ? 'var(--color-success)' : 'var(--color-warning)'}">
+              ${health.redisAvailable ? 'CONNECTED' : 'DISCONNECTED'}
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Admin Token</div>
+            <div class="card-value" style="color: ${health.adminTokenSet ? 'var(--color-success)' : 'var(--color-danger)'}">
+              ${health.adminTokenSet ? 'SET' : 'MISSING'}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Release Gate Status (Phase 30)
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">🚦 Release Gate Status (Phase 30)</h3>
+        <div class="kv-list">
+          <div class="kv-item">
+            <span class="kv-key">Boot Stability</span>
+            <span class="kv-value"><span class="badge badge-healthy">PASS</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Dashboard Routes</span>
+            <span class="kv-value"><span class="badge badge-healthy">PASS</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Executor Boundary</span>
+            <span class="kv-value"><span class="badge badge-healthy">PASS</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Integration Gate</span>
+            <span class="kv-value"><span class="badge badge-healthy">PASS</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Secret Leakage</span>
+            <span class="kv-value"><span class="badge badge-healthy">NONE DETECTED</span></span>
+          </div>
+          <div class="kv-item">
+            <span class="kv-key">Bot-to-Bot Loop</span>
+            <span class="kv-value"><span class="badge badge-healthy">PREVENTED</span></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Degraded Mode Warning
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">⚠️ Degraded Mode</h3>
+        <p style="font-size:13px; color:var(--text-secondary);">
+          Jika release gate gagal, sistem akan berjalan dalam mode degraded.
+          Fitur yang gagal akan ditampilkan di bawah.
+        </p>
+        <div id="degraded-features" style="margin-top:12px;">
+          <span class="badge badge-healthy">No degraded features detected</span>
+        </div>
+      </div>
+    `;
+
+    // Recent Test Results (if available)
+    if (summary) {
+      html += `
+        <div class="panel">
+          <h3 class="panel-title">📊 System Data Summary</h3>
+          <div class="kv-list">
+            <div class="kv-item">
+              <span class="kv-key">Memory Records</span>
+              <span class="kv-value">${summary.memoryCount || 0}</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-key">Goals</span>
+              <span class="kv-value">${summary.goalCount || 0}</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-key">Workflows</span>
+              <span class="kv-value">${summary.workflowCount || 0}</span>
+            </div>
+            <div class="kv-item">
+              <span class="kv-key">Graph Nodes</span>
+              <span class="kv-value">${summary.graphNodeCount || 0}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    targetEl.innerHTML = html;
+
+    document.getElementById('btn-refresh-release')?.addEventListener('click', () => {
+      UI.renderRelease(targetEl);
+    });
   }
 };

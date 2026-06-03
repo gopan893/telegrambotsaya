@@ -17,61 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentTab = 'overview';
   let serverOnline = false;
 
-  const TAB_ROUTES = {
-    overview: UI.renderOverview,
-    ops: UI.renderOps,
-    workspaces: UI.renderWorkspacesAdmin,
-    users: UI.renderUsers,
-    permissions: UI.renderPermissions,
-    memory: UI.renderMemory,
-    goals: UI.renderGoals,
-    workflows: UI.renderWorkflows,
-    planner: UI.renderPlanner,
-    executor: UI.renderExecutor,
-    agents: UI.renderAgents,
-    tools: UI.renderTools,
-    integrations: UI.renderIntegrations,
-    backup: UI.renderBackupRecovery,
-    insights: UI.renderInsights,
-    graph: UI.renderGraph,
-    benchmarks: UI.renderBenchmarks,
-    incidents: UI.renderIncidents,
-    audit: UI.renderAudit,
-    commands: UI.renderCommands,
-    env: UI.renderEnv,
-    settings: UI.renderSettings
-  };
-
-  const normalizeTab = (tab) => {
-    const clean = String(tab || '').replace(/^#/, '').trim();
-    return Object.prototype.hasOwnProperty.call(TAB_ROUTES, clean) ? clean : 'overview';
-  };
-
-  const getRequestedTab = () => {
-    const hashTab = window.location.hash ? window.location.hash.substring(1) : '';
-    if (hashTab) return normalizeTab(hashTab);
-    const queryTab = new URLSearchParams(window.location.search).get('tab');
-    if (queryTab) return normalizeTab(queryTab);
-    return normalizeTab(window.DashboardState?.getState?.().activeTab || 'overview');
-  };
-
-  const navigateToTab = (tab) => {
-    const nextTab = normalizeTab(tab);
-    if (window.location.hash === `#${nextTab}`) {
-      routeTab();
-    } else {
-      window.location.hash = `#${nextTab}`;
-    }
-  };
-
-  window.DashboardApp = {
-    ...(window.DashboardApp || {}),
-    TAB_ROUTES: Object.keys(TAB_ROUTES),
-    normalizeTab,
-    getRequestedTab,
-    navigateToTab
-  };
-
   // Ensure confirm-modal is hidden on startup
   const confirmModal = document.getElementById('confirm-modal');
   if (confirmModal) confirmModal.classList.add('hidden');
@@ -95,11 +40,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close mobile sidebar when a nav item is clicked
   navItems.forEach(item => {
     item.addEventListener('click', (e) => {
-      e.preventDefault();
       const tab = item.getAttribute('data-tab');
       if (tab) {
+        currentTab = tab;
+        navItems.forEach(nav => nav.classList.remove('active'));
+        item.classList.add('active');
+        window.location.hash = `#${tab}`;
         if (sidebar) sidebar.classList.remove('open');
-        navigateToTab(tab);
       }
     });
   });
@@ -111,9 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const requestedTab = getRequestedTab();
-    currentTab = requestedTab;
-    if (window.DashboardState) DashboardState.setActiveTab(currentTab);
+    const hash = window.location.hash.substring(1) || 'overview';
+    currentTab = hash;
 
     // Highlight nav item
     navItems.forEach(nav => {
@@ -124,12 +70,58 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    const renderer = TAB_ROUTES[currentTab] || TAB_ROUTES.overview;
-    if (!TAB_ROUTES[currentTab] && window.location.hash !== '#overview') {
-      window.location.hash = '#overview';
-      return;
+    switch (currentTab) {
+      case 'overview':
+        await UI.renderOverview(tabContent);
+        break;
+      case 'ops':
+        await UI.renderOps(tabContent);
+        break;
+      case 'memory':
+        await UI.renderMemory(tabContent);
+        break;
+      case 'goals':
+        await UI.renderGoals(tabContent);
+        break;
+      case 'workflows':
+        await UI.renderWorkflows(tabContent);
+        break;
+      case 'insights':
+        await UI.renderInsights(tabContent);
+        break;
+      case 'graph':
+        await UI.renderGraph(tabContent);
+        break;
+      case 'benchmarks':
+        await UI.renderBenchmarks(tabContent);
+        break;
+      case 'incidents':
+        await UI.renderIncidents(tabContent);
+        break;
+      case 'commands':
+        await UI.renderCommands(tabContent);
+        break;
+      case 'env':
+        await UI.renderEnv(tabContent);
+        break;
+      case 'settings':
+        UI.renderSettings(tabContent);
+        break;
+      case 'agents':
+        await UI.renderAgents(tabContent);
+        break;
+      case 'integrations':
+        await UI.renderIntegrations(tabContent);
+        break;
+      case 'coding':
+        await UI.renderCodingWorkspace(tabContent);
+        break;
+      case 'release':
+        await UI.renderRelease(tabContent);
+        break;
+      default:
+        await UI.renderOverview(tabContent);
     }
-    await renderer(tabContent);
   };
 
   // Check server health and update login view state alerts
@@ -160,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!info.dashboardEnabled) {
       if (disabledAlert) disabledAlert.classList.remove('hidden');
-    } else if (!(info.tokenConfigured ?? info.adminTokenSet)) {
+    } else if (!info.adminTokenSet) {
       if (warningAlert) warningAlert.classList.remove('hidden');
     }
     // else: server is OK, no alerts needed
