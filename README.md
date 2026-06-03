@@ -22,6 +22,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Interaction layer dengan inline keyboard, menu cepat, callback handler, dan confirmation flow untuk aksi penting
 - Human judgment safety layer untuk topik kesehatan, hukum, keuangan, keselamatan, dan keputusan besar
 - Multi-bot foundation + natural smart agent router untuk Orchestrator, Planner, Coder, Critic, Ops, Security, Executor, dan Reflection agent
+- **Multi-Agent Coding Workspace** untuk analisis coding request, change planning, risk review, test planning, Codex prompt generation, dan GitHub proposal (Phase 29)
 
 ## Mulai Cepat
 
