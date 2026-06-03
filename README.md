@@ -16,6 +16,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - AI OS untuk goals, workflows, graph, insight, dan workspace
 - Human-AI Collaboration untuk thinking, learning, reflection, dan decision support
 - AI Operations untuk health, benchmark, reliability, regression, dan recovery
+- Approved external integration foundation untuk GitHub, Google Calendar, Gmail draft, Cloudflare/NAS, dan Webhook dengan Evaluation Gate + human approval
 - Multi-device UX mode agar jawaban nyaman dibaca di Telegram mobile, Telegram desktop, web client, laptop, dan desktop
 - Conversation continuity layer agar follow-up seperti `iya`, `lanjut`, `jelaskan`, dan pergantian topik dipahami natural
 - Interaction layer dengan inline keyboard, menu cepat, callback handler, dan confirmation flow untuk aksi penting
@@ -162,6 +163,21 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /evalsummary
 /evalgates
 /evalcompare
+/connector_status github
+/connector_quality github
+/github_status
+/github_issues
+/calendar_status
+/calendar_events
+/gmail_status
+/nas_status
+/webhook_preview {"event":"test"}
+/propose_github_issue Deploy Render gagal setelah Phase 28
+/propose_calendar_event Meeting review bot besok jam 9
+/propose_gmail_draft Update progress project Telegram AI OS
+/propose_webhook {"event":"backup_ready"}
+/integration_pipeline integration_pipeline_xxx
+/integration_eval integration_pipeline_xxx
 ```
 
 Multi-bot visible replies bisa diaktifkan di grup dengan `/multibot_on`. Specialist bot hanya bicara jika dipilih router, maksimal default 2 agent, dan token tidak pernah ditampilkan. Gunakan env seperti `TELEGRAM_TOKEN_PLANNER`, `TELEGRAM_TOKEN_CODER`, dan `TELEGRAM_TOKEN_CRITIC`; typo `TELEGRAM_TOKEN_PLANNE` akan diberi warning aman.
@@ -184,6 +200,14 @@ Phase 25 menghubungkan agent reasoning ke executor secara aman:
 - `/evalagents` menjalankan evaluation harness v2 secara dry-run untuk mengecek routing, domain personal/sekolah, follow-up context, delegation, decision, risk, proposal, quality gates, dan kebocoran secret sebelum menambah integrasi eksternal yang lebih kuat.
 - `/evalgates` menampilkan gate seperti no-leak, approval safety, domain routing, dan risk score.
 - `/evalcompare` membandingkan dua run terakhir untuk melihat regresi.
+
+Phase 28 menambahkan approved external execution:
+
+- Read-only connector seperti `/github_status`, `/github_issues`, `/calendar_status`, `/gmail_status`, `/nas_status`, dan `/webhook_preview` bisa berjalan langsung setelah permission/rate-limit/quality gate.
+- Write/external action seperti membuat GitHub issue, Calendar event, Gmail draft, dan Webhook send hanya membuat proposal setelah preflight, dry-run, dan Evaluation Gate v2.
+- Setelah proposal dibuat, user tetap harus menjalankan `/approve <proposalId>` lalu `/runexec <proposalId>`.
+- Gmail direct send, shell, arbitrary code execution, env/config mutation, dan hard delete tetap tidak didukung.
+- Lihat `docs/APPROVED_EXTERNAL_EXECUTION.md`, `docs/EXTERNAL_INTEGRATIONS.md`, dan `docs/INTEGRATION_SECURITY.md`.
 
 ## Catatan Penting
 

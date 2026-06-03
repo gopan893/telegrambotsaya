@@ -24,6 +24,7 @@ const agentTaskRoutes = require('./agent-task-routes');
 const decisionRoutes = require('./decision-routes');
 const agentExecutorRoutes = require('./agent-executor-routes');
 const agentEvaluationRoutes = require('./agent-evaluation-routes');
+const integrationExecutionRoutes = require('./integration-execution-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -31,9 +32,12 @@ function getDashboardServices(services = {}) {
     storageManager: services.storageManager || null,
     aiOS: services.aiOS || {},
     opsSystem: services.opsSystem || null,
+    integrationsSystem: services.integrationsSystem || null,
     getOpsServices: services.getOpsServices,
+    getCalendarClient: services.getCalendarClient,
     ensureUser: services.ensureUser,
     getUsersSnapshot: services.getUsersSnapshot,
+    auditLog,
     logger: services.logger || services.log || console
   };
 }
@@ -329,6 +333,7 @@ function registerDashboardRoutes(app, rawServices = {}) {
   decisionRoutes.registerDecisionRoutes(router, services);
   agentExecutorRoutes.registerAgentExecutorRoutes(router, services);
   agentEvaluationRoutes.registerAgentEvaluationRoutes(router, services);
+  integrationExecutionRoutes.registerIntegrationExecutionRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

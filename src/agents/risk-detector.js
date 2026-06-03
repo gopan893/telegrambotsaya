@@ -7,11 +7,11 @@ function detectSecretLikeContent(message) {
 }
 
 function detectActionRequest(message) {
-  return /\b(jalankan|menjalankan|eksekusi|run|approve|set webhook|restore|import|hapus|delete|kirim|ubah permission|kerjakan keputusan|terapkan keputusan|kerjakan delegasi)\b/i.test(String(message?.text || message || ''));
+  return /\b(jalankan|menjalankan|eksekusi|run|approve|set webhook|restore|import|hapus|delete|kirim|ubah permission|kerjakan keputusan|terapkan keputusan|kerjakan delegasi|buat issue|create issue|jadwalkan|buat event|buat draft|kirim webhook)\b/i.test(String(message?.text || message || ''));
 }
 
 function detectWriteOrExternalIntent(message) {
-  return /\b(restore|import|overwrite|hapus|delete|jalankan|menjalankan|eksekusi|run|set env|set webhook|kirim email|external api|kerjakan keputusan|terapkan keputusan|kerjakan delegasi)\b/i.test(String(message?.text || message || ''));
+  return /\b(restore|import|overwrite|hapus|delete|jalankan|menjalankan|eksekusi|run|set env|set webhook|kirim email|external api|kerjakan keputusan|terapkan keputusan|kerjakan delegasi|buat issue|create issue|jadwalkan|buat event|buat draft|kirim webhook)\b/i.test(String(message?.text || message || ''));
 }
 
 function detectDangerIntent(message) {

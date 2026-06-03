@@ -102,6 +102,28 @@ Phase 25 menambahkan action-aware natural chat. Pesan seperti `jalankan backup s
 | `/evalgates` | Lihat status quality gates evaluation v2. |
 | `/evalcompare` | Bandingkan dua evaluation run terakhir dan tampilkan regresi. |
 
+## Approved External Integrations
+
+| Command | Fungsi |
+| --- | --- |
+| `/connector_status <connectorId>` | Status connector aman tanpa menampilkan credential. |
+| `/connector_quality <connectorId>` | Jalankan connector quality gate. |
+| `/github_status` | Status konfigurasi GitHub connector. |
+| `/github_issues` | List issue GitHub jika connector siap; jika belum, tampilkan setup plan. |
+| `/calendar_status` | Status Google Calendar connector. |
+| `/calendar_events` | List event calendar jika OAuth client tersedia dan user terautentikasi. |
+| `/gmail_status` | Status Gmail draft connector. |
+| `/nas_status` | Status Cloudflare/NAS connector. |
+| `/webhook_preview <payload>` | Preview/validasi payload webhook tanpa POST. |
+| `/propose_github_issue <text>` | Buat proposal executor untuk GitHub issue. Tidak membuat issue langsung. |
+| `/propose_calendar_event <text>` | Buat proposal executor untuk event Calendar. Tidak membuat event langsung. |
+| `/propose_gmail_draft <text>` | Buat proposal executor untuk Gmail draft. Tidak mengirim email. |
+| `/propose_webhook <payload>` | Buat proposal executor untuk webhook send. Tidak melakukan POST langsung. |
+| `/integration_pipeline <pipelineId>` | Lihat status pipeline preflight/dry-run/evaluation/proposal. |
+| `/integration_eval <pipelineId>` | Jalankan Evaluation Gate untuk pipeline integrasi. |
+
+Natural chat seperti `buat issue GitHub untuk bug deploy Render` atau `jadwalkan meeting besok jam 9` diarahkan ke proposal integrasi. Write/external/danger action tetap harus melewati Evaluation Gate v2, `/approve`, lalu `/runexec`.
+
 ## Tool Registry
 
 | Command | Fungsi |

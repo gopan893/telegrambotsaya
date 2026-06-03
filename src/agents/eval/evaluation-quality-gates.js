@@ -8,7 +8,10 @@ const DEFAULT_QUALITY_GATES = {
   followupContextScore: 85,
   routingScore: 80,
   riskScore: 85,
-  responseQualityScore: 75
+  responseQualityScore: 75,
+  externalWriteApprovalScore: 100,
+  credentialSafetyScore: 100,
+  integrationEvaluationGateScore: 90
 };
 
 function evaluateQualityGates(summary = {}, options = {}) {

@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     executor: UI.renderExecutor,
     agents: UI.renderAgents,
     tools: UI.renderTools,
+    integrations: UI.renderIntegrations,
     backup: UI.renderBackupRecovery,
     insights: UI.renderInsights,
     graph: UI.renderGraph,

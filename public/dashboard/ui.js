@@ -2175,6 +2175,122 @@ const UI = {
     });
   },
 
+  async renderIntegrations(targetEl) {
+    const connectorActions = {
+      github: ['github.status', 'github.repo.info', 'github.issues.list', 'github.issue.create', 'github.pr.create', 'github.comment.create'],
+      google_calendar: ['calendar.status', 'calendar.events.list', 'calendar.event.create', 'calendar.event.update'],
+      gmail: ['gmail.status', 'gmail.draft.create', 'gmail.send'],
+      cloudflare_nas: ['cloudflare_nas.status', 'cloudflare_nas.tunnel.check', 'nas.health.check', 'nas.access.diagnose', 'cloudflare.config.change'],
+      webhook: ['webhook.status', 'webhook.payload.validate', 'webhook.payload.preview', 'webhook.send']
+    };
+    targetEl.innerHTML = `
+      <div class="page-header">
+        <h2>🔌 Integrations</h2>
+        <p>Approved external execution pipeline. Write/external actions require dry-run, Evaluation v2 gate, executor proposal, approval, then run.</p>
+      </div>
+      <div class="grid grid-2" style="gap:18px; align-items:start;">
+        <section class="panel">
+          <h3>Connector Action</h3>
+          <div class="grid grid-2" style="gap:12px;">
+            <input id="integration-user-id" placeholder="User ID" value="${Utils.escapeHtml(localStorage.getItem('last_user_id') || '123456789')}">
+            <input id="integration-workspace-id" placeholder="Workspace ID" value="${Utils.escapeHtml(UI.getActiveWorkspaceId())}">
+            <select id="integration-connector">
+              ${Object.keys(connectorActions).map(id => `<option value="${id}">${id}</option>`).join('')}
+            </select>
+            <select id="integration-action"></select>
+          </div>
+          <textarea id="integration-payload" rows="6" style="margin-top:10px;" placeholder='{"text":"buat issue GitHub dari bug ini"}'>{}</textarea>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+            <button class="btn btn-outline" id="integration-quality">Quality</button>
+            <button class="btn btn-outline" id="integration-rate">Rate Limit</button>
+            <button class="btn btn-outline" id="integration-dry-run">Dry-run</button>
+            <button class="btn btn-primary" id="integration-execute">Execute Read-only</button>
+            <button class="btn btn-danger" id="integration-propose">Create Proposal</button>
+          </div>
+          <div class="alert alert-warning" style="margin-top:12px;">Write/external actions do not run here. Proposal creation is blocked unless Evaluation v2 gate passes.</div>
+        </section>
+        <section class="panel">
+          <h3>Pipeline</h3>
+          <input id="integration-pipeline-id" placeholder="Pipeline ID">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+            <button class="btn btn-outline" id="pipeline-create">Create</button>
+            <button class="btn btn-outline" id="pipeline-load">Load</button>
+            <button class="btn btn-outline" id="pipeline-preflight">Preflight</button>
+            <button class="btn btn-outline" id="pipeline-dry-run">Dry-run</button>
+            <button class="btn btn-outline" id="pipeline-evaluate">Evaluate</button>
+            <button class="btn btn-primary" id="pipeline-proposal">Create Proposal</button>
+          </div>
+          <div id="integration-pipeline-result" style="margin-top:12px;">${UI.renderEmptyState('🔌', 'Pipeline Ready', 'Create atau load pipeline untuk melihat stage.')}</div>
+        </section>
+      </div>
+      <section class="panel" style="margin-top:18px;">
+        <h3>Result</h3>
+        <div id="integration-result">${UI.renderEmptyState('🧪', 'No Result', 'Run connector action untuk melihat hasil sanitized.')}</div>
+      </section>
+      <section class="panel" style="margin-top:18px;">
+        <h3>Execution History</h3>
+        <button class="btn btn-outline" id="integration-history">Load History</button>
+        <div id="integration-history-result" style="margin-top:12px;"></div>
+      </section>
+    `;
+    const connectorEl = document.getElementById('integration-connector');
+    const actionEl = document.getElementById('integration-action');
+    const resultEl = document.getElementById('integration-result');
+    const renderJson = (value) => `<pre>${Utils.escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+    const refreshActions = () => {
+      actionEl.innerHTML = (connectorActions[connectorEl.value] || []).map(action => `<option value="${action}">${action}</option>`).join('');
+    };
+    const getPayload = () => {
+      try { return JSON.parse(document.getElementById('integration-payload').value || '{}'); } catch (_) { return { text: document.getElementById('integration-payload').value || '' }; }
+    };
+    const getBasePayload = () => ({
+      connectorId: connectorEl.value,
+      action: actionEl.value,
+      payload: getPayload(),
+      userId: document.getElementById('integration-user-id').value || '123456789',
+      actorId: document.getElementById('integration-user-id').value || '123456789',
+      workspaceId: document.getElementById('integration-workspace-id').value || 'default',
+      actorRole: 'owner',
+      context: { text: getPayload().text || '' }
+    });
+    refreshActions();
+    connectorEl.addEventListener('change', refreshActions);
+    document.getElementById('integration-quality').addEventListener('click', async () => {
+      resultEl.innerHTML = renderJson((await Api.getConnectorQuality(connectorEl.value)).data);
+    });
+    document.getElementById('integration-rate').addEventListener('click', async () => {
+      resultEl.innerHTML = renderJson((await Api.getConnectorRateLimit(connectorEl.value, actionEl.value)).data);
+    });
+    document.getElementById('integration-dry-run').addEventListener('click', async () => {
+      resultEl.innerHTML = renderJson((await Api.dryRunIntegration(getBasePayload())).data);
+    });
+    document.getElementById('integration-execute').addEventListener('click', async () => {
+      resultEl.innerHTML = renderJson((await Api.executeIntegration(getBasePayload())).data);
+    });
+    document.getElementById('integration-propose').addEventListener('click', async () => {
+      resultEl.innerHTML = renderJson((await Api.proposeIntegration(getBasePayload())).data);
+    });
+    document.getElementById('pipeline-create').addEventListener('click', async () => {
+      const res = await Api.createIntegrationPipeline(getBasePayload());
+      document.getElementById('integration-pipeline-id').value = res.data?.pipeline?.id || '';
+      document.getElementById('integration-pipeline-result').innerHTML = renderJson(res.data);
+    });
+    document.getElementById('pipeline-load').addEventListener('click', async () => {
+      const id = document.getElementById('integration-pipeline-id').value.trim();
+      document.getElementById('integration-pipeline-result').innerHTML = renderJson(await Api.getIntegrationPipeline(id));
+    });
+    [['pipeline-preflight', 'preflight'], ['pipeline-dry-run', 'dry-run'], ['pipeline-evaluate', 'evaluate'], ['pipeline-proposal', 'create-proposal']].forEach(([buttonId, stage]) => {
+      document.getElementById(buttonId).addEventListener('click', async () => {
+        const id = document.getElementById('integration-pipeline-id').value.trim();
+        document.getElementById('integration-pipeline-result').innerHTML = renderJson((await Api.runIntegrationPipelineStage(id, stage)).data);
+      });
+    });
+    document.getElementById('integration-history').addEventListener('click', async () => {
+      const res = await Api.listIntegrationExecutions({ limit: 20 });
+      document.getElementById('integration-history-result').innerHTML = renderJson(res.data);
+    });
+  },
+
   async renderTools(targetEl) {
     let currentUserId = localStorage.getItem('last_user_id') || '123456789';
 

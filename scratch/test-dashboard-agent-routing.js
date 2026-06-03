@@ -17,7 +17,7 @@ assert(app.includes('getRequestedTab'), 'Dashboard router should support hash/qu
 assert(app.includes('e.preventDefault()'), 'Nav click should prevent default anchor fallback');
 assert(app.includes("return normalizeTab(queryTab)"), 'Dashboard should support /dashboard?tab=agents');
 assert(app.includes("? clean : 'overview'"), 'Unknown tab should fall back to overview');
-assert(sw.includes('telegram-aios-dashboard-static-v26'), 'PWA cache version should be bumped');
+assert(sw.includes('telegram-aios-dashboard-static-v28'), 'PWA cache version should be bumped');
 assert(!/api\/dashboard.*cache\.put|cache\.put.*api\/dashboard/i.test(sw), 'Service worker must not cache dashboard API responses');
 assert(!/8617592038:|postgresql:\/\/|rediss?:\/\/|sk-[a-z0-9_-]{4,}/i.test(html + app + sw), 'Dashboard static routing assets must not leak secret values');
 

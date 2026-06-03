@@ -370,6 +370,51 @@ const Api = {
     return this.apiGet('/agent-evaluation/compare');
   },
 
+  async executeIntegration(payload = {}) {
+    return this.apiPost('/integrations/execute', payload);
+  },
+
+  async dryRunIntegration(payload = {}) {
+    return this.apiPost('/integrations/dry-run', payload);
+  },
+
+  async proposeIntegration(payload = {}) {
+    return this.apiPost('/integrations/propose', payload);
+  },
+
+  async createIntegrationPipeline(payload = {}) {
+    return this.apiPost('/integrations/pipeline/create', payload);
+  },
+
+  async getIntegrationPipeline(id) {
+    return this.apiGet(`/integrations/pipeline/${encodeURIComponent(id)}`);
+  },
+
+  async runIntegrationPipelineStage(id, stage) {
+    return this.apiPost(`/integrations/pipeline/${encodeURIComponent(id)}/${stage}`, {});
+  },
+
+  async listIntegrationExecutions(filters = {}) {
+    const params = new URLSearchParams();
+    ['connectorId', 'status', 'limit'].forEach(key => {
+      if (filters[key]) params.set(key, filters[key]);
+    });
+    const query = params.toString();
+    return this.apiGet(`/integrations/executions${query ? `?${query}` : ''}`);
+  },
+
+  async getConnectorQuality(connectorId) {
+    return this.apiGet(`/integrations/connectors/${encodeURIComponent(connectorId)}/quality`);
+  },
+
+  async runConnectorQualityGate(connectorId) {
+    return this.apiPost(`/integrations/connectors/${encodeURIComponent(connectorId)}/run-quality-gate`, {});
+  },
+
+  async getConnectorRateLimit(connectorId, action = 'status') {
+    return this.apiGet(`/integrations/connectors/${encodeURIComponent(connectorId)}/rate-limit?action=${encodeURIComponent(action)}`);
+  },
+
   async listTools(filters = {}) {
     const params = new URLSearchParams();
     ['category', 'riskLevel', 'source', 'enabled', 'q', 'limit'].forEach(key => {

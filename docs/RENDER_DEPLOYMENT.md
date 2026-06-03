@@ -27,6 +27,15 @@ DASHBOARD_DANGER_TOKEN=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=
+GITHUB_TOKEN=
+GITHUB_OWNER=
+GITHUB_REPO=
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+NAS_BASE_URL=
+NAS_HEALTH_URL=
+EXTERNAL_WEBHOOK_URL=
+WEBHOOK_SHARED_SECRET=
 ```
 
 ## Render Settings
@@ -49,11 +58,13 @@ GOOGLE_REDIRECT_URI=
 - `DASHBOARD_ENABLED=true` jika ingin membuka endpoint protected dashboard.
 - `DASHBOARD_ADMIN_TOKEN` wajib diisi token panjang acak sebelum memakai endpoint data dashboard.
 - `DASHBOARD_WRITE_TOKEN` dan `DASHBOARD_DANGER_TOKEN` opsional untuk membagi akses dashboard; kosongkan jika belum perlu.
+- Env connector Phase 28 (`GITHUB_*`, `GOOGLE_*`, `CLOUDFLARE_*`, `NAS_*`, `EXTERNAL_WEBHOOK_URL`, `WEBHOOK_SHARED_SECRET`) optional. Jika belum lengkap, connector tampil degraded/read-only setup mode dan write action diblokir aman.
 - Dashboard UI tersedia di `/dashboard`; static assets harus terbuka di `/dashboard/styles.css`, `/dashboard/app.js`, `/dashboard/api.js`, `/dashboard/graph.js`, `/dashboard/export.js`, dan `/dashboard/state.js`.
 - `/api/dashboard/health` menampilkan status PostgreSQL/Redis public-safe tanpa credential.
 - `/api/dashboard/storage` protected dan butuh bearer token.
 - Gunakan `STORAGE_DRIVER=auto` agar PostgreSQL aktif otomatis saat `DATABASE_URL` sehat; gunakan `/dbstatus` untuk melihat `activeDriver` dan `fallbackReason`.
 - Tidak ada secret ditulis di log.
+- Webhook URL di startup log dimask sebagai `/webhook/[redacted]`; jangan log token bot asli.
 
 ## Smoke Test Setelah Deploy
 

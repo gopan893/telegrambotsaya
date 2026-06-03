@@ -213,6 +213,22 @@ registerExecutor('memory.suggest_archive', async (action) => ({
   permissionsRequired: ['write']
 });
 
+registerExecutor('integration.connector.run', async (action, services) => {
+  const integrations = require('../integrations');
+  const result = await integrations.connectorExecutor.runApprovedConnectorAction(action.payload || action, {
+    ...services,
+    actorId: services.actorId || action.userId,
+    userId: action.userId,
+    workspaceId: action.workspaceId
+  });
+  return { ok: result?.ok !== false, result };
+}, {
+  description: 'Run an approved external connector action after evaluation gate and human approval.',
+  riskLevel: 'high',
+  requiresApproval: true,
+  permissionsRequired: ['write']
+});
+
 registerExecutor('backup.create', async (action, services) => {
   const backup = getBackup();
   const payload = action.payload || {};

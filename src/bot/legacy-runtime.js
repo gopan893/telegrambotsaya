@@ -33,6 +33,7 @@ const plannerSystem = require('../planner');
 const executorSystem = require('../executor');
 const toolsSystem = require('../tools');
 const backupSystem = require('../backup');
+const integrationsSystem = require('../integrations');
 const multibotSystem = require('../multibot');
 const smartAgentSystem = require('../agents');
 const {
@@ -3427,6 +3428,27 @@ function getAgentServices(actorId = '') {
   };
 }
 
+function getIntegrationServices(actorId = '') {
+  return {
+    ...getAgentServices(actorId),
+    integrationsSystem,
+    getCalendarClient,
+    actorRole: 'owner',
+    integrationConnectors: integrationsSystem.connectorExecutor
+  };
+}
+
+async function getIntegrationContext(userId = '', text = '') {
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+  return {
+    userId,
+    actorId: userId,
+    workspaceId,
+    actorRole: 'owner',
+    text
+  };
+}
+
 function formatBotStatusList() {
   const status = multibotSystem.botRegistry.buildBotStatusSummary(config);
   const lines = status.bots.map(bot => {
@@ -3677,6 +3699,46 @@ function formatAgentActionPlanLine(plan = {}, index = 0) {
 
 function formatAgentProposalResult(result = {}) {
   return smartAgentSystem.agentApprovalFlow.formatProposalCreatedReply(result);
+}
+
+function formatIntegrationResult(result = {}) {
+  if (!result) return 'Integrasi tidak mengembalikan hasil.';
+  if (result.ok === false) return `Integrasi diblokir: ${result.reason || result.error || 'unknown'}`;
+  if (result.proposal) {
+    return [
+      'Proposal integrasi dibuat.',
+      `Proposal: ${result.proposal.id}`,
+      `Status: ${result.proposal.status}`,
+      `Risk: ${result.proposal.riskLevel}`,
+      '',
+      `Approve: /approve ${result.proposal.id}`,
+      `Run setelah approve: /runexec ${result.proposal.id}`
+    ].join('\n');
+  }
+  if (result.pipeline) {
+    return [
+      'Integration Pipeline',
+      `ID: ${result.pipeline.id}`,
+      `Connector: ${result.pipeline.connectorId}`,
+      `Action: ${result.pipeline.action}`,
+      `Status: ${result.pipeline.status}`,
+      `Proposal: ${result.pipeline.proposalId || '-'}`
+    ].join('\n');
+  }
+  return outputSanitizer.sanitizeAssistantVisibleText(JSON.stringify(result.result || result.status || result, null, 2), {
+    userText: '',
+    forceClean: true
+  });
+}
+
+function parseIntegrationPayload(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return { text: raw };
+  }
 }
 
 async function runDecisionTelegramCommand(chatId, userId, args, msg, mode = 'decision') {
@@ -4122,6 +4184,105 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
     return true;
   }
 
+  if (cmd === '/connector_status' || cmd === '/connector_quality') {
+    const connectorId = String(args || '').trim();
+    if (!connectorId) {
+      await safeSendMessage(chatId, `Format: ${cmd} <connectorId>`, replyOpt);
+      return true;
+    }
+    const svc = getIntegrationServices(userId);
+    const context = await getIntegrationContext(userId, args);
+    const result = cmd === '/connector_status'
+      ? await integrationsSystem.connectorExecutor.executeConnectorAction(connectorId, `${connectorId === 'google_calendar' || connectorId === 'calendar' ? 'calendar' : connectorId}.status`, {}, context, svc)
+      : await integrationsSystem.connectorQualityGates.runIntegrationQualityGate(connectorId, svc);
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/github_status' || cmd === '/github_issues') {
+    const action = cmd === '/github_status' ? 'github.status' : 'github.issues.list';
+    const context = await getIntegrationContext(userId, args);
+    const result = await integrationsSystem.connectorExecutor.executeConnectorAction('github', action, parseIntegrationPayload(args), {
+      ...context,
+      text: args
+    }, getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/calendar_status' || cmd === '/calendar_events') {
+    const action = cmd === '/calendar_status' ? 'calendar.status' : 'calendar.events.list';
+    const context = await getIntegrationContext(userId, args);
+    const result = await integrationsSystem.connectorExecutor.executeConnectorAction('google_calendar', action, parseIntegrationPayload(args), {
+      ...context,
+      text: args
+    }, getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/gmail_status' || cmd === '/nas_status') {
+    const connectorId = cmd === '/gmail_status' ? 'gmail' : 'cloudflare_nas';
+    const action = cmd === '/gmail_status' ? 'gmail.status' : 'cloudflare_nas.status';
+    const result = await integrationsSystem.connectorExecutor.executeConnectorAction(connectorId, action, {}, await getIntegrationContext(userId, args), getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/webhook_preview') {
+    const context = await getIntegrationContext(userId, args);
+    const result = await integrationsSystem.connectorExecutor.runConnectorDryRun('webhook', 'webhook.payload.preview', parseIntegrationPayload(args), {
+      ...context,
+      text: args
+    }, getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_github_issue' || cmd === '/propose_calendar_event' || cmd === '/propose_gmail_draft' || cmd === '/propose_webhook') {
+    if (!String(args || '').trim()) {
+      await safeSendMessage(chatId, `Format: ${cmd} <text atau JSON payload>`, replyOpt);
+      return true;
+    }
+    const map = {
+      '/propose_github_issue': ['github', 'github.issue.create'],
+      '/propose_calendar_event': ['google_calendar', 'calendar.event.create'],
+      '/propose_gmail_draft': ['gmail', 'gmail.draft.create'],
+      '/propose_webhook': ['webhook', 'webhook.send']
+    };
+    const [connectorId, action] = map[cmd];
+    const payload = parseIntegrationPayload(args);
+    const context = await getIntegrationContext(userId, payload.text || args);
+    const result = await integrationsSystem.connectorExecutor.executeConnectorAction(connectorId, action, payload, {
+      ...context,
+      text: payload.text || args
+    }, getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/integration_pipeline') {
+    const pipelineId = String(args || '').trim();
+    if (!pipelineId) {
+      await safeSendMessage(chatId, 'Format: /integration_pipeline <pipelineId>', replyOpt);
+      return true;
+    }
+    const result = await integrationsSystem.proposalPipeline.getPipelineStatus(pipelineId, getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/integration_eval') {
+    const pipelineId = String(args || '').trim();
+    if (!pipelineId) {
+      await safeSendMessage(chatId, 'Format: /integration_eval <pipelineId>', replyOpt);
+      return true;
+    }
+    const result = await integrationsSystem.proposalPipeline.runIntegrationEvaluationGate(pipelineId, getIntegrationServices(userId));
+    await sendChunkedMessage(chatId, formatIntegrationResult(result), replyOpt);
+    return true;
+  }
+
   if (cmd === '/decisions' || cmd === '/decisionhistory') {
     const items = await smartAgentSystem.decisionStore.listDecisionRecords({ workspaceId: 'default', userId, limit: 10 }, services);
     await sendChunkedMessage(chatId, [
@@ -4381,6 +4542,9 @@ async function handleAgentCommands(chatId, userId, cmd, args, msg) {
 }
 
 async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
+  const integrationResult = await handleNaturalIntegrationRoute(chatId, userId, userText, msg);
+  if (integrationResult.handled) return integrationResult;
+
   const services = getAgentServices(userId);
   const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
   const recentTopic = await smartAgentSystem.conversationBus.getRecentChatTopic(chatId, userId, services);
@@ -4546,6 +4710,55 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
   await smartAgentSystem.conversationBus.sendAgentResponses(event, route, drafts, services);
   return { handled: true, answer: visibleText, route };
+}
+
+function detectNaturalIntegrationIntent(text = '') {
+  const raw = String(text || '').toLowerCase();
+  if (/\b(cek|lihat|list|daftar)\b.*\b(issue|issues)\b.*\bgithub\b|\bgithub\b.*\b(issue|issues)\b/i.test(raw)) {
+    return { connectorId: 'github', action: 'github.issues.list', mode: 'read_only', payload: { text } };
+  }
+  if (/\b(buat|create)\b.*\b(issue)\b.*\bgithub\b|\bgithub\b.*\b(buat|create)\b.*\bissue\b/i.test(raw)) {
+    return { connectorId: 'github', action: 'github.issue.create', mode: 'proposal', payload: { text, title: text } };
+  }
+  if (/\b(jadwalkan|buat event|calendar|kalender)\b/i.test(raw)) {
+    return { connectorId: 'google_calendar', action: 'calendar.event.create', mode: 'proposal', payload: { text, summary: text } };
+  }
+  if (/\b(buat|siapkan)\b.*\b(draft email|email)\b/i.test(raw)) {
+    return { connectorId: 'gmail', action: 'gmail.draft.create', mode: 'proposal', payload: { text, subject: text } };
+  }
+  if (/\b(kirim)\b.*\b(email)\b/i.test(raw)) {
+    return { connectorId: 'gmail', action: 'gmail.send', mode: 'proposal', payload: { text } };
+  }
+  if (/\b(cek|diagnose|diagnosa)\b.*\b(tunnel|nas)\b/i.test(raw)) {
+    return { connectorId: 'cloudflare_nas', action: raw.includes('tunnel') ? 'cloudflare_nas.tunnel.check' : 'nas.health.check', mode: 'read_only', payload: { text } };
+  }
+  if (/\b(ubah|change)\b.*\b(cloudflare|config)\b/i.test(raw)) {
+    return { connectorId: 'cloudflare_nas', action: 'cloudflare.config.change', mode: 'proposal', payload: { text, change: text } };
+  }
+  if (/\b(kirim|send)\b.*\b(webhook|payload|data ini)\b/i.test(raw)) {
+    return { connectorId: 'webhook', action: 'webhook.send', mode: 'proposal', payload: { text } };
+  }
+  return null;
+}
+
+async function handleNaturalIntegrationRoute(chatId, userId, userText, msg) {
+  const intent = detectNaturalIntegrationIntent(userText);
+  if (!intent) return { handled: false };
+  const services = getIntegrationServices(userId);
+  const context = await getIntegrationContext(userId, userText);
+  let result;
+  if (intent.mode === 'read_only') {
+    result = await integrationsSystem.connectorExecutor.executeConnectorAction(intent.connectorId, intent.action, intent.payload, context, services);
+  } else {
+    result = await integrationsSystem.connectorExecutor.executeConnectorAction(intent.connectorId, intent.action, intent.payload, context, services);
+  }
+  const answer = [
+    intent.mode === 'read_only' ? 'Integrasi read-only:' : 'Integrasi write/external membutuhkan Evaluation v2 + executor approval:',
+    '',
+    formatIntegrationResult(result)
+  ].join('\n');
+  await sendChunkedMessage(chatId, answer, { reply_to_message_id: msg.message_id, userText });
+  return { handled: true, answer, integration: result };
 }
 
 function formatPermissionFlags(summary = {}) {
@@ -7690,6 +7903,21 @@ async function handleHelp(chatId, msg) {
 /evalsummary - summary evaluation terbaru
 /evalgates - status quality gates evaluation
 /evalcompare - bandingkan dua evaluation run terakhir
+/connector_status connectorId
+/connector_quality connectorId
+/github_status
+/github_issues
+/calendar_status
+/calendar_events
+/gmail_status
+/nas_status
+/webhook_preview payload
+/propose_github_issue text
+/propose_calendar_event text
+/propose_gmail_draft text
+/propose_webhook text
+/integration_pipeline pipelineId
+/integration_eval pipelineId
 /approve proposalId - approve tanpa menjalankan
 /runexec proposalId - jalankan proposal yang sudah approved
 /reject proposalId | reason
@@ -7937,6 +8165,21 @@ function isUnknownCommand(cmd) {
     '/evalsummary',
     '/evalgates',
     '/evalcompare',
+    '/connector_status',
+    '/connector_quality',
+    '/github_status',
+    '/github_issues',
+    '/calendar_status',
+    '/calendar_events',
+    '/gmail_status',
+    '/nas_status',
+    '/webhook_preview',
+    '/propose_github_issue',
+    '/propose_calendar_event',
+    '/propose_gmail_draft',
+    '/propose_webhook',
+    '/integration_pipeline',
+    '/integration_eval',
     '/approve',
     '/reject',
     '/runexec',
@@ -9076,7 +9319,9 @@ dashboard.registerDashboardRoutes(app, {
   storageManager,
   aiOS,
   opsSystem,
+  integrationsSystem,
   getOpsServices,
+  getCalendarClient,
   ensureUser,
   getUsersSnapshot,
   logger: log
@@ -10500,12 +10745,15 @@ async function startLegacyBotServer() {
   const webhookUrl = WEBHOOK_BASE_URL && TELEGRAM_TOKEN
     ? `${WEBHOOK_BASE_URL}/webhook/${TELEGRAM_TOKEN}`
     : null;
+  const safeWebhookUrl = WEBHOOK_BASE_URL && TELEGRAM_TOKEN
+    ? `${WEBHOOK_BASE_URL}/webhook/[redacted]`
+    : null;
 
   server = app.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Server berjalan di port ${PORT}`);
 
-    if (webhookUrl) {
-      console.log(`🔗 Webhook URL: ${webhookUrl}`);
+    if (safeWebhookUrl) {
+      console.log(`🔗 Webhook URL: ${safeWebhookUrl}`);
     }
 
     if (webhookUrl) {

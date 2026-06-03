@@ -137,6 +137,31 @@ function detectActionIntent(text = '', context = {}, services = {}) {
     actionType = 'proposal.create';
     targetType = 'manual';
     reason = 'explicit proposal request';
+  } else if (/\b(github|repo|repository)\b/.test(lower) && /\b(buat issue|create issue)\b/.test(lower)) {
+    actionType = 'integration.connector.run';
+    targetType = 'integration';
+    targetId = 'github.issue.create';
+    reason = 'github issue proposal request';
+  } else if (/\b(jadwalkan|buat event|calendar|kalender|google calendar)\b/.test(lower)) {
+    actionType = 'integration.connector.run';
+    targetType = 'integration';
+    targetId = 'calendar.event.create';
+    reason = 'calendar event proposal request';
+  } else if (/\b(gmail|email|draft email|buat draft)\b/.test(lower)) {
+    actionType = 'integration.connector.run';
+    targetType = 'integration';
+    targetId = 'gmail.draft.create';
+    reason = 'gmail draft proposal request';
+  } else if (/\b(webhook)\b/.test(lower) && /\b(kirim|send|post)\b/.test(lower)) {
+    actionType = 'integration.connector.run';
+    targetType = 'integration';
+    targetId = 'webhook.send';
+    reason = 'webhook send proposal request';
+  } else if (/\b(cloudflare|tunnel|nas)\b/.test(lower) && /\b(ubah|update|config|konfigurasi)\b/.test(lower)) {
+    actionType = 'integration.connector.run';
+    targetType = 'integration';
+    targetId = 'cloudflare_nas.config.change';
+    reason = 'cloudflare nas config proposal request';
   }
 
   const hasActionIntent = Boolean(actionType);
@@ -158,6 +183,8 @@ function inferActionRisk(actionType = '', text = '') {
   if (/\b(shell|code execution|javascript|env|config|permission|admin|token|secret|delete|hard delete|drop)\b/.test(raw)) return 'danger';
   if (/\b(restore|import|overwrite|bulk|external api write)\b/.test(raw)) return 'danger';
   if (/\b(decision\.apply|delegation\.apply|proposal\.create)\b/.test(raw)) return 'medium';
+  if (/\bintegration\.connector\.run\b/.test(raw) && /\b(restore|import|send|webhook|config|cloudflare|permission|admin)\b/.test(raw)) return 'high';
+  if (/\bintegration\.connector\.run\b/.test(raw)) return 'medium';
   if (/\b(backup\.create|planner\.task|workflow\.step|goal\.progress|benchmark|write|archive)\b/.test(raw)) return 'medium';
   if (/\b(diagnostics|integrity|recovery|report|preview)\b/.test(raw)) return 'low';
   return utils.inferRiskFromText(text);

@@ -19,6 +19,12 @@ const TOPIC_KEYWORDS = {
   restore: ['restore', 'pulihkan', 'rollback backup', 'backup lama'],
   import: ['import', 'overwrite', 'restore json'],
   export: ['export', 'download', 'keluarkan data'],
+  github: ['github', 'issue github', 'pull request', 'pr github', 'repo', 'repository'],
+  calendar: ['calendar', 'kalender', 'jadwal', 'jadwalkan', 'event calendar', 'google calendar'],
+  gmail: ['gmail', 'email', 'draft email', 'buat draft', 'kirim email'],
+  webhook_external: ['webhook external', 'kirim webhook', 'payload webhook', 'external webhook'],
+  cloudflare: ['cloudflare', 'tunnel', 'cloudflare tunnel', 'dns cloudflare'],
+  integration: ['integrasi eksternal', 'external integration', 'connector', 'konektor'],
   executor: ['jalankan', 'eksekusi', 'approve', 'run', 'action', 'proposal', 'kerjakan keputusan', 'terapkan keputusan', 'kerjakan delegasi'],
   tool: ['tool', 'plugin', 'registry'],
   memory: ['memory', 'memori', 'ingat', 'konteks'],
@@ -62,7 +68,13 @@ const TECHNICAL_TOPICS = [
   'dashboard',
   'telegram',
   'tool',
-  'executor'
+  'executor',
+  'github',
+  'calendar',
+  'gmail',
+  'webhook_external',
+  'cloudflare',
+  'integration'
 ];
 
 const SHORT_FOLLOWUP_PATTERNS = [

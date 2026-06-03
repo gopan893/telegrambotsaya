@@ -20,6 +20,7 @@ const SUPPORTED_ACTIONS = [
   'report.user_summary.export',
   'tool.preview',
   'tool.run_safe_readonly',
+  'integration.connector.run',
   'restore.run',
   'import.run'
 ];
@@ -51,7 +52,30 @@ function buildPayloadForIntent(intent = {}, text = '', context = {}) {
   if (actionType === 'import.run') return { importJobId: context.importJobId || '', confirmationRequired: 'RESTORE' };
   if (actionType === 'memory.suggest_archive') return { memoryId: intent.targetId || context.memoryId || '', reason: base.text };
   if (actionType === 'tool.preview' || actionType === 'tool.run_safe_readonly') return { toolId: context.toolId || '', input: context.input || {} };
+  if (actionType === 'integration.connector.run') {
+    const parsed = parseIntegrationTarget(intent.targetId || context.integrationAction || '');
+    return {
+      connectorId: context.connectorId || parsed.connectorId,
+      action: context.connectorAction || parsed.action,
+      payload: context.integrationPayload || { text: base.text },
+      pipelineRequired: true,
+      evaluationGateRequired: true
+    };
+  }
   return base;
+}
+
+function parseIntegrationTarget(target = '') {
+  const clean = String(target || '').trim();
+  const known = [
+    ['github.issue.create', 'github', 'github.issue.create'],
+    ['calendar.event.create', 'google_calendar', 'calendar.event.create'],
+    ['gmail.draft.create', 'gmail', 'gmail.draft.create'],
+    ['webhook.send', 'webhook', 'webhook.send'],
+    ['cloudflare_nas.config.change', 'cloudflare_nas', 'cloudflare.config.change']
+  ].find(([id]) => id === clean);
+  if (known) return { connectorId: known[1], action: known[2] };
+  return { connectorId: '', action: clean };
 }
 
 function mapIntentToActions(intent = {}, context = {}) {
@@ -101,6 +125,7 @@ function buildActionDescription(actionType, text = '') {
     'report.user_summary.export': 'Prepare user summary report',
     'tool.preview': 'Preview registered tool safely',
     'tool.run_safe_readonly': 'Run safe read-only tool',
+    'integration.connector.run': 'Create approved external integration proposal',
     'restore.run': 'Request restore flow with strong confirmation',
     'import.run': 'Request import flow with strong confirmation'
   };
@@ -111,17 +136,20 @@ function expectedResult(actionType) {
   if (actionType === 'restore.run') return 'Restore tidak berjalan langsung; perlu approval dan confirmation flow.';
   if (actionType === 'import.run') return 'Import tidak berjalan langsung; perlu validation, preview, approval, dan confirmation.';
   if (actionType === 'backup.create') return 'Backup aman dibuat setelah approval/run.';
+  if (actionType === 'integration.connector.run') return 'Aksi eksternal hanya menjadi proposal setelah preflight, dry-run, dan Evaluation Gate lulus.';
   return 'Action berjalan setelah approval manusia dan dicatat di audit log.';
 }
 
 function validationPlan(actionType) {
   if (actionType.includes('backup')) return 'Cek backup manifest, checksum, dan audit log.';
   if (actionType.includes('restore') || actionType.includes('import')) return 'Cek confirmation RESTORE, integrity, checksum, dan audit log sebelum restore/import.';
+  if (actionType === 'integration.connector.run') return 'Cek connector quality gate, dry-run, evaluation gate, approval, dan execution audit.';
   return 'Cek status source, result summary, dan audit log setelah run.';
 }
 
 module.exports = {
   SUPPORTED_ACTIONS,
   mapIntentToActions,
-  normalizeActionType
+  normalizeActionType,
+  parseIntegrationTarget
 };
