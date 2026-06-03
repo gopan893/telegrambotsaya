@@ -2,7 +2,7 @@
 
 const express = require('express');
 const path = require('path');
-const { registerDashboardRoutes: registerExistingRoutes } = require('./dashboard-routes');
+const dashboardRoutes = require('./dashboard-routes');
 const auth = require('./dashboard-auth');
 const guards = require('./dashboard-guards');
 const serializers = require('./dashboard-serializers');
