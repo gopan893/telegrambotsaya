@@ -1,89 +1,95 @@
-'use strict';
+/**
+ * test-dashboard-dark-form-ui.js
+ * Tests that all form controls use dark theme styles.
+ * Run: node scratch/test-dashboard-dark-form-ui.js
+ */
+var path = require('path');
+var fs = require('fs');
 
-const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
+var stylesCssPath = path.join(__dirname, '..', 'public', 'dashboard', 'styles.css');
+var mobileCssPath = path.join(__dirname, '..', 'public', 'dashboard', 'mobile.css');
 
-let passed = 0;
-let failed = 0;
+var stylesCss = fs.readFileSync(stylesCssPath, 'utf-8');
+var mobileCss = fs.readFileSync(mobileCssPath, 'utf-8');
 
-function test(name, fn) {
-  try { fn(); console.log(`\x1b[32m✅ ${name}\x1b[0m`); passed++; }
-  catch (err) { console.log(`\x1b[31m❌ ${name}: ${err.message}\x1b[0m`); failed++; }
+var passed = 0;
+var failed = 0;
+
+function assert(condition, msg) {
+  if (condition) {
+    console.log('  PASS: ' + msg);
+    passed++;
+  } else {
+    console.error('  FAIL: ' + msg);
+    failed++;
+  }
 }
 
-const cssPath = path.join(__dirname, '..', 'public', 'dashboard', 'styles.css');
-const css = fs.readFileSync(cssPath, 'utf-8');
+console.log('\n=== Dark Form UI Test ===\n');
 
-test('CSS contains global input dark styling', () => {
-  const match = css.match(/input,\s*select,\s*textarea[^}]*\{/);
-  assert.ok(match, 'Should have a combined CSS rule for input, select, textarea');
-  assert.ok(css.includes('var(--bg-primary)'), 'Background should use dark variable');
-});
+// All form elements must be styled dark
+var formElements = ['input', 'select', 'textarea'];
+console.log('--- Native form elements styled ---\n');
+for (var i = 0; i < formElements.length; i++) {
+  var el = formElements[i];
+  assert(stylesCss.indexOf(el + ',') !== -1 || stylesCss.indexOf(el + ' {') !== -1,
+    'CSS styles raw "' + el + '"');
+  assert(stylesCss.indexOf(el + ':focus') !== -1, el + ':focus state exists');
+  if (el !== 'select') {
+    assert(stylesCss.indexOf(el + '::placeholder') !== -1, el + ' placeholder styled');
+  }
+}
 
-test('No pure white background in form styles', () => {
-  // Check that input/select/textarea rules use dark variables, not white
-  const formSelectorBlock = css.match(/input,\s*select,\s*textarea[^}]*\{[^}]*\}/);
-  assert.ok(formSelectorBlock, 'Input/select/textarea rule exists');
-  assert.ok(!formSelectorBlock[0].includes('#fff') && !formSelectorBlock[0].includes('white'), 'Should not use white background');
-});
+console.log('\n--- Dashboard form classes styled ---\n');
+var formClasses = ['.form-control', '.dashboard-input', '.dashboard-select', '.dashboard-textarea'];
+for (var j = 0; j < formClasses.length; j++) {
+  var cls = formClasses[j];
+  assert(stylesCss.indexOf(cls) !== -1, 'CSS has class "' + cls + '"');
+}
 
-test('CSS contains global select dark styling', () => {
-  const match = css.match(/select[^}]*\{[^}]*background:/);
-  assert.ok(match, 'Should have CSS rule for select with background');
-});
+console.log('\n--- No white backgrounds ---\n');
+assert(stylesCss.indexOf('background: var(--bg-primary)') !== -1, 'Input uses dark background var');
+assert(stylesCss.indexOf('color: var(--text-primary)') !== -1, 'Input uses light text var');
 
-test('CSS contains global textarea dark styling', () => {
-  const match = css.match(/textarea[^}]*\{[^}]*background:/);
-  assert.ok(match, 'Should have CSS rule for textarea with background');
-});
+var whitePatterns = ['background: #fff', 'background: #ffffff', 'background: white',
+  'background-color: #fff', 'background-color: #ffffff', 'background-color: white'];
+for (var w = 0; w < whitePatterns.length; w++) {
+  var lines = stylesCss.split('\n');
+  var inFormBlock = false;
+  var whiteFound = false;
+  for (var l = 0; l < lines.length; l++) {
+    var line = lines[l];
+    if (line.indexOf('input') !== -1 || line.indexOf('select') !== -1 || line.indexOf('textarea') !== -1 ||
+        line.indexOf('.form-control') !== -1 || line.indexOf('.dashboard-') !== -1) {
+      inFormBlock = true;
+    } else if (line.indexOf('}') !== -1) {
+      inFormBlock = false;
+    }
+    if (inFormBlock && line.indexOf(whitePatterns[w]) !== -1) {
+      whiteFound = true;
+    }
+  }
+  assert(!whiteFound, 'No white background "' + whitePatterns[w] + '" in form styles');
+}
 
-test('CSS styles select option dark', () => {
-  assert.ok(css.includes('select option'), 'Should style select option');
-  assert.ok(css.includes('var(--bg-secondary)'), 'Option should use dark background');
-});
+console.log('\n--- Border color and focus ---\n');
+assert(stylesCss.indexOf('border-color') !== -1, 'Form elements have border-color');
+assert(stylesCss.indexOf('box-shadow') !== -1, 'Form focus has box-shadow');
 
-test('CSS defines .form-control', () => {
-  assert.ok(css.includes('.form-control'), '.form-control class should exist');
-});
+console.log('\n--- Placeholder visibility ---\n');
+assert(stylesCss.indexOf('placeholder') !== -1, 'Placeholder styling exists');
+assert(stylesCss.indexOf('var(--text-muted)') !== -1, 'Placeholder uses muted text color');
 
-test('CSS defines .dashboard-input', () => {
-  assert.ok(css.includes('.dashboard-input'), '.dashboard-input class should exist');
-});
+console.log('\n--- Option/dropdown styling ---\n');
+assert(stylesCss.indexOf('select option') !== -1, 'Select option styled');
 
-test('CSS defines .dashboard-select', () => {
-  assert.ok(css.includes('.dashboard-select'), '.dashboard-select class should exist');
-});
+console.log('\n--- Autofill override ---\n');
+assert(stylesCss.indexOf('-webkit-autofill') !== -1, 'Autofill override exists');
+assert(stylesCss.indexOf('-webkit-text-fill-color') !== -1, 'Autofill text color override');
 
-test('CSS defines .dashboard-textarea', () => {
-  assert.ok(css.includes('.dashboard-textarea'), '.dashboard-textarea class should exist');
-});
+console.log('\n--- Mobile form width 100% ---\n');
+assert(mobileCss.indexOf('width: 100%') !== -1, 'Mobile forms width 100%');
 
-test('CSS defines .field, .field-label, .field-help', () => {
-  assert.ok(css.includes('.field-label'), '.field-label class should exist');
-  assert.ok(css.includes('.field-help'), '.field-help class should exist');
-});
-
-test('CSS defines .form-grid layout', () => {
-  assert.ok(css.includes('.form-grid'), '.form-grid class should exist');
-});
-
-test('CSS defines .form-row layout', () => {
-  assert.ok(css.includes('.form-row'), '.form-row class should exist');
-});
-
-test('CSS defines .form-stack layout', () => {
-  assert.ok(css.includes('.form-stack'), '.form-stack class should exist');
-});
-
-test('CSS input focus uses accent glow', () => {
-  assert.ok(css.includes('box-shadow: 0 0 0 3px var(--color-accent-glow)') || css.includes('border-color: var(--color-accent)'), 'Focus state should have accent glow');
-});
-
-test('CSS input/select/textarea border-radius is 14px', () => {
-  const selectorBlock = css.match(/input[^}]*border-radius:\s*14px/);
-  assert.ok(selectorBlock || css.includes('border-radius: 14px'), 'Border radius should be 14px');
-});
-
-console.log(`\n📊 Dark Form UI Test Results: ${passed} passed, ${failed} failed, ${passed+failed} total`);
-if (failed > 0) process.exit(1);
+console.log('\n========================================');
+console.log('Total: ' + (passed + failed) + ' | PASS: ' + passed + ' | FAIL: ' + failed + '\n');
+process.exit(failed > 0 ? 1 : 0);

@@ -14,7 +14,7 @@ const DASHBOARD_TABS = {
     title: 'Ops Viewer',
     navIcon: '⚙️',
     navVisible: true,
-    aliases: ['ops-viewer', 'opsviewer', 'ops_viewer'],
+    aliases: ['ops-viewer', 'opsviewer', 'ops_viewer', 'opsview'],
     renderer: 'renderOps'
   },
   workspaces: {
@@ -176,6 +176,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['setting', 'pengaturan'],
     renderer: 'renderSettings'
+  },
+  'agent-evaluation': {
+    label: 'Agent Evaluation',
+    title: 'Agent Evaluation',
+    navIcon: '📊',
+    navVisible: true,
+    aliases: ['agent-eval', 'eval', 'evaluation', 'agent_evaluation'],
+    renderer: 'renderAgentEvaluation'
   },
   'coding': {
     label: 'Coding Workspace',

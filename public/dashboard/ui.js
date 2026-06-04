@@ -1798,5 +1798,25 @@ const UI = {
         <p>Audit log module belum tersedia atau belum termuat.</p>
       </div>
     `;
+  },
+
+  async renderAgentEvaluation(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat evaluasi agen...');
+
+    const healthRes = await Api.getHealth();
+    if (!healthRes.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Agent Evaluation', 'Server tidak merespons.');
+      return;
+    }
+
+    let html = UI.renderSectionHeader('📊 Agent Evaluation');
+    html += `
+      <div class="empty-state">
+        <span class="empty-state-emoji">📊</span>
+        <h3>Agent Evaluation</h3>
+        <p>Agent evaluation module belum tersedia atau belum termuat.</p>
+      </div>
+    `;
+    targetEl.innerHTML = html;
   }
 };
