@@ -24,6 +24,7 @@ const agentExecutorRoutes = require('./agent-executor-routes');
 const agentEvaluationRoutes = require('./agent-evaluation-routes');
 const evaluationRoutes = require('./evaluation-routes');
 const integrationExecutionRoutes = require('./integration-execution-routes');
+const selfhealingRoutes = require('./selfhealing-routes');
 
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
@@ -50,6 +51,7 @@ module.exports = {
   pwaRoutes,
   toolRoutes,
   workspaceRoutes,
+  selfhealingRoutes,
   utils,
   actions: require('./dashboard-actions')
 };

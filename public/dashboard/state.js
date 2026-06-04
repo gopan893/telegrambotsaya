@@ -208,6 +208,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['routine', 'routine-center', 'daily-ops', 'rutinitas'],
     renderer: 'renderRoutines'
+  },
+  selfhealing: {
+    label: 'Self-Healing',
+    title: 'Self-Healing & Regression Guard',
+    navIcon: '🛡️',
+    navVisible: true,
+    aliases: ['self-healing', 'regression-guard', 'regressionguard', 'repair', 'repair-planner', 'health'],
+    renderer: 'renderSelfHealing'
   }
 };
 

@@ -1818,5 +1818,93 @@ const UI = {
       </div>
     `;
     targetEl.innerHTML = html;
+  },
+
+  async renderSelfHealing(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat Self-Healing & Regression Guard...');
+
+    const res = await Api.get('/api/dashboard/selfhealing');
+    if (!res.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Self-Healing', 'Server tidak merespons atau self-healing system tidak aktif.');
+      return;
+    }
+
+    const data = res.data;
+    let html = UI.renderSectionHeader('🛡️ Self-Healing & Regression Guard', `
+      <button class="btn btn-primary" id="btn-run-all-checks">▶ Run All Checks</button>
+      <button class="btn btn-outline" id="btn-run-p0-checks">▶ Run P0 Checks</button>
+    `);
+
+    // Guard count summary
+    html += `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Guards Registered</div>
+          <div class="card-value">${data.guardCount || 0}</div>
+          <div class="card-subtitle">Regression guards</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Status</div>
+          <div class="card-value">${data.initialized ? 'Active' : 'Inactive'}</div>
+          <div class="card-subtitle">Self-healing system</div>
+        </div>
+      </div>
+    `;
+
+    // Guard list
+    html += `<div class="panel"><h3 class="panel-title">Registered Guards</h3><div class="table-responsive"><table><thead><tr><th>Guard</th><th>Category</th><th>Severity</th><th>Status</th></tr></thead><tbody>`;
+    (data.guards || []).forEach(g => {
+      html += `<tr><td>${Utils.escapeHtml(g.name)}</td><td><code>${Utils.escapeHtml(g.category)}</code></td><td>${UI.renderBadge(g.severity)}</td><td>${g.enabled ? '<span class="badge badge-healthy">Enabled</span>' : '<span class="badge badge-critical">Disabled</span>'}</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+
+    // Results area
+    html += `<div id="selfhealing-results"></div>`;
+
+    targetEl.innerHTML = html;
+
+    document.getElementById('btn-run-all-checks')?.addEventListener('click', async () => {
+      const resultsEl = document.getElementById('selfhealing-results');
+      resultsEl.innerHTML = UI.renderLoading('Running all checks...');
+      const runRes = await Api.post('/api/dashboard/selfhealing/run', {});
+      if (runRes.ok) {
+        let rHtml = '<div class="panel"><h3 class="panel-title">Check Results</h3>';
+        (runRes.data.results || []).forEach(r => {
+          rHtml += `<div class="card" style="margin-bottom:8px;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span>${Utils.escapeHtml(r.summary)}</span>
+              ${UI.renderBadge(r.status)}
+            </div>
+          </div>`;
+        });
+        rHtml += `<p style="margin-top:12px;color:var(--text-secondary)">${Utils.escapeHtml(runRes.data.summary)}</p>`;
+        rHtml += '</div>';
+        resultsEl.innerHTML = rHtml;
+      } else {
+        resultsEl.innerHTML = UI.renderError('Gagal menjalankan checks');
+      }
+    });
+
+    document.getElementById('btn-run-p0-checks')?.addEventListener('click', async () => {
+      const resultsEl = document.getElementById('selfhealing-results');
+      resultsEl.innerHTML = UI.renderLoading('Running P0 critical checks...');
+      const runRes = await Api.post('/api/dashboard/selfhealing/run', { severity: 'critical' });
+      if (runRes.ok) {
+        let rHtml = '<div class="panel"><h3 class="panel-title">P0 Check Results</h3>';
+        (runRes.data.results || []).forEach(r => {
+          rHtml += `<div class="card" style="margin-bottom:8px;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span>${Utils.escapeHtml(r.summary)}</span>
+              ${UI.renderBadge(r.status)}
+            </div>
+          </div>`;
+        });
+        rHtml += `<p style="margin-top:12px;color:var(--text-secondary)">${Utils.escapeHtml(runRes.data.summary)}</p>`;
+        rHtml += '</div>';
+        resultsEl.innerHTML = rHtml;
+      } else {
+        resultsEl.innerHTML = UI.renderError('Gagal menjalankan P0 checks');
+      }
+    });
   }
 };

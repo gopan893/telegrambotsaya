@@ -9314,6 +9314,19 @@ app.get('/api/dashboard', (req, res) => {
   });
 });
 
+let selfHealingSystem = null;
+try {
+  const { createSelfHealingSystem } = require('../selfhealing');
+  selfHealingSystem = createSelfHealingSystem(storageManager, {
+    evaluationSystem: evaluationSystem || null,
+    executorSystem: executorSystem || null,
+    codingClassifier: ''
+  });
+  selfHealingSystem.initialize().catch(e => log.error('Self-healing init:', e.message));
+} catch (e) {
+  log.warn('Self-healing system skipped:', e.message);
+}
+
 dashboard.registerDashboardRoutes(app, {
   env: config,
   storageManager,
@@ -9324,6 +9337,9 @@ dashboard.registerDashboardRoutes(app, {
   getCalendarClient,
   ensureUser,
   getUsersSnapshot,
+  selfHealingSystem,
+  evaluationSystem: evaluationSystem || null,
+  executorSystem: executorSystem || null,
   logger: log
 });
 

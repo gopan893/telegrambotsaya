@@ -25,6 +25,7 @@ const decisionRoutes = require('./decision-routes');
 const agentExecutorRoutes = require('./agent-executor-routes');
 const agentEvaluationRoutes = require('./agent-evaluation-routes');
 const integrationExecutionRoutes = require('./integration-execution-routes');
+const selfhealingRoutes = require('./selfhealing-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -334,6 +335,9 @@ function registerDashboardRoutes(app, rawServices = {}) {
   agentExecutorRoutes.registerAgentExecutorRoutes(router, services);
   agentEvaluationRoutes.registerAgentEvaluationRoutes(router, services);
   integrationExecutionRoutes.registerIntegrationExecutionRoutes(router, services);
+  if (services.selfHealingSystem) {
+    selfhealingRoutes.registerSelfHealingRoutes(router, services);
+  }
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
