@@ -12,7 +12,7 @@ function registerRoutineDashboardRoutes(app, services = {}) {
   const routineScheduler = services.routineScheduler || routines.createRoutineScheduler({ ...services, runner: routineRunner });
 
   // All routes require auth
-  router.use(auth.requireAuth);
+  router.use(auth.requireDashboardAuth);
 
   // GET /api/dashboard/routines
   router.get('/', (req, res) => {

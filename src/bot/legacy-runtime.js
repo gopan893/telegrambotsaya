@@ -9315,6 +9315,7 @@ app.get('/api/dashboard', (req, res) => {
 });
 
 let selfHealingSystem = null;
+let evaluationSystem = null;
 try {
   const { createSelfHealingSystem } = require('../selfhealing');
   selfHealingSystem = createSelfHealingSystem(storageManager, {
@@ -9354,6 +9355,18 @@ try {
   log.warn('Phase 33 systems skipped:', e.message);
 }
 
+let routineRegistry = null;
+let routineRunner = null;
+let routineScheduler = null;
+try {
+  const routines = require('../routines');
+  routineRegistry = routines.createRoutineRegistry({ storageManager, auditLog: dashboard.auditLog, env: config, logger: log });
+  routineRunner = routines.createRoutineRunner({ storageManager, registry: routineRegistry, aiOS, env: config, logger: log });
+  routineScheduler = routines.createRoutineScheduler({ storageManager, runner: routineRunner, env: config, logger: log });
+} catch (e) {
+  log.warn('Routine system skipped:', e.message);
+}
+
 dashboard.registerDashboardRoutes(app, {
   env: config,
   storageManager,
@@ -9372,6 +9385,21 @@ dashboard.registerDashboardRoutes(app, {
   autoHealingSystem: autoHealingSystem || null,
   logger: log
 });
+
+try {
+  const { registerRoutineDashboardRoutes } = require('../dashboard/routine-routes');
+  registerRoutineDashboardRoutes(app, {
+    storageManager,
+    aiOS,
+    env: config,
+    routineRegistry,
+    routineRunner,
+    routineScheduler,
+    logger: log
+  });
+} catch (e) {
+  log.warn('Routine dashboard routes skipped:', e.message);
+}
 
 async function handleMultiBotUpdate(update = {}) {
   if (isDuplicateIncomingUpdate(update)) return { ok: true, duplicate: true };
