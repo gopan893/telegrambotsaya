@@ -27,6 +27,8 @@ const integrationExecutionRoutes = require('./integration-execution-routes');
 const selfhealingRoutes = require('./selfhealing-routes');
 const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
+const routineRoutes = require('./routine-routes');
+const devGovernanceRoutes = require('./devgovernance-routes');
 
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
@@ -56,6 +58,8 @@ module.exports = {
   selfhealingRoutes,
   monitoringRoutes,
   cicdRoutes,
+  routineRoutes,
+  devGovernanceRoutes,
   utils,
   actions: require('./dashboard-actions')
 };

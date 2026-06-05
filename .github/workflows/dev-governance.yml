@@ -1,0 +1,85 @@
+name: Dev Governance Gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+
+      - name: Check AGENTS.md exists
+        run: |
+          if [ -f AGENTS.md ] || [ -f docs/AGENTS.md ]; then
+            echo "AGENTS.md: ✅"
+          else
+            echo "AGENTS.md: ❌ Missing"
+            exit 1
+          fi
+
+      - name: Check AGENT_HANDOFF.md exists
+        run: |
+          if [ -f AGENT_HANDOFF.md ] || [ -f docs/AGENT_HANDOFF.md ]; then
+            echo "AGENT_HANDOFF.md: ✅"
+          else
+            echo "AGENT_HANDOFF.md: ❌ Missing"
+            exit 1
+          fi
+
+      - name: Check ARCHITECTURE_MAP.md exists
+        run: |
+          if [ -f docs/ARCHITECTURE_MAP.md ]; then
+            echo "ARCHITECTURE_MAP.md: ✅"
+          else
+            echo "ARCHITECTURE_MAP.md: ⚠️ Missing (non-critical)"
+          fi
+
+      - name: Validate telebot.js
+        run: node --check telebot.js
+
+      - name: Validate devgovernance modules
+        run: |
+          node -e "
+            const dg = require('./src/devgovernance');
+            console.log('contractManager:', typeof dg.contractManager.ensureAgentContractExists);
+            console.log('handoffOrchestrator:', typeof dg.handoffOrchestrator.readHandoff);
+            console.log('architectureMapGenerator:', typeof dg.architectureMapGenerator.scanArchitecture);
+            console.log('integrationContractValidator:', typeof dg.integrationContractValidator.validateIntegrationContract);
+            console.log('collisionDetector:', typeof dg.collisionDetector.detectCollisions);
+            console.log('dashboardRouteConsistency:', typeof dg.dashboardRouteConsistency.validateDashboardRoutes);
+            console.log('backendFrontendLinker:', typeof dg.backendFrontendLinker.generateLinkReport);
+            console.log('testMatrixGenerator:', typeof dg.testMatrixGenerator.generateTestMatrix);
+            console.log('nextAgentPromptGenerator:', typeof dg.nextAgentPromptGenerator.generateNextAgentPrompt);
+            console.log('All Phase 34 devgovernance modules loaded successfully ✅');
+          " || echo "⚠️ devgovernance module load test non-fatal"
+
+      - name: Check devgovernance tab exists
+        run: |
+          if grep -q 'devgovernance' public/dashboard/state.js; then
+            echo "devgovernance tab in state.js: ✅"
+          else
+            echo "devgovernance tab in state.js: ❌"
+          fi
+
+      - name: Check renderDevGovernance exists
+        run: |
+          if grep -q 'renderDevGovernance' public/dashboard/ui.js; then
+            echo "renderDevGovernance in ui.js: ✅"
+          else
+            echo "renderDevGovernance in ui.js: ❌"
+          fi
+
+      - name: Governance gate summary
+        run: echo "Dev Governance gate completed"

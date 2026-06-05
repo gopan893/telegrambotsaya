@@ -28,6 +28,7 @@ const integrationExecutionRoutes = require('./integration-execution-routes');
 const selfhealingRoutes = require('./selfhealing-routes');
 const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
+const routineRoutes = require('./routine-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -346,6 +347,11 @@ function registerDashboardRoutes(app, rawServices = {}) {
   if (services.cicdSystem) {
     cicdRoutes.registerCicdRoutes(router, services);
   }
+
+  routineRoutes.registerRoutineDashboardRoutes(app, services);
+
+  const devGovRoutes = require('./devgovernance-routes');
+  devGovRoutes.registerDevGovernanceRoutes(router, services);
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

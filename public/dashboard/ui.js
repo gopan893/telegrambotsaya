@@ -1823,7 +1823,7 @@ const UI = {
   async renderSelfHealing(targetEl) {
     targetEl.innerHTML = UI.renderLoading('Memuat Self-Healing & Regression Guard...');
 
-    const res = await Api.get('/api/dashboard/selfhealing');
+    const res = await Api.apiGet('/selfhealing');
     if (!res.ok) {
       targetEl.innerHTML = UI.renderError('Gagal Memuat Self-Healing', 'Server tidak merespons atau self-healing system tidak aktif.');
       return;
@@ -1866,7 +1866,7 @@ const UI = {
     document.getElementById('btn-run-all-checks')?.addEventListener('click', async () => {
       const resultsEl = document.getElementById('selfhealing-results');
       resultsEl.innerHTML = UI.renderLoading('Running all checks...');
-      const runRes = await Api.post('/api/dashboard/selfhealing/run', {});
+      const runRes = await Api.apiPost('/selfhealing/run', {});
       if (runRes.ok) {
         let rHtml = '<div class="panel"><h3 class="panel-title">Check Results</h3>';
         (runRes.data.results || []).forEach(r => {
@@ -1888,7 +1888,7 @@ const UI = {
     document.getElementById('btn-run-p0-checks')?.addEventListener('click', async () => {
       const resultsEl = document.getElementById('selfhealing-results');
       resultsEl.innerHTML = UI.renderLoading('Running P0 critical checks...');
-      const runRes = await Api.post('/api/dashboard/selfhealing/run', { severity: 'critical' });
+      const runRes = await Api.apiPost('/selfhealing/run', { severity: 'critical' });
       if (runRes.ok) {
         let rHtml = '<div class="panel"><h3 class="panel-title">P0 Check Results</h3>';
         (runRes.data.results || []).forEach(r => {
@@ -1910,7 +1910,7 @@ const UI = {
 
   async renderMonitoring(targetEl) {
     targetEl.innerHTML = UI.renderLoading('Memuat monitoring...');
-    const res = await Api.get('/api/dashboard/monitoring/snapshot');
+    const res = await Api.apiGet('/monitoring/snapshot');
     if (!res.ok) {
       targetEl.innerHTML = UI.renderError('Gagal Memuat Monitoring', 'Server tidak merespons atau monitoring system tidak aktif.');
       return;
@@ -1965,7 +1965,7 @@ const UI = {
 
   async renderCicd(targetEl) {
     targetEl.innerHTML = UI.renderLoading('Memuat CI/CD status...');
-    const res = await Api.get('/api/dashboard/cicd/status');
+    const res = await Api.apiGet('/cicd/status');
     if (!res.ok) {
       targetEl.innerHTML = UI.renderError('Gagal Memuat CI/CD', 'Server tidak merespons atau CI/CD system tidak aktif.');
       return;
@@ -2015,7 +2015,7 @@ const UI = {
     document.getElementById('btn-run-quality-check')?.addEventListener('click', async () => {
       const resultEl = document.getElementById('quality-check-result');
       resultEl.innerHTML = UI.renderLoading('Running quality checks...');
-      const r = await Api.post('/api/dashboard/cicd/quality-check', { evaluationScore: 100 });
+      const r = await Api.apiPost('/cicd/quality-check', { evaluationScore: 100 });
       if (r.ok) {
         let rHtml = `<p>${Utils.escapeHtml(r.data.summary)}</p><ul>`;
         (r.data.checks || []).forEach(c => {
@@ -2026,6 +2026,235 @@ const UI = {
       } else {
         resultEl.innerHTML = UI.renderError('Quality check failed');
       }
+    });
+  },
+
+  renderDevGovernance: async function(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Loading Dev Governance...');
+    if (!targetEl) return;
+    const govRes = await Api.apiGet('/devgovernance');
+    if (!govRes.ok) {
+      targetEl.innerHTML = UI.renderError('Failed to load Dev Governance');
+      return;
+    }
+    const data = govRes.data;
+    const html = `
+      <div class="tab-header" style="margin-bottom:24px;">
+        <h2>🏛️ Dev Governance</h2>
+        <p>Multi-Agent Development Governance — handoff, collision prevention, integration contract.</p>
+      </div>
+      <div class="section-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px;">
+        <div class="panel">
+          <h3 class="panel-title">Agent Contract</h3>
+          <div class="kv-row">
+            <span class="kv-key">Exists</span>
+            <span class="kv-value">${data.contract.exists ? '✅' : '❌'}</span>
+          </div>
+          <div class="kv-row">
+            <span class="kv-key">Valid</span>
+            <span class="kv-value">${data.contract.valid === true ? '✅' : data.contract.valid === false ? '❌' : 'Unknown'}</span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="UI._govCheckContract()">Validate Contract</button>
+          <div id="gov-contract-result" style="margin-top:8px;"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Latest Handoff</h3>
+          <div class="kv-row"><span class="kv-key">Last Agent</span><span class="kv-value">${Utils.escapeHtml(data.handoff?.lastAgent || 'None')}</span></div>
+          <div class="kv-row"><span class="kv-key">Task</span><span class="kv-value">${Utils.escapeHtml(data.handoff?.currentTask || 'None')}</span></div>
+          <div class="kv-row"><span class="kv-key">Tests Failed</span><span class="kv-value">${data.handoff?.testsFailed || 0}</span></div>
+          <div class="kv-row"><span class="kv-key">Tests Skipped</span><span class="kv-value">${data.handoff?.testsSkipped || 0}</span></div>
+          <button class="btn btn-outline btn-sm" onclick="UI._govShowHandoff()">View Full Handoff</button>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Architecture Map</h3>
+          <div class="kv-row"><span class="kv-key">Entry Points</span><span class="kv-value">${data.architecture?.entryPoints || 0}</span></div>
+          <div class="kv-row"><span class="kv-key">Dashboard Tabs</span><span class="kv-value">${data.architecture?.dashboardTabs?.found || 0}/${data.architecture?.dashboardTabs?.total || 0}</span></div>
+          <div class="kv-row"><span class="kv-key">Module Groups</span><span class="kv-value">${data.architecture?.moduleGroups || 0}</span></div>
+          <button class="btn btn-outline btn-sm" onclick="UI._govScanArchitecture()">Scan Architecture</button>
+          <div id="gov-arch-result" style="margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="section-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-top:16px;">
+        <div class="panel">
+          <h3 class="panel-title">Collision Check</h3>
+          <button class="btn btn-outline btn-sm" onclick="UI._govRunCollisionCheck()">Run Collision Check</button>
+          <div id="gov-collision-result" style="margin-top:8px;"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Dashboard Routes</h3>
+          <button class="btn btn-outline btn-sm" onclick="UI._govCheckDashboardRoutes()">Check Routes</button>
+          <div id="gov-routes-result" style="margin-top:8px;"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Backend/Frontend Linker</h3>
+          <button class="btn btn-outline btn-sm" onclick="UI._govCheckBackendFrontend()">Check Links</button>
+          <div id="gov-link-result" style="margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="section-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-top:16px;">
+        <div class="panel">
+          <h3 class="panel-title">Test Matrix</h3>
+          <div class="form-group">
+            <label>Change Description</label>
+            <textarea id="gov-change-desc" class="form-input" rows="2" placeholder="Describe recent changes..."></textarea>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="UI._govGenerateTestMatrix()">Generate Test Matrix</button>
+          <div id="gov-matrix-result" style="margin-top:8px;"></div>
+        </div>
+        <div class="panel">
+          <h3 class="panel-title">Next-Agent Prompt</h3>
+          <div class="form-group">
+            <select id="gov-prompt-type" class="form-input">
+              <option value="codex">Codex Next Task</option>
+              <option value="opencode">OpenCode Next Task</option>
+              <option value="recovery">Recovery</option>
+              <option value="p0">P0 Patch</option>
+              <option value="review">Post-Codex Review</option>
+            </select>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="UI._govGeneratePrompt()">Generate Prompt</button>
+          <div id="gov-prompt-result" style="margin-top:8px;"></div>
+          <pre id="gov-prompt-text" style="margin-top:8px; padding:12px; background:var(--bg-secondary); border-radius:8px; font-size:12px; max-height:300px; overflow:auto; white-space:pre-wrap; display:none;"></pre>
+          <button id="gov-copy-prompt" class="btn btn-sm btn-outline" style="margin-top:8px; display:none;" onclick="UI._govCopyPrompt()">📋 Copy Prompt</button>
+        </div>
+      </div>
+    `;
+    targetEl.innerHTML = html;
+  },
+
+  _govCheckContract: async function() {
+    const el = document.getElementById('gov-contract-result');
+    el.innerHTML = UI.renderLoading('Validating...');
+    const r = await Api.apiGet('/devgovernance/contract');
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const data = r.data;
+    const errors = data.validation?.errors || [];
+    const warnings = data.validation?.warnings || [];
+    el.innerHTML = \`
+      <p><strong>Status:</strong> \${data.validation?.ok ? '✅ Valid' : '❌ Invalid'}</p>
+      <p>Sections: \${data.validation?.summary?.sectionCount || 0}</p>
+      \${errors.length ? '<p style="color:var(--danger);">Errors:<br>' + errors.map(e => '⚠️ ' + Utils.escapeHtml(e)).join('<br>') + '</p>' : ''}
+      \${warnings.length ? '<p style="color:var(--warning);">Warnings:<br>' + warnings.map(w => '⚠️ ' + Utils.escapeHtml(w)).join('<br>') + '</p>' : ''}
+    \`;
+  },
+
+  _govShowHandoff: async function() {
+    const el = document.getElementById('tab-content');
+    el.innerHTML = UI.renderLoading('Loading handoff...');
+    const r = await Api.apiGet('/devgovernance/handoff');
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const h = r.data.handoff || r.data.summary || {};
+    el.innerHTML = \`
+      <div class="tab-header"><h2>📋 Agent Handoff</h2>
+        <button class="btn btn-outline btn-sm" onclick="UI.renderDevGovernance(document.getElementById('tab-content'))">Back</button>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <div class="kv-row"><span class="kv-key">ID</span><span class="kv-value">\${Utils.escapeHtml(h.id || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Last Agent</span><span class="kv-value">\${Utils.escapeHtml(h.lastAgent || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Task</span><span class="kv-value">\${Utils.escapeHtml(h.currentTask || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Goal</span><span class="kv-value">\${Utils.escapeHtml(h.goal || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Files Changed</span><span class="kv-value">\${(h.filesChanged || []).length}</span></div>
+        <div class="kv-row"><span class="kv-key">Tests Run</span><span class="kv-value">\${(h.testsRun || []).length}</span></div>
+        <div class="kv-row"><span class="kv-key">Tests Failed</span><span class="kv-value">\${(h.testsFailed || []).length}</span></div>
+      </div>
+      \${(h.filesChanged || []).length ? '<div class="panel"><h3 class="panel-title">Files Changed</h3><ul>' + h.filesChanged.map(f => '<li>' + Utils.escapeHtml(f) + '</li>').join('') + '</ul></div>' : ''}
+      \${(h.remainingRisks || []).length ? '<div class="panel"><h3 class="panel-title">Risks</h3><ul>' + h.remainingRisks.map(r => '<li>⚠️ ' + Utils.escapeHtml(r) + '</li>').join('') + '</ul></div>' : ''}
+      \${h.nextAgentTask ? '<div class="panel"><h3 class="panel-title">Next Agent Task</h3><pre style="white-space:pre-wrap;">' + Utils.escapeHtml(h.nextAgentTask) + '</pre></div>' : ''}
+    \`;
+  },
+
+  _govScanArchitecture: async function() {
+    const el = document.getElementById('gov-arch-result');
+    el.innerHTML = UI.renderLoading('Scanning...');
+    const r = await Api.apiPost('/devgovernance/scan', {});
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    el.innerHTML = '<p>✅ Architecture map generated: ' + Utils.escapeHtml(r.data.architectureMap?.path || '') + '</p>';
+  },
+
+  _govRunCollisionCheck: async function() {
+    const el = document.getElementById('gov-collision-result');
+    el.innerHTML = UI.renderLoading('Checking...');
+    const r = await Api.apiGet('/devgovernance/collisions');
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const coll = r.data.collisions || {};
+    const items = coll.collisions || [];
+    const critical = coll.critical || [];
+    const warnings = coll.warnings || [];
+    el.innerHTML = \`
+      <p><strong>Total:</strong> \${items.length} | <strong>Critical:</strong> \${critical.length} | <strong>Warnings:</strong> \${warnings.length}</p>
+      \${critical.length ? '<div style="color:var(--danger);"><strong>Critical:</strong><ul>' + critical.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
+      \${warnings.length ? '<div style="color:var(--warning);"><strong>Warnings:</strong><ul>' + warnings.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
+      \${!items.length ? '<p>✅ No collisions detected</p>' : ''}
+    \`;
+  },
+
+  _govCheckDashboardRoutes: async function() {
+    const el = document.getElementById('gov-routes-result');
+    el.innerHTML = UI.renderLoading('Checking...');
+    const r = await Api.apiGet('/devgovernance/dashboard-routes');
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const dr = r.data.dashboardRoutes || {};
+    const issues = dr.issues || [];
+    const critical = dr.critical || [];
+    el.innerHTML = \`
+      <p><strong>Issues:</strong> \${issues.length} | <strong>Critical:</strong> \${critical.length}</p>
+      \${critical.length ? '<div style="color:var(--danger);"><ul>' + critical.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
+      \${!critical.length ? '<p>✅ No critical route issues</p>' : ''}
+    \`;
+  },
+
+  _govCheckBackendFrontend: async function() {
+    const el = document.getElementById('gov-link-result');
+    el.innerHTML = UI.renderLoading('Checking...');
+    const r = await Api.apiGet('/devgovernance/backend-frontend');
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const bf = r.data.backendFrontend?.report || r.data.backendFrontend || {};
+    el.innerHTML = \`
+      <p><strong>Frontend Calls:</strong> \${bf.summary?.frontendCalls || 0} | <strong>Backend Routes:</strong> \${bf.summary?.backendRoutes || 0}</p>
+      <p><strong>Matched:</strong> \${bf.summary?.matched || 0} | <strong>Missing:</strong> \${bf.summary?.missing || 0} | <strong>Unused:</strong> \${bf.summary?.unused || 0}</p>
+      \${(bf.missing || []).length ? '<div style="color:var(--warning);"><strong>Missing Backend Routes:</strong><ul>' + bf.missing.map(m => '<li>' + Utils.escapeHtml(m.endpoint) + '</li>').join('') + '</ul></div>' : ''}
+      \${!bf.summary?.missing ? '<p>✅ All frontend calls match backend routes</p>' : ''}
+    \`;
+  },
+
+  _govGenerateTestMatrix: async function() {
+    const el = document.getElementById('gov-matrix-result');
+    const desc = document.getElementById('gov-change-desc')?.value || '';
+    el.innerHTML = UI.renderLoading('Generating...');
+    const r = await Api.apiPost('/devgovernance/test-matrix', { changeManifest: desc ? { filesChanged: [desc] } : null });
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const matrix = r.data.matrix || {};
+    el.innerHTML = \`
+      <p><strong>Areas:</strong> \${(matrix.areas || []).join(', ') || 'All'}</p>
+      <p><strong>Total Tests:</strong> \${matrix.total}</p>
+      <details>
+        <summary>View Test List</summary>
+        <ul style="max-height:200px; overflow:auto;">\${(matrix.tests || []).map(t => '<li><code>' + Utils.escapeHtml(t) + '</code></li>').join('')}</ul>
+      </details>
+    \`;
+  },
+
+  _govGeneratePrompt: async function() {
+    const el = document.getElementById('gov-prompt-result');
+    const promptEl = document.getElementById('gov-prompt-text');
+    const copyBtn = document.getElementById('gov-copy-prompt');
+    const type = document.getElementById('gov-prompt-type')?.value || 'codex';
+    el.innerHTML = UI.renderLoading('Generating...');
+    const r = await Api.apiPost('/devgovernance/next-agent-prompt', { type });
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    promptEl.textContent = r.data.prompt || '';
+    promptEl.style.display = 'block';
+    copyBtn.style.display = 'inline-block';
+    el.innerHTML = '<p>✅ Prompt generated (' + Utils.escapeHtml(type) + ')</p>';
+  },
+
+  _govCopyPrompt: function() {
+    const promptEl = document.getElementById('gov-prompt-text');
+    if (!promptEl) return;
+    navigator.clipboard.writeText(promptEl.textContent).then(() => {
+      Utils.showToast('Prompt copied to clipboard!', 'success');
+    }).catch(() => {
+      Utils.showToast('Failed to copy', 'error');
     });
   }
 };

@@ -943,6 +943,47 @@ const Api = {
 
   async testDecisionRouter(payload = {}) {
     return this.apiPost('/decisions/router-test', payload);
+  },
+
+  // Dev Governance
+  async getDevGovernance() {
+    return this.apiGet('/devgovernance');
+  },
+
+  async getDevGovernanceContract() {
+    return this.apiGet('/devgovernance/contract');
+  },
+
+  async getDevGovernanceHandoff() {
+    return this.apiGet('/devgovernance/handoff');
+  },
+
+  async postDevGovernanceScan() {
+    return this.apiPost('/devgovernance/scan', {});
+  },
+
+  async postDevGovernanceValidate() {
+    return this.apiPost('/devgovernance/validate', {});
+  },
+
+  async getDevGovernanceCollisions() {
+    return this.apiGet('/devgovernance/collisions');
+  },
+
+  async getDevGovernanceDashboardRoutes() {
+    return this.apiGet('/devgovernance/dashboard-routes');
+  },
+
+  async getDevGovernanceBackendFrontend() {
+    return this.apiGet('/devgovernance/backend-frontend');
+  },
+
+  async postDevGovernanceTestMatrix(manifest) {
+    return this.apiPost('/devgovernance/test-matrix', { changeManifest: manifest });
+  },
+
+  async postDevGovernanceNextAgentPrompt(type) {
+    return this.apiPost('/devgovernance/next-agent-prompt', { type });
   }
 };
 

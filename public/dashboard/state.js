@@ -240,6 +240,14 @@ const DASHBOARD_TABS = {
     internalOnly: true,
     aliases: ['ci-cd', 'cicd', 'pipeline', 'deploy'],
     renderer: 'renderCicd'
+  },
+  devgovernance: {
+    label: 'Dev Governance',
+    title: 'Dev Governance',
+    navIcon: '🏛️',
+    navVisible: true,
+    aliases: ['devgov', 'governance', 'dev-governance', 'dev_governance'],
+    renderer: 'renderDevGovernance'
   }
 };
 

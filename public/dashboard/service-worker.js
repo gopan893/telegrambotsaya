@@ -18,7 +18,9 @@ const STATIC_ASSETS = [
   '/dashboard/downloads.js',
   '/dashboard/import-ui.js',
   '/dashboard/manifest.webmanifest',
-  '/dashboard/icons/icon.svg'
+  '/dashboard/icons/icon.svg',
+  '/dashboard/realtime-monitoring.js',
+  '/dashboard/cicd.js'
 ];
 
 function isSensitiveRequest(request) {

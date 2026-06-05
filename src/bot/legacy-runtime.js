@@ -8071,6 +8071,16 @@ function isUnknownCommand(cmd) {
     '/dbstatus',
     '/redisstatus',
     '/audit',
+    '/devgov',
+    '/handoff',
+    '/handoff_update',
+    '/archmap',
+    '/contractcheck',
+    '/collisioncheck',
+    '/dashboardroutes',
+    '/nextcodex',
+    '/nextopencode',
+    '/p0prompt',
     '/whoami',
     '/workspaces',
     '/belajar',
@@ -9680,6 +9690,18 @@ Data endpoint membutuhkan Authorization Bearer token.`;
     await sendChunkedMessage(chatId, formatRedisStatus(storageManager.getStorageStatus?.() || {}), { reply_to_message_id: msg.message_id });
     return;
   }
+  if (resolvedCmd === '/devgov' || resolvedCmd === '/handoff' || resolvedCmd === '/handoff_update' ||
+      resolvedCmd === '/archmap' || resolvedCmd === '/contractcheck' || resolvedCmd === '/collisioncheck' ||
+      resolvedCmd === '/dashboardroutes' || resolvedCmd === '/nextcodex' || resolvedCmd === '/nextopencode' ||
+      resolvedCmd === '/p0prompt') {
+    const devGovTelegram = require('./src/devgovernance/devgovernance-telegram');
+    const dgResult = await devGovTelegram.handleDevGovCommand(resolvedCmd, args, chatId, { storageManager });
+    if (dgResult) {
+      await sendChunkedMessage(chatId, dgResult.text, { reply_to_message_id: msg.message_id });
+      return;
+    }
+  }
+
   if (resolvedCmd === '/audit') {
     if (!isAdmin(userId)) {
       await safeSendMessage(chatId, 'Command audit hanya untuk admin.', { reply_to_message_id: msg.message_id });

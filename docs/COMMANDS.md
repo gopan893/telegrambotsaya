@@ -315,6 +315,21 @@ Bot dapat mendeteksi coding request secara natural:
 - GitHub write harus melalui Evaluation v2 + executor approval
 - Semua output di-redact dari secrets
 
+## Dev Governance (Phase 34)
+
+| Command | Fungsi |
+| --- | --- |
+| `/devgov` | Ringkasan status Dev Governance. |
+| `/handoff` | Lihat handoff agent terbaru. |
+| `/handoff_update <task>:<goal>` | Update handoff task/goal. |
+| `/archmap` | Status architecture map (entry points, tabs, routes). |
+| `/contractcheck` | Validasi AGENTS.md contract. |
+| `/collisioncheck` | Deteksi module/tab/route duplikat. |
+| `/dashboardroutes` | Cek konsistensi route dashboard. |
+| `/nextcodex` | Generate prompt untuk Codex. |
+| `/nextopencode` | Generate prompt untuk OpenCode. |
+| `/p0prompt` | Generate P0 patch prompt. |
+
 ## Natural Chat Yang Didukung
 
 Bot dapat memakai AI OS context secara natural untuk pesan seperti:
