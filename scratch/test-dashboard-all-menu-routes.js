@@ -55,7 +55,9 @@ const menuExpectations = {
   'agent-evaluation': { title: 'Agent Evaluation', renderer: 'renderAgentEvaluation' },
   coding: { title: 'Coding Workspace', renderer: 'renderCodingWorkspace' },
   release: { title: 'Release / Health', renderer: 'renderRelease' },
-  selfhealing: { title: 'Self-Healing & Regression Guard', renderer: 'renderSelfHealing' }
+  selfhealing: { title: 'Self-Healing & Regression Guard', renderer: 'renderSelfHealing' },
+  monitoring: { title: 'Real-Time Monitoring', renderer: 'renderMonitoring' },
+  cicd: { title: 'CI/CD Pipeline', renderer: 'renderCicd' }
 };
 
 console.log('--- Public tabs have renderers and own titles ---\n');
@@ -69,7 +71,7 @@ for (const [tabId, expected] of Object.entries(menuExpectations)) {
 }
 
 console.log('\n--- Internal pages are not public menu routes ---\n');
-for (const tabId of ['routines', 'monitoring', 'cicd']) {
+for (const tabId of ['routines']) {
   assert(!html.includes(`data-tab="${tabId}"`), `${tabId} is hidden from public sidebar`);
 }
 

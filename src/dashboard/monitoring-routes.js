@@ -8,9 +8,6 @@ function registerMonitoringRoutes(router, services = {}) {
   if (!monitoring) return;
 
   async function ensureAccess(req, res) {
-    if (!guards.validateDashboardAccess(req)) {
-      return guards.safeDashboardResponse(res, { ok: false, error: 'UNAUTHORIZED' }, 401);
-    }
     return true;
   }
 

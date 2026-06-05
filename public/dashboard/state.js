@@ -223,9 +223,7 @@ const DASHBOARD_TABS = {
     label: 'Monitoring',
     title: 'Real-Time Monitoring',
     navIcon: '📡',
-    navVisible: false,
-    routeEnabled: false,
-    internalOnly: true,
+    navVisible: true,
     aliases: ['monitor', 'realtime', 'realtime-monitoring', 'realtime_monitoring'],
     renderer: 'renderMonitoring'
   },
@@ -233,9 +231,7 @@ const DASHBOARD_TABS = {
     label: 'CI/CD',
     title: 'CI/CD Pipeline',
     navIcon: '🔄',
-    navVisible: false,
-    routeEnabled: false,
-    internalOnly: true,
+    navVisible: true,
     aliases: ['ci-cd', 'cicd', 'pipeline', 'deploy'],
     renderer: 'renderCicd'
   },

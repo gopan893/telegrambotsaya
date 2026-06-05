@@ -117,6 +117,23 @@ Phase 25 menambahkan action-aware natural chat. Pesan seperti `jalankan backup s
 
 Self-Healing tidak menjalankan shell, tidak mengubah repo dari runtime bot, dan tidak melakukan auto-repair. Guard check bersifat read-only; repair prompt/proposal hanya menyiapkan langkah perbaikan yang tetap harus melalui approval executor.
 
+## Monitoring, Auto-Healing, CI/CD
+
+| Command | Fungsi |
+| --- | --- |
+| `/monitor` | Snapshot live monitoring, WebSocket client count, dan dashboard Monitoring URL. |
+| `/livehealth` | Alias health snapshot real-time. |
+| `/autoheal` | Daftar safe auto-heal action beserta level L0/L1/L2/L3. |
+| `/autoheal_runs` | Riwayat auto-heal run terbaru. |
+| `/autoheal_run <actionId>` | Jalankan L1 safe action atau buat proposal/plan untuk L2; L3 diblokir. |
+| `/cicd` | Ringkasan CI/CD dan GitHub Actions read-only status. |
+| `/cicd_status` | Alias status CI/CD. |
+| `/github_actions` | Status GitHub Actions atau setup plan jika token belum tersedia. |
+| `/propose_workflow <workflowId>` | Buat executor proposal untuk workflow dispatch, admin-only. Tidak dispatch langsung. |
+| `/propose_deploy` | Buat executor proposal untuk deploy Render, admin-only. Tidak deploy langsung. |
+
+Tab dashboard `Monitoring` dan `CI/CD` aktif mulai Phase 33. WebSocket monitoring butuh dashboard token dan semua payload disanitasi. Workflow dispatch/deploy tetap wajib Evaluation v2 + executor approval.
+
 ## Approved External Integrations
 
 | Command | Fungsi |

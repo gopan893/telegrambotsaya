@@ -20,6 +20,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node --check telebot.js
       - run: echo "Running release checks for ${{ github.event.inputs.version }}"
+      - run: node scratch/run-existing-tests.js scratch/test-release-gate-phase30.js scratch/test-phase33-regression.js scratch/test-phase36-deploy-regression.js scratch/test-dashboard-route-consistency.js
       - run: node -e "
           const cicd = require('./src/cicd/index');
           console.log('CI/CD system loaded');

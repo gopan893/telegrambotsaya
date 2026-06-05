@@ -21,6 +21,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node --check telebot.js
       - run: node --check src/dashboard/dashboard-routes.js || echo "Warning: dashboard-routes check skipped"
+      - run: node scratch/run-existing-tests.js scratch/test-autoheal-policy.js scratch/test-autoheal-runner.js scratch/test-monitoring-sanitizer.js scratch/test-github-actions-status.js scratch/test-cicd-quality-gates.js scratch/test-executor-boundary-stable-release.js scratch/test-integration-gate-stable-release.js scratch/test-file-analysis-leak.js
       - run: node -e "
           const ah = require('./src/autohealing/index');
           const mon = require('./src/monitoring/index');

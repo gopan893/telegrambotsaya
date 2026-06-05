@@ -1918,6 +1918,7 @@ const UI = {
     const data = res.data;
     let html = UI.renderSectionHeader('📡 Real-Time Monitoring', `
       <button class="btn btn-outline" id="btn-refresh-monitoring">🔄 Refresh</button>
+      <button class="btn btn-outline" id="btn-connect-monitoring">🔌 Connect WS</button>
     `);
     html += `
       <div class="card-grid">
@@ -1939,6 +1940,9 @@ const UI = {
       </div>
       <div class="panel">
         <h3 class="panel-title">Recent Events</h3>
+        <div id="monitoring-connection-status" class="status-line" style="margin-bottom:12px;color:var(--text-secondary);">
+          WebSocket: ${window.MonitoringWS?.isConnected?.() ? 'connected' : 'polling/fallback'}
+        </div>
         <div class="table-responsive">
           <table>
             <thead><tr><th>Time</th><th>Topic</th><th>Severity</th><th>Title</th><th>Source</th></tr></thead>
@@ -1961,6 +1965,18 @@ const UI = {
     `;
     targetEl.innerHTML = html;
     document.getElementById('btn-refresh-monitoring')?.addEventListener('click', () => UI.renderMonitoring(targetEl));
+    document.getElementById('btn-connect-monitoring')?.addEventListener('click', () => {
+      if (!window.MonitoringWS) {
+        Utils.showToast('WebSocket client belum dimuat. Polling fallback tetap aktif.', 'warning');
+        return;
+      }
+      window.MonitoringWS.addListener('monitoring-panel', (event) => {
+        const status = document.getElementById('monitoring-connection-status');
+        if (status) status.textContent = `WebSocket: ${event.type === 'connection' ? event.status : 'connected'} (${event.topic || 'event'})`;
+      });
+      window.MonitoringWS.connect();
+      Utils.showToast('Menghubungkan live monitoring...', 'info');
+    });
   },
 
   async renderCicd(targetEl) {
@@ -1991,6 +2007,11 @@ const UI = {
           <div class="card-value">${data.pipelineCount || 0}</div>
           <div class="card-subtitle">Pipeline runs</div>
         </div>
+        <div class="card">
+          <div class="card-title">GitHub Actions</div>
+          <div class="card-value">${data.githubActions?.configured ? 'Ready' : 'Setup'}</div>
+          <div class="card-subtitle">${Utils.escapeHtml(data.githubActions?.summary || data.githubActions?.status || 'read-only status')}</div>
+        </div>
       </div>
       <div class="panel">
         <h3 class="panel-title">Last Release</h3>
@@ -2009,6 +2030,15 @@ const UI = {
         <button class="btn btn-primary" id="btn-run-quality-check">Run Quality Check</button>
         <div id="quality-check-result" style="margin-top:12px;"></div>
       </div>
+      <div class="panel">
+        <h3 class="panel-title">Approved CI/CD Actions</h3>
+        <p class="text-muted">Workflow dispatch dan deploy hanya membuat proposal executor. Tidak ada direct deploy dari dashboard.</p>
+        <div class="grid-2">
+          <button class="btn btn-outline" id="btn-propose-release-check">Create Workflow Dispatch Proposal</button>
+          <button class="btn btn-outline" id="btn-propose-deploy">Create Deploy Proposal</button>
+        </div>
+        <div id="cicd-proposal-result" style="margin-top:12px;"></div>
+      </div>
     `;
     targetEl.innerHTML = html;
     document.getElementById('btn-refresh-cicd')?.addEventListener('click', () => UI.renderCicd(targetEl));
@@ -2026,6 +2056,22 @@ const UI = {
       } else {
         resultEl.innerHTML = UI.renderError('Quality check failed');
       }
+    });
+    document.getElementById('btn-propose-release-check')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('cicd-proposal-result');
+      resultEl.innerHTML = UI.renderLoading('Creating workflow dispatch proposal...');
+      const r = await Api.apiPost('/cicd/workflow-dispatch/propose', { workflowId: 'release-check.yml', ref: 'main', inputs: {} });
+      resultEl.innerHTML = r.ok
+        ? `<div class="alert alert-success">Proposal dibuat: <code>${Utils.escapeHtml(r.data.proposalId || '-')}</code></div>`
+        : `<div class="alert alert-warning">Proposal belum dibuat: ${Utils.escapeHtml(r.data?.error || r.error || 'Evaluation/executor unavailable')}</div>`;
+    });
+    document.getElementById('btn-propose-deploy')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('cicd-proposal-result');
+      resultEl.innerHTML = UI.renderLoading('Creating deploy proposal...');
+      const r = await Api.apiPost('/cicd/deploy/propose', { target: 'render' });
+      resultEl.innerHTML = r.ok
+        ? `<div class="alert alert-success">Proposal deploy dibuat: <code>${Utils.escapeHtml(r.data.proposalId || '-')}</code></div>`
+        : `<div class="alert alert-warning">Proposal deploy belum dibuat: ${Utils.escapeHtml(r.data?.error || r.error || 'Evaluation/executor unavailable')}</div>`;
     });
   },
 

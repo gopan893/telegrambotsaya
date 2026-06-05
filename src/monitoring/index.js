@@ -2,7 +2,7 @@
 
 const { createEventBus } = require('./event-bus');
 const { createMetricsStore } = require('./metrics-store');
-const { createRealtimeHealth } = require('./monitoring-sanitizer');
+const { createRealtimeHealth } = require('./realtime-health');
 const { initWebSocketServer } = require('./websocket-server');
 const utils = require('./monitoring-utils');
 
@@ -20,14 +20,11 @@ function createMonitoringSystem(httpServer, services) {
 
   function attachWebSocket(newHttpServer) {
     if (!newHttpServer) return;
+    if (wsServer.wss) return;
     try {
-      const WebSocket = require('ws');
-      if (WebSocket && !wsServer.fallbackActive) return;
       const { initWebSocketServer: initWS } = require('./websocket-server');
-      const newWs = initWS(newHttpServer, services);
-      wsServer.wss = newWs.wss;
-      wsServer.clients = newWs.clients;
-      wsServer.fallbackActive = newWs.fallbackActive;
+      const next = initWS(newHttpServer, services);
+      Object.assign(wsServer, next);
     } catch (_) {}
   }
 

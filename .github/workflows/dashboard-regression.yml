@@ -18,6 +18,7 @@ jobs:
           cache: 'npm'
       - run: npm ci --ignore-scripts
       - run: node --check src/dashboard/dashboard-routes.js
+      - run: node scratch/run-existing-tests.js scratch/test-dashboard-stable-routes.js scratch/test-dashboard-router-registry.js scratch/test-dashboard-all-menu-routes.js scratch/test-dashboard-dark-form-ui.js scratch/test-dashboard-route-guard.js scratch/test-pwa-assets.js
       - run: node -e "
           const routes = require('./src/dashboard/dashboard-routes');
           console.log('Dashboard routes loaded');

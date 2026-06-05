@@ -5072,6 +5072,159 @@ async function handleSelfHealingCommands(chatId, userId, cmd, args, msg) {
   return false;
 }
 
+function formatAutoHealActionLine(action = {}) {
+  return [
+    `${action.id || '-'} | ${action.level || '-'} | risk=${action.riskLevel || '-'}`,
+    action.name || 'Unnamed autoheal action',
+    `Approval: ${action.requiresApproval ? 'required' : 'not required'} | Evaluation: ${action.requiresEvaluation ? 'required' : 'not required'}`
+  ].join('\n');
+}
+
+async function handlePhase33OpsCommands(chatId, userId, cmd, args, msg) {
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  const commands = new Set([
+    '/monitor',
+    '/livehealth',
+    '/autoheal',
+    '/autoheal_runs',
+    '/autoheal_run',
+    '/cicd',
+    '/cicd_status',
+    '/github_actions',
+    '/propose_workflow',
+    '/propose_deploy'
+  ]);
+  if (!commands.has(cmd)) return false;
+
+  if (cmd === '/monitor' || cmd === '/livehealth') {
+    if (!monitoringSystem) {
+      await sendChunkedMessage(chatId, 'Monitoring system belum tersedia. Bot tetap berjalan normal.', replyOpt);
+      return true;
+    }
+    const snapshot = monitoringSystem.realtimeHealth.getSnapshot();
+    const status = monitoringSystem.realtimeHealth.buildHealthPayload({ storageManager, selfHealingSystem, cicdSystem, evaluationSystem });
+    await sendChunkedMessage(chatId, [
+      'Live Monitoring',
+      '',
+      `Status: ${status.status || 'ok'}`,
+      `Health events: ${(snapshot.events || []).length}`,
+      `WS clients: ${monitoringSystem.wsServer.getClientCount()}`,
+      `WS fallback: ${monitoringSystem.wsServer.fallbackActive ? 'yes' : 'no'}`,
+      `Dashboard: ${WEBHOOK_URL ? `${WEBHOOK_URL.replace(/\/$/, '')}/dashboard#monitoring` : '/dashboard#monitoring'}`,
+      '',
+      'Payload monitoring disanitasi dan dashboard tetap butuh token.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/autoheal') {
+    if (!autoHealingSystem) {
+      await sendChunkedMessage(chatId, 'Auto-healing system belum tersedia.', replyOpt);
+      return true;
+    }
+    const actions = await autoHealingSystem.store.getActions();
+    const body = actions.slice(0, 12).map(formatAutoHealActionLine).join('\n\n') || 'Belum ada action terdaftar.';
+    await sendChunkedMessage(chatId, [
+      'Safe Auto-Healing Runtime',
+      '',
+      body,
+      '',
+      'L0 observe only, L1 safe auto-heal, L2 proposal required, L3 blocked.',
+      'Gunakan: /autoheal_run <actionId>'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/autoheal_runs') {
+    if (!autoHealingSystem) {
+      await sendChunkedMessage(chatId, 'Auto-healing system belum tersedia.', replyOpt);
+      return true;
+    }
+    const runs = (await autoHealingSystem.store.getRuns()).slice(-10).reverse();
+    const body = runs.length ? runs.map(run => `- ${run.id || '-'} | ${run.actionId || '-'} | ${run.status || '-'} | ${run.summary || '-'}`).join('\n') : 'Belum ada auto-heal run.';
+    await sendChunkedMessage(chatId, `Auto-Heal Runs\n\n${body}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/autoheal_run') {
+    if (!autoHealingSystem) {
+      await sendChunkedMessage(chatId, 'Auto-healing system belum tersedia.', replyOpt);
+      return true;
+    }
+    const actionId = String(args || '').trim();
+    if (!actionId) {
+      await sendChunkedMessage(chatId, 'Contoh: /autoheal_run ah_healthcheck_rerun', replyOpt);
+      return true;
+    }
+    const result = await autoHealingSystem.runner.runAutoHeal(actionId, { workspaceId: '', userId, trigger: 'telegram' });
+    await sendChunkedMessage(chatId, [
+      'Auto-Heal Run Result',
+      '',
+      `OK: ${result.ok ? 'yes' : 'no'}`,
+      `Status: ${result.status || '-'}`,
+      `Run: ${result.runId || '-'}`,
+      `Proposal/Plan: ${result.proposalId || result.planId || '-'}`,
+      `Summary: ${result.summary || result.error || result.reason || '-'}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/cicd' || cmd === '/cicd_status' || cmd === '/github_actions') {
+    if (!cicdSystem) {
+      await sendChunkedMessage(chatId, 'CI/CD system belum tersedia.', replyOpt);
+      return true;
+    }
+    const status = await cicdSystem.githubStatus.getGithubActionsStatus();
+    await sendChunkedMessage(chatId, [
+      'CI/CD / GitHub Actions',
+      '',
+      `Configured: ${status.configured ? 'yes' : 'no'}`,
+      `Status: ${status.status || (status.ok ? 'available' : 'setup_required')}`,
+      `Summary: ${status.summary || '-'}`,
+      `Workflows: ${(status.workflows || []).join(', ') || 'ci.yml, release-check.yml, dashboard-regression.yml'}`,
+      `Dashboard: ${WEBHOOK_URL ? `${WEBHOOK_URL.replace(/\/$/, '')}/dashboard#cicd` : '/dashboard#cicd'}`,
+      '',
+      'Dispatch/deploy tetap proposal-only: /propose_workflow <workflowId> atau /propose_deploy'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_workflow') {
+    if (!isAdmin(userId)) {
+      await sendChunkedMessage(chatId, 'Workflow dispatch proposal hanya untuk admin/owner.', replyOpt);
+      return true;
+    }
+    if (!cicdSystem) {
+      await sendChunkedMessage(chatId, 'CI/CD system belum tersedia.', replyOpt);
+      return true;
+    }
+    const workflowId = String(args || '').trim() || 'release-check.yml';
+    const result = await cicdSystem.githubActionsProposal.createWorkflowDispatchProposal(workflowId, 'main', {}, { workspaceId: '', userId });
+    await sendChunkedMessage(chatId, result.ok
+      ? `Workflow dispatch proposal dibuat.\nProposal: ${result.proposalId}\nBelum dijalankan. Approve lalu /runexec.`
+      : `Workflow dispatch proposal belum dibuat: ${result.error || 'Evaluation/executor unavailable'}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_deploy') {
+    if (!isAdmin(userId)) {
+      await sendChunkedMessage(chatId, 'Deploy proposal hanya untuk admin/owner.', replyOpt);
+      return true;
+    }
+    if (!cicdSystem) {
+      await sendChunkedMessage(chatId, 'CI/CD system belum tersedia.', replyOpt);
+      return true;
+    }
+    const result = await cicdSystem.githubActionsProposal.createDeployProposal('render', { workspaceId: '', userId });
+    await sendChunkedMessage(chatId, result.ok
+      ? `Deploy proposal dibuat.\nProposal: ${result.proposalId}\nBelum deploy. Approve lalu /runexec.`
+      : `Deploy proposal belum dibuat: ${result.error || 'Evaluation/executor unavailable'}`, replyOpt);
+    return true;
+  }
+
+  return false;
+}
+
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
@@ -7991,6 +8144,16 @@ async function handleHelp(chatId, msg) {
 /repairplan id - detail repair plan
 /repairprompt id - generate Codex repair prompt [admin]
 /propose_repair id - buat executor proposal, tidak auto-run [admin]
+/monitor - live monitoring snapshot
+/livehealth - alias monitoring health
+/autoheal - daftar safe auto-heal action
+/autoheal_runs - riwayat auto-heal
+/autoheal_run actionId - jalankan L1 aman/proposal untuk L2
+/cicd - status CI/CD dan GitHub Actions
+/cicd_status - alias status CI/CD
+/github_actions - status GitHub Actions read-only
+/propose_workflow workflowId - proposal workflow dispatch [admin]
+/propose_deploy - proposal deploy Render [admin]
 /whoami - identitas user dan role workspace
 /workspace - workspace aktif dan permission
 /workspaces - daftar workspace yang bisa diakses
@@ -8275,6 +8438,16 @@ function isUnknownCommand(cmd) {
     '/repairplan',
     '/repairprompt',
     '/propose_repair',
+    '/monitor',
+    '/livehealth',
+    '/autoheal',
+    '/autoheal_runs',
+    '/autoheal_run',
+    '/cicd',
+    '/cicd_status',
+    '/github_actions',
+    '/propose_workflow',
+    '/propose_deploy',
     '/whoami',
     '/workspaces',
     '/belajar',
@@ -9843,6 +10016,7 @@ await withUserActionLock(userId, async () => {
   if (await handleAdaptiveCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleSelfHealingCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handlePhase33OpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAgentCommands(chatId, userId, resolvedCmd, args, msg)) return;

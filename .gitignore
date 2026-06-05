@@ -23,6 +23,13 @@ regression_guard_runs.json
 selfhealing_repair_plans.json
 selfhealing_repair_prompts.json
 selfhealing_proposals.json
+autoheal_actions.json
+autoheal_runs.json
+autoheal_blocks.json
+autoheal_proposals.json
+cicd_releases.json
+cicd_proposals.json
+cicd_pipelines.json
 
 # File lokal sementara.
 *.log

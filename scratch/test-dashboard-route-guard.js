@@ -26,8 +26,12 @@ assert(guard.KNOWN_TABS.indexOf('overview') >= 0, 'KNOWN_TABS contains overview'
 assert(guard.KNOWN_TABS.indexOf('selfhealing') >= 0, 'KNOWN_TABS contains selfhealing');
 assert(Array.isArray(guard.PUBLIC_TABS), 'PUBLIC_TABS is array');
 assert(guard.PUBLIC_TABS.indexOf('selfhealing') >= 0, 'selfhealing is a public tab');
+assert(guard.PUBLIC_TABS.indexOf('monitoring') >= 0, 'monitoring is a public Phase 33 tab');
+assert(guard.PUBLIC_TABS.indexOf('cicd') >= 0, 'cicd is a public Phase 33 tab');
 assert(Array.isArray(guard.INTERNAL_TABS), 'INTERNAL_TABS is array');
 assert(guard.INTERNAL_TABS.indexOf('selfhealing') === -1, 'selfhealing is not an internal tab');
+assert(guard.INTERNAL_TABS.indexOf('monitoring') === -1, 'monitoring is not an internal tab');
+assert(guard.INTERNAL_TABS.indexOf('cicd') === -1, 'cicd is not an internal tab');
 assert(Array.isArray(guard.CRITICAL_TABS), 'CRITICAL_TABS is array');
 
 // Test tab registry check

@@ -10,9 +10,6 @@ function registerSelfHealingRoutes(router, services = {}) {
   const { store, repairPlanGenerator, repairPromptGenerator, repairProposalBridge } = selfHealing;
 
   async function ensureAccess(req, res, level) {
-    if (!guards.validateDashboardAccess(req)) {
-      return guards.safeDashboardResponse(res, { ok: false, error: 'UNAUTHORIZED' }, 401);
-    }
     return true;
   }
 

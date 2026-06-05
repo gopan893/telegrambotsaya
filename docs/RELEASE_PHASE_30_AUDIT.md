@@ -4,7 +4,7 @@ Tanggal audit: 2026-06-05
 
 ## Temuan
 
-Dashboard production menampilkan beberapa halaman yang belum layak menjadi menu utama:
+Pada audit awal, dashboard production menampilkan beberapa halaman yang belum layak menjadi menu utama:
 
 - `Routines`
 - `Monitoring`
@@ -13,9 +13,9 @@ Dashboard production menampilkan beberapa halaman yang belum layak menjadi menu 
 Penyebabnya:
 
 1. `public/dashboard/index.html` mengekspos tab internal sebagai item sidebar.
-2. `public/dashboard/state.js` menandai tab internal sebagai `navVisible: true`, sehingga hash seperti `#monitoring` tetap dianggap route normal.
+2. `public/dashboard/state.js` menandai tab internal sebagai `navVisible: true`, sehingga hash internal tetap dianggap route normal.
 3. `dashboard_last_tab` dari `localStorage` bisa memulihkan tab internal lama setelah reload.
-4. `realtime-monitoring.js` dan `cicd.js` dimuat di shell utama, padahal modul tersebut masih eksperimental dan bergantung pada service runtime khusus.
+4. `realtime-monitoring.js` dan `cicd.js` sempat dimuat saat modul tersebut masih eksperimental dan bergantung pada service runtime khusus.
 5. Service worker memakai cache lama, sehingga browser mobile/PWA dapat terus menyajikan asset dashboard sebelum fix.
 
 ## Perbaikan
@@ -47,6 +47,11 @@ Penyebabnya:
    - Coding Workspace
    - Release
    - Self-Healing
+   - Monitoring
+   - CI/CD
+   - Dev Governance
+   - GitHub Ops
+   - Deploy / Release
 
 2. Tab internal yang belum siap tetap ada di registry untuk kompatibilitas modul, tetapi diberi:
    - `navVisible: false`
@@ -58,9 +63,7 @@ Penyebabnya:
    - mengarahkannya ke `#overview`,
    - menghapus `dashboard_last_tab` lama jika mengarah ke tab internal.
 
-4. Script eksperimental tidak dimuat default:
-   - `realtime-monitoring.js`
-   - `cicd.js`
+4. Phase 33 mempromosikan `Monitoring` dan `CI/CD` menjadi tab stabil setelah WebSocket auth, API fallback, dan proposal-only CI/CD flow ditambahkan.
 
 5. Cache PWA dinaikkan ke `telegram-aios-dashboard-static-v31-stable-nav`.
 
@@ -71,13 +74,12 @@ Penyebabnya:
 Backend dan modul internal tidak dihapus:
 
 - `src/dashboard/routine-routes.js`
-- `src/dashboard/monitoring-routes.js`
-- `src/dashboard/cicd-routes.js`
 - modul `src/routines`, `src/monitoring`, dan `src/cicd`
 
 Ini sengaja agar fitur tersebut tetap bisa dimatangkan nanti tanpa memutus kompatibilitas fase sebelumnya.
 
 Catatan Phase 32: `Self-Healing` sudah dipromosikan menjadi tab stabil karena panelnya read-only/proposal-only dan diperlukan untuk regression guard.
+Catatan Phase 33: `Monitoring` dan `CI/CD` sudah dipromosikan menjadi tab stabil; `Routines` tetap internal/hidden sampai policy runner-nya siap untuk UX publik.
 
 ## Risiko Deployment
 
