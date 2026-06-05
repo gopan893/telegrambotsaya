@@ -366,6 +366,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] GithubOps routes skipped:', e.message);
   }
 
+  try {
+    const deployRoutes = require('./deploy-routes');
+    deployRoutes.registerDeployRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Deploy routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

@@ -2341,23 +2341,43 @@ const UI = {
     targetEl.innerHTML = html;
   },
 
-  _ghAction: async function(key) {
-    const el = document.getElementById('gh-result');
+  renderDeploy: async function(targetEl) {
+    const actions = [
+      { key: 'summary', label: '📊 Deploy Summary', action: async () => DEPLOY.getSummary() },
+      { key: 'candidates', label: '📋 Release Candidates', action: async () => DEPLOY.listReleaseCandidates() },
+      { key: 'newrc', label: '➕ New Release Candidate', action: async () => DEPLOY.createReleaseCandidate({ branch: 'main', commitSha: 'HEAD', commitMessage: 'Manual candidate' }) },
+      { key: 'gate', label: '🔒 Run Render Gate', action: async () => DEPLOY.runRenderGate() },
+      { key: 'env', label: '🌍 Check Env', action: async () => DEPLOY.checkEnv() },
+      { key: 'startup', label: '🔧 Startup Check', action: async () => DEPLOY.runStartupCheck() },
+      { key: 'releasegate', label: '🚦 Release Gate Status', action: async () => DEPLOY.getReleaseGate() },
+      { key: 'postcheck', label: '✅ Post-Deploy Check', action: async () => DEPLOY.runPostDeployCheck() }
+    ];
+
+    let html = '<div class="tab-header"><h2>🚀 Deploy & Release Manager</h2></div>';
+    html += '<p style="color:var(--muted); margin-bottom:16px;">Manage releases, run deploy gates, create proposals, and monitor post-deploy health.</p>';
+    html += '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">';
+    for (const a of actions) {
+      html += `<button class="btn btn-outline btn-sm" onclick="UI._dpAction('${a.key}')">${Utils.escapeHtml(a.label)}</button>`;
+    }
+    html += '</div>';
+    html += '<div id="dp-result" style="margin-top:12px; font-family:var(--font-mono); font-size:13px; white-space:pre-wrap;"></div>';
+    targetEl.innerHTML = html;
+  },
+
+  _dpAction: async function(key) {
+    const el = document.getElementById('dp-result');
     if (!el) return;
     el.innerHTML = UI.renderLoading('Processing...');
 
     const actions = {
-      repo: GITHUBOPS.repoState,
-      manifest: GITHUBOPS.changeManifest,
-      scan: GITHUBOPS.runSecretScan,
-      commit: GITHUBOPS.createCommitPlan,
-      pushplan: GITHUBOPS.createPushPlan,
-      proposal: GITHUBOPS.createPushProposal,
-      pipeline: GITHUBOPS.runFullPipeline,
-      workflows: GITHUBOPS.listWorkflows,
-      release: GITHUBOPS.getReleaseGate,
-      pushlist: GITHUBOPS.listPushProposals,
-      wflist: GITHUBOPS.listWorkflowRunProposals
+      summary: DEPLOY.getSummary,
+      candidates: DEPLOY.listReleaseCandidates,
+      newrc: DEPLOY.createReleaseCandidate,
+      gate: DEPLOY.runRenderGate,
+      env: DEPLOY.checkEnv,
+      startup: DEPLOY.runStartupCheck,
+      releasegate: DEPLOY.getReleaseGate,
+      postcheck: DEPLOY.runPostDeployCheck
     };
 
     const fn = actions[key];

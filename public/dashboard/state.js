@@ -256,6 +256,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['github-ops', 'githubops', 'ghops', 'gh-ops'],
     renderer: 'renderGithubOps'
+  },
+  deploy: {
+    label: 'Deploy / Release',
+    title: 'Deploy & Release Manager',
+    navIcon: '🚀',
+    navVisible: true,
+    aliases: ['deployment', 'release-manager', 'render', 'rollback', 'release-control'],
+    renderer: 'renderDeploy'
   }
 };
 

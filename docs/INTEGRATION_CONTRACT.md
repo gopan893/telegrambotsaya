@@ -31,6 +31,19 @@ Write/external/danger actions MUST follow:
 
 No direct write. No auto-approve. No auto-run.
 
+## Deploy Contract
+
+Deploy/rollback actions MUST follow:
+1. Render deploy gate check
+2. Env check (names only — never values)
+3. Deploy plan creation
+4. Deploy proposal creation (status: pending_approval or blocked)
+5. Evaluation v2
+6. Executor proposal + approval
+7. Run deploy/Run rollback
+
+No direct deploy. No auto-rollback. No secret exposure.
+
 ## Module Creation Contract
 
 Before creating a new file/module:

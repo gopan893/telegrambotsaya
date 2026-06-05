@@ -64,6 +64,21 @@ node scratch/test-selfhealing-dashboard-api.js
 node scratch/test-selfhealing-natural-chat.js
 ```
 
+## Phase 36 Deploy Tests
+
+```bash
+node scratch/test-render-deploy-gate.js
+node scratch/test-render-env-checker.js
+node scratch/test-render-startup-checker.js
+node scratch/test-release-candidate-manager.js
+node scratch/test-deploy-plan-generator.js
+node scratch/test-post-deploy-monitor.js
+node scratch/test-rollback-plan-generator.js
+node scratch/test-deploy-proposal-builder.js
+node scratch/test-deploy-dashboard-api.js
+node scratch/test-phase36-deploy-regression.js
+```
+
 ## Security / Leak Tests
 
 ```bash

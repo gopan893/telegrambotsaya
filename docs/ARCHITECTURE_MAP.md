@@ -339,9 +339,11 @@ Total known commands: 74
 - `dashboard-serializers.js`
 - `dashboard-utils.js`
 - `decision-routes.js`
+- `deploy-routes.js`
 - `devgovernance-routes.js`
 - `evaluation-routes.js`
 - `executor-routes.js`
+- `githubops-routes.js`
 - `index.js`
 - `integration-execution-routes.js`
 - `monitoring-routes.js`
@@ -354,6 +356,21 @@ Total known commands: 74
 - `storage-status-formatters.js`
 - `tool-routes.js`
 - `workspace-routes.js`
+
+### deploy/
+
+- `deploy-proposal-builder.js`
+- `deploy-plan-generator.js`
+- `deploy-release-store.js`
+- `deploy-result-router.js`
+- `deploy-utils.js`
+- `index.js`
+- `post-deploy-monitor.js`
+- `release-candidate-manager.js`
+- `render-deploy-gate.js`
+- `render-env-checker.js`
+- `render-startup-checker.js`
+- `rollback-plan-generator.js`
 
 ### devgovernance/
 
@@ -618,6 +635,8 @@ Total known commands: 74
 - `DASHBOARD_UI.md`
 - `DECISION_HISTORY.md`
 - `DECISION_SYNTHESIS.md`
+- `DEPLOYMENT_RELEASE_MANAGER.md`
+- `DEPLOY_SECURITY.md`
 - `DEV_GOVERNANCE.md`
 - `DISASTER_RECOVERY.md`
 - `EXECUTOR.md`
@@ -651,6 +670,8 @@ Total known commands: 74
 - `REDIS_HEALTH.md`
 - `RELEASE_PHASE_30_AUDIT.md`
 - `RENDER_DEPLOYMENT.md`
+- `RENDER_DEPLOY_GATE.md`
+- `ROLLBACK_SYSTEM.md`
 - `RISK_REVIEW.md`
 - `SELF_HEALING_OPS.md`
 - `STORAGE_DRIVER.md`
@@ -739,6 +760,9 @@ Total known commands: 74
 - `test-decision-natural-chat.js`
 - `test-decision-recommender.js`
 - `test-decision-synthesis.js`
+- `test-deploy-dashboard-api.js`
+- `test-deploy-plan-generator.js`
+- `test-deploy-proposal-builder.js`
 - `test-devgovernance-dashboard-api.js`
 - `test-disaster-recovery.js`
 - `test-execution-approval.js`
@@ -781,9 +805,11 @@ Total known commands: 74
 - `test-output-sanitizer.js`
 - `test-phase12-dashboard-ux.js`
 - `test-phase34-devgovernance-regression.js`
+- `test-phase36-deploy-regression.js`
 - `test-phase7-natural-aios.js`
 - `test-planner-dashboard-api.js`
 - `test-planner-engine.js`
+- `test-post-deploy-monitor.js`
 - `test-postgres-health-dashboard.js`
 - `test-production-agents.js`
 - `test-proposal-builder.js`
@@ -791,11 +817,16 @@ Total known commands: 74
 - `test-pwa-assets.js`
 - `test-redis-health-dashboard.js`
 - `test-regression-risk-reviewer.js`
+- `test-release-candidate-manager.js`
 - `test-release-gate-phase30.js`
+- `test-render-deploy-gate.js`
+- `test-render-env-checker.js`
+- `test-render-startup-checker.js`
 - `test-repair-plan-generator.js`
 - `test-repair-prompt-generator.js`
 - `test-restore-engine.js`
 - `test-risk-confidence-scorer.js`
+- `test-rollback-plan-generator.js`
 - `test-routine-dashboard-api.js`
 - `test-routine-natural-chat.js`
 - `test-routine-notifications.js`

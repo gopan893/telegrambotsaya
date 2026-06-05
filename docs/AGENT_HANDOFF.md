@@ -16,37 +16,49 @@ OpenCode
 2026-06-06
 
 ### Current Task
-Create OpenCode ↔ Codex Integration Protocol — shared contract files, audit-first workflow, and P0 stability.
+Build Phase 35 (GitHub Ops Pipeline) + Phase 36 (Deployment Release Manager).
 
 ### Files Changed
-- `AGENTS.md` — updated with integration/testing rules
-- `docs/AGENT_HANDOFF.md` — rewritten as handoff contract
-- `docs/INTEGRATION_CONTRACT.md` — created (new)
-- `docs/ARCHITECTURE_MAP.md` — created (new)
-- `docs/TESTING.md` — created (new)
-- `docs/OPEN_CODE_RECOVERY_AUDIT.md` — created (new)
+- `src/dashboard/githubops-routes.js` — created (new)
+- `public/dashboard/githubops.js` — created (new)
+- `src/dashboard/state.js`, `ui.js`, `index.html` — added githubops tab
+- `src/githubops/` — 12 modules created (new)
+- `scratch/test-githubops-core.js`, `test-githubops-dashboard.js` — created (new)
+- `telebot.js` — added uncaughtException/unhandledRejection handlers + try/catch around module loads
+- `src/bot/legacy-runtime.js` — API key validation non-fatal, ioredis error handler, dashboard registration try/catch
+- `src/deploy/` — 11 modules + index.js created (new)
+- `src/dashboard/deploy-routes.js` — created (new)
+- `public/dashboard/deploy.js` — created (new)
+- `public/dashboard/state.js`, `ui.js`, `index.html` — added deploy tab
+- `src/dashboard/dashboard-routes.js`, `index.js` — added deploy route registration
+- `docs/DEPLOYMENT_RELEASE_MANAGER.md` — created (new)
+- `docs/RENDER_DEPLOY_GATE.md` — created (new)
+- `docs/ROLLBACK_SYSTEM.md` — created (new)
+- `docs/DEPLOY_SECURITY.md` — created (new)
+- `scratch/test-render-deploy-gate.js`, `test-render-env-checker.js`, `test-render-startup-checker.js`, `test-release-candidate-manager.js`, `test-deploy-plan-generator.js`, `test-post-deploy-monitor.js`, `test-rollback-plan-generator.js`, `test-deploy-proposal-builder.js`, `test-deploy-dashboard-api.js`, `test-phase36-deploy-regression.js` — created (new)
+- `AGENTS.md` — added `deploy` to known tabs
 
 ### What Was Completed
-- Created 5 contract files defining the OpenCode ↔ Codex protocol
-- Documented all 29 dashboard tabs with renderer and backend route status
-- Documented all 145 test files with PASS/FAIL/SKIPPED rules
-- Mapped entire architecture (entry points, modules, duplicates)
-- Updated AGENTS.md with integration contract rules and forbidden actions
-- Created recovery audit template for when Codex token expires
+- Phase 35 githubops modules (repo-state, secret-scan, commit-plan, push-plan, push-proposal, workflow-run-proposal, actions-monitor, release-gate, pipeline, utils, store, index) all passing
+- Phase 35 dashboard (githubops tab with status/actions/log)
+- Phase 35 tests: test-githubops-core (87/87 PASS), test-githubops-dashboard (16/16 PASS)
+- Render deploy crash fixed — global error handlers, non-fatal API key validation, ioredis error handler, try/catch around all dynamic requires
+- Phase 36 deploy modules (11 core modules + index.js) all passing node --check
+- Phase 36 dashboard (deploy-routes.js with 11 API endpoints, deploy.js frontend helper, deploy tab)
+- Phase 36 tests: all 10 test files passing (124/124 PASS combined)
+- All existing tests no regression (dashboard, executor, integration, natural chat, PWA)
 
 ### What Is Unfinished
-- `test-websocket-monitoring.js` and `test-cicd-quality-gates.js` still missing from scratch/ (notified as SKIPPED)
+- deploy/dashboard API routes not yet able to serve real requests (no active Express app in test mode)
 - Dashboard tabs (workspaces, users, permissions, planner, executor, tools, backup, audit, agent-evaluation) remain as placeholders
 - Self-healing, monitoring, cicd routes are conditional on service objects being passed
 
 ### Integration Notes
-- All 29 dashboard tabs are registered in DASHBOARD_TABS
-- All known tabs have renderers (some are placeholders)
-- No known tab falls back to Overview
-- Routine routes now registered (was missing before)
-- ui.js `Api.get()`/`Api.post()` calls fixed to `Api.apiGet()`/`Api.apiPost()`
-- Service worker now pre-caches all referenced scripts
-- AGENTS.md is the single source of truth for project rules
+- Proposal flow pattern: dry-run → evaluation → proposal → approval → run (never skips steps)
+- deploy-proposal-builder now sets status='blocked' if plan has blockers (instead of refusing to create proposal)
+- All deploy modules use in-memory store (same pattern as githubops)
+- Deploy env checker prints env names only, never values
+- Deploy routes wrapped in try/catch to avoid crash on module load failure
 
 ### Tests Run
 | Test | Result |
@@ -81,9 +93,10 @@ Create OpenCode ↔ Codex Integration Protocol — shared contract files, audit-
 1. Read docs/AGENT_HANDOFF.md, AGENTS.md, docs/INTEGRATION_CONTRACT.md, docs/ARCHITECTURE_MAP.md, docs/TESTING.md
 2. Read current git status and diff
 3. Run node --check telebot.js
-4. Run related scratch tests
-5. Do NOT add new features until P0 list from AGENTS.md is stable
-6. Update this handoff file before finishing
+4. Run related scratch tests (dashboard, executor, deploy, githubops)
+5. If deploy/dashboard API tests fail, check if Express app is available for testing
+6. Do NOT add new features until P0 list from AGENTS.md is stable
+7. Update this handoff file before finishing
 ```
 
 ### Recommended Next Branch/Commit
