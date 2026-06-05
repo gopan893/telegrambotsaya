@@ -9327,6 +9327,33 @@ try {
   log.warn('Self-healing system skipped:', e.message);
 }
 
+let autoHealingSystem = null;
+let monitoringSystem = null;
+let cicdSystem = null;
+try {
+  const { createAutoHealingSystem } = require('../autohealing');
+  const { createMonitoringSystem } = require('../monitoring');
+  const { createCicdSystem } = require('../cicd');
+  cicdSystem = createCicdSystem(storageManager, {
+    evaluationSystem: evaluationSystem || null,
+    executorSystem: executorSystem || null
+  });
+  monitoringSystem = createMonitoringSystem(null, {
+    env: config,
+    selfHealingSystem: selfHealingSystem || null,
+    cicdSystem: cicdSystem || null,
+    evaluationSystem: evaluationSystem || null
+  });
+  autoHealingSystem = createAutoHealingSystem(storageManager, {
+    evaluationSystem: evaluationSystem || null,
+    executorSystem: executorSystem || null,
+    selfHealingSystem: selfHealingSystem || null
+  });
+  autoHealingSystem.initialize().catch(e => log.error('Auto-healing init:', e.message));
+} catch (e) {
+  log.warn('Phase 33 systems skipped:', e.message);
+}
+
 dashboard.registerDashboardRoutes(app, {
   env: config,
   storageManager,
@@ -9340,6 +9367,9 @@ dashboard.registerDashboardRoutes(app, {
   selfHealingSystem,
   evaluationSystem: evaluationSystem || null,
   executorSystem: executorSystem || null,
+  monitoringSystem: monitoringSystem || null,
+  cicdSystem: cicdSystem || null,
+  autoHealingSystem: autoHealingSystem || null,
   logger: log
 });
 
@@ -10766,6 +10796,9 @@ async function startLegacyBotServer() {
     : null;
 
   server = app.listen(PORT, '0.0.0.0', async () => {
+    if (monitoringSystem && typeof monitoringSystem.attachWebSocket === 'function') {
+      monitoringSystem.attachWebSocket(server);
+    }
     console.log(`🚀 Server berjalan di port ${PORT}`);
 
     if (safeWebhookUrl) {

@@ -18,7 +18,20 @@ function createMonitoringSystem(httpServer, services) {
     return event;
   }
 
-  return { eventBus, metricsStore, realtimeHealth, wsServer, utils, emit };
+  function attachWebSocket(newHttpServer) {
+    if (!newHttpServer) return;
+    try {
+      const WebSocket = require('ws');
+      if (WebSocket && !wsServer.fallbackActive) return;
+      const { initWebSocketServer: initWS } = require('./websocket-server');
+      const newWs = initWS(newHttpServer, services);
+      wsServer.wss = newWs.wss;
+      wsServer.clients = newWs.clients;
+      wsServer.fallbackActive = newWs.fallbackActive;
+    } catch (_) {}
+  }
+
+  return { eventBus, metricsStore, realtimeHealth, wsServer, utils, emit, attachWebSocket };
 }
 
 module.exports = { createMonitoringSystem };
