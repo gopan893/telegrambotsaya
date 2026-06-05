@@ -60,7 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const rawHash = window.location.hash.substring(1) || '';
     const tabId = DashboardState.findTabId(rawHash) || '';
-    const canonical = tabId || DashboardState.restoreLastTab();
+    const canonical = tabId || (rawHash ? 'overview' : DashboardState.restoreLastTab());
+
+    if (rawHash && !tabId) {
+      window.history.replaceState(null, '', '#overview');
+    }
 
     // Save and set active tab
     DashboardState.setActiveTab(canonical);

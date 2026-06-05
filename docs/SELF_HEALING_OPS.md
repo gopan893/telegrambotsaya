@@ -48,7 +48,7 @@ Self-Healing Ops adalah sistem monitoring dan regression guard untuk Telegram AI
 5. Menunggu approval → executed atau rejected
 
 ## Dashboard Tab
-Dashboard tersedia di tab "Self-Healing" atau via URL `#selfhealing`.
+Modul dashboard Self-Healing tersedia sebagai modul internal/protected. Pada stable public dashboard, tab ini tidak ditampilkan di sidebar dan hash `#selfhealing` diarahkan kembali ke Overview sampai UX modul siap dirilis sebagai halaman normal.
 
 ## Telegram Commands
 - `/selfheal` – Jalankan self-healing check

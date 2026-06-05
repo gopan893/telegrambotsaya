@@ -1,36 +1,35 @@
+'use strict';
+
 /**
- * test-dashboard-all-menu-routes.js
- * Tests that known tabs render their own content, not Overview.
- * Run: node scratch/test-dashboard-all-menu-routes.js
+ * Tests that public menu routes render their own stable page content.
+ * Internal experimental pages are intentionally hidden from the public menu.
  */
-var path = require('path');
-var fs = require('fs');
 
-var stateJsPath = path.join(__dirname, '..', 'public', 'dashboard', 'state.js');
-var appJsPath = path.join(__dirname, '..', 'public', 'dashboard', 'app.js');
-var uiJsPath = path.join(__dirname, '..', 'public', 'dashboard', 'ui.js');
+const fs = require('fs');
+const path = require('path');
 
-var stateJs = fs.readFileSync(stateJsPath, 'utf-8');
-var appJs = fs.readFileSync(appJsPath, 'utf-8');
-var uiJs = fs.readFileSync(uiJsPath, 'utf-8');
+const ROOT = path.join(__dirname, '..');
+const stateJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'state.js'), 'utf8');
+const appJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'app.js'), 'utf8');
+const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'utf8');
+const html = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
 
-var passed = 0;
-var failed = 0;
+let passed = 0;
+let failed = 0;
 
 function assert(condition, msg) {
   if (condition) {
     console.log('  PASS: ' + msg);
-    passed++;
+    passed += 1;
   } else {
     console.error('  FAIL: ' + msg);
-    failed++;
+    failed += 1;
   }
 }
 
-console.log('\n=== All Menu Routes Test ===\n');
+console.log('\n=== All Public Menu Routes Test ===\n');
 
-// Menu items and their expected page title/content
-var menuExpectations = {
+const menuExpectations = {
   overview: { title: 'System Overview', renderer: 'renderOverview' },
   ops: { title: 'Ops Viewer', renderer: 'renderOps' },
   workspaces: { title: 'Workspaces', renderer: 'renderWorkspaces' },
@@ -55,50 +54,39 @@ var menuExpectations = {
   settings: { title: 'Settings Control', renderer: 'renderSettings' },
   'agent-evaluation': { title: 'Agent Evaluation', renderer: 'renderAgentEvaluation' },
   coding: { title: 'Coding Workspace', renderer: 'renderCodingWorkspace' },
-  release: { title: 'Release / Health', renderer: 'renderRelease' },
-  routines: { title: 'Routine Center', renderer: 'renderRoutines' }
+  release: { title: 'Release / Health', renderer: 'renderRelease' }
 };
 
-console.log('--- Each tab has a renderer and does not show Overview ---\n');
-for (var tabId in menuExpectations) {
-  var expected = menuExpectations[tabId];
-
-  // Check renderer function exists
-  assert(uiJs.indexOf('async ' + expected.renderer) !== -1 || uiJs.indexOf(expected.renderer) !== -1,
-    tabId + ' has renderer ' + expected.renderer);
-
-  // Check the render function references the correct title
-  var titleQuoted = "'" + expected.title + "'";
-  var titleDbl = '"' + expected.title + '"';
-  var titleBacktick = '`' + expected.title + '`';
-  var hasTitle = stateJs.indexOf(titleQuoted) !== -1 ||
-                 stateJs.indexOf(titleDbl) !== -1 ||
-                 stateJs.indexOf(titleBacktick) !== -1;
-
-  // For critical tabs, also check ui.js references their own title
-  if (['workspaces', 'agents', 'integrations', 'coding', 'release', 'routines', 'agent-evaluation'].indexOf(tabId) !== -1) {
-    var uiTitleCheck = uiJs.indexOf("'" + expected.title + "'") !== -1 ||
-                       uiJs.indexOf('"' + expected.title + '"') !== -1 ||
-                       uiJs.indexOf('`' + expected.title + '`') !== -1;
-    assert(hasTitle || uiTitleCheck, tabId + ' renders its own title: "' + expected.title + '"');
-  }
+console.log('--- Public tabs have renderers and own titles ---\n');
+for (const [tabId, expected] of Object.entries(menuExpectations)) {
+  assert(html.includes(`data-tab="${tabId}"`), `${tabId} exists in public sidebar`);
+  assert(uiJs.includes(expected.renderer), `${tabId} has renderer ${expected.renderer}`);
+  const titleFound = stateJs.includes(`title: '${expected.title}'`) ||
+    stateJs.includes(`title: "${expected.title}"`) ||
+    uiJs.includes(expected.title);
+  assert(titleFound, `${tabId} renders or registers title "${expected.title}"`);
 }
 
-console.log('\n--- Unknown tab falls back to Overview ---\n');
-assert(stateJs.indexOf("return null") !== -1 || stateJs.indexOf("return 'overview'") !== -1, 'Unknown tabId returns null/overview');
+console.log('\n--- Internal pages are not public menu routes ---\n');
+for (const tabId of ['routines', 'selfhealing', 'monitoring', 'cicd']) {
+  assert(!html.includes(`data-tab="${tabId}"`), `${tabId} is hidden from public sidebar`);
+}
+
+console.log('\n--- Unknown or internal hash falls back to Overview ---\n');
+assert(appJs.includes("rawHash ? 'overview' : DashboardState.restoreLastTab()"), 'Explicit invalid hash falls back to Overview');
+assert(stateJs.includes('routeEnabled !== false'), 'State filters disabled routes');
 
 console.log('\n--- Hash routing works ---\n');
-assert(appJs.indexOf("hashchange") !== -1, 'hashchange event listener exists');
-assert(appJs.indexOf("window.location.hash") !== -1, 'Hash routing logic exists');
+assert(appJs.includes('hashchange'), 'hashchange event listener exists');
+assert(appJs.includes('window.location.hash'), 'Hash routing logic exists');
 
-console.log('\n--- localStorage lastTab ---\n');
-assert(stateJs.indexOf("dashboard_last_tab") !== -1, 'localStorage lastTab key exists');
-assert(stateJs.indexOf("setActiveTab") !== -1, 'setActiveTab function exists');
-assert(stateJs.indexOf("restoreLastTab") !== -1, 'restoreLastTab function exists');
+console.log('\n--- localStorage lastTab guard ---\n');
+assert(stateJs.includes('dashboard_last_tab'), 'localStorage lastTab key exists');
+assert(stateJs.includes('localStorage.removeItem'), 'stale hidden lastTab is cleared');
 
 console.log('\n--- Mobile sidebar works ---\n');
-assert(appJs.indexOf("sidebar.classList.toggle('open')") !== -1, 'Sidebar open toggle exists');
-assert(appJs.indexOf("sidebar.classList.remove('open')") !== -1, 'Sidebar close toggle exists');
+assert(appJs.includes("sidebar.classList.toggle('open')"), 'Sidebar open toggle exists');
+assert(appJs.includes("sidebar.classList.remove('open')"), 'Sidebar close toggle exists');
 
 console.log('\n========================================');
 console.log('Total: ' + (passed + failed) + ' | PASS: ' + passed + ' | FAIL: ' + failed + '\n');

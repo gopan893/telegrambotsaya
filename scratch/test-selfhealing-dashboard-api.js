@@ -28,10 +28,10 @@ assert(stateJs.indexOf('renderSelfHealing') >= 0, 'state.js references renderSel
 assert(stateJs.indexOf('self-healing') >= 0, 'state.js has self-healing alias');
 assert(stateJs.indexOf('regression-guard') >= 0, 'state.js has regression-guard alias');
 
-// Check index.html has selfhealing menu item
+// Check index.html keeps self-healing out of public navigation
 var indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard', 'index.html'), 'utf-8');
-assert(indexHtml.indexOf('data-tab="selfhealing"') >= 0, 'index.html has selfhealing menu item');
-assert(indexHtml.indexOf('#selfhealing') >= 0, 'index.html has selfhealing hash link');
+assert(indexHtml.indexOf('data-tab="selfhealing"') === -1, 'index.html does not show selfhealing menu item');
+assert(indexHtml.indexOf('href="#selfhealing"') === -1, 'index.html does not show selfhealing hash link');
 
 // Check ui.js has renderSelfHealing
 var uiJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard', 'ui.js'), 'utf-8');

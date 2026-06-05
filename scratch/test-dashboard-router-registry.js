@@ -1,125 +1,104 @@
+'use strict';
+
 /**
- * test-dashboard-router-registry.js
- * Tests that DASHBOARD_TABS registry is complete and consistent.
- * Run: node scratch/test-dashboard-router-registry.js
+ * Dashboard tab registry consistency test.
+ * Public navigation should be stable; internal experimental tabs may exist in
+ * state.js but must stay hidden from the sidebar and direct hash routing.
  */
-var path = require('path');
-var fs = require('fs');
 
-var stateJsPath = path.join(__dirname, '..', 'public', 'dashboard', 'state.js');
-var appJsPath = path.join(__dirname, '..', 'public', 'dashboard', 'app.js');
-var indexHtmlPath = path.join(__dirname, '..', 'public', 'dashboard', 'index.html');
-var stylesCssPath = path.join(__dirname, '..', 'public', 'dashboard', 'styles.css');
-var swJsPath = path.join(__dirname, '..', 'public', 'dashboard', 'service-worker.js');
+const fs = require('fs');
+const path = require('path');
 
-var passed = 0;
-var failed = 0;
+const ROOT = path.join(__dirname, '..');
+const stateJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'state.js'), 'utf8');
+const appJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'app.js'), 'utf8');
+const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
+const stylesCss = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'styles.css'), 'utf8');
+const swJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'service-worker.js'), 'utf8');
+const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'utf8');
+
+let passed = 0;
+let failed = 0;
 
 function assert(condition, msg) {
   if (condition) {
     console.log('  PASS: ' + msg);
-    passed++;
+    passed += 1;
   } else {
     console.error('  FAIL: ' + msg);
-    failed++;
+    failed += 1;
   }
 }
 
-var stateJs = fs.readFileSync(stateJsPath, 'utf-8');
-var appJs = fs.readFileSync(appJsPath, 'utf-8');
-var indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');
-var stylesCss = fs.readFileSync(stylesCssPath, 'utf-8');
-var swJs = fs.readFileSync(swJsPath, 'utf-8');
-
-console.log('\n=== DASHBOARD_TAB Registry Tests ===\n');
-
-// DASHBOARD_TABS exists in state.js
-assert(stateJs.indexOf('const DASHBOARD_TABS') !== -1, 'DASHBOARD_TABS variable defined in state.js');
-assert(stateJs.indexOf('overview') !== -1, 'DASHBOARD_TABS has overview tab');
-
-// Known tabs that must NOT fallback to overview
-var knownTabs = [
+const publicTabs = [
   'overview', 'ops', 'workspaces', 'users', 'permissions',
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
   'graph', 'benchmarks', 'incidents', 'audit', 'commands',
-  'env', 'settings', 'agent-evaluation', 'coding', 'release', 'routines'
+  'env', 'settings', 'agent-evaluation', 'coding', 'release'
 ];
-
-var criticalTabs = ['workspaces', 'agents', 'integrations', 'coding', 'release', 'routines', 'agent-evaluation'];
-
-console.log('\n--- All known tabs present in DASHBOARD_TABS ---\n');
-for (var i = 0; i < knownTabs.length; i++) {
-  var tabKey = knownTabs[i];
-  var quoted = "'" + tabKey + "'";
-  var dblQuoted = '"' + tabKey + '"';
-  var unquoted = tabKey + ':';
-  var found = stateJs.indexOf(quoted) !== -1 || stateJs.indexOf(dblQuoted) !== -1 || stateJs.indexOf(unquoted) !== -1;
-  assert(found, 'Tab "' + tabKey + '" exists in DASHBOARD_TABS');
-}
-
-console.log('\n--- Critical tabs have dedicated render functions ---\n');
-var expectedRenderers = {
+const internalTabs = ['routines', 'selfhealing', 'monitoring', 'cicd'];
+const expectedRenderers = {
   workspaces: 'renderWorkspaces',
   agents: 'renderAgents',
   integrations: 'renderIntegrations',
   coding: 'renderCodingWorkspace',
   release: 'renderRelease',
-  routines: 'renderRoutines',
   'agent-evaluation': 'renderAgentEvaluation'
 };
-var uiJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard', 'ui.js'), 'utf-8');
-for (var tabId in expectedRenderers) {
-  var fnName = expectedRenderers[tabId];
-  assert(uiJs.indexOf(fnName) !== -1, tabId + ' has renderer ' + fnName + ' in ui.js');
+
+console.log('\n=== Dashboard Tab Registry Tests ===\n');
+
+assert(stateJs.includes('const DASHBOARD_TABS'), 'DASHBOARD_TABS variable defined in state.js');
+
+console.log('\n--- Public tabs present in registry and sidebar ---\n');
+for (const tab of publicTabs) {
+  const foundInState = stateJs.includes(`${tab}:`) || stateJs.includes(`'${tab}':`) || stateJs.includes(`"${tab}":`);
+  assert(foundInState, `Public tab "${tab}" exists in DASHBOARD_TABS`);
+  assert(indexHtml.includes(`data-tab="${tab}"`), `Public menu item data-tab="${tab}" exists`);
+  assert(indexHtml.includes(`href="#${tab}"`), `Public menu item href="#${tab}" exists`);
 }
 
-console.log('\n--- Menu items in index.html ---\n');
-for (var j = 0; j < knownTabs.length; j++) {
-  var t = knownTabs[j];
-  var dataTabAttr = 'data-tab="' + t + '"';
-  assert(indexHtml.indexOf(dataTabAttr) !== -1, 'Menu item data-tab="' + t + '" exists');
+console.log('\n--- Internal tabs hidden from public navigation ---\n');
+for (const tab of internalTabs) {
+  const foundInState = stateJs.includes(`${tab}:`) || stateJs.includes(`'${tab}':`) || stateJs.includes(`"${tab}":`);
+  assert(foundInState, `Internal tab "${tab}" remains registered for guarded modules`);
+  assert(!indexHtml.includes(`data-tab="${tab}"`), `Internal tab "${tab}" is absent from sidebar`);
+  assert(!indexHtml.includes(`href="#${tab}"`), `Internal tab "${tab}" hash is absent from sidebar`);
 }
+assert((stateJs.match(/routeEnabled:\s*false/g) || []).length >= internalTabs.length, 'Internal tabs have routeEnabled false');
 
-console.log('\n--- Hash links in index.html ---\n');
-for (var k = 0; k < knownTabs.length; k++) {
-  var tab = knownTabs[k];
-  var hash = 'href="#' + tab + '"';
-  assert(indexHtml.indexOf(hash) !== -1, 'Menu item href="#' + tab + '" exists');
+console.log('\n--- Critical public tabs have render functions ---\n');
+for (const [tabId, fnName] of Object.entries(expectedRenderers)) {
+  assert(uiJs.includes(fnName), `${tabId} has renderer ${fnName} in ui.js`);
 }
 
 console.log('\n--- Dark Form UI Styles ---\n');
-var formSelectors = ['input', 'select', 'textarea', '.form-control', '.dashboard-input', '.dashboard-select', '.dashboard-textarea'];
-for (var s = 0; s < formSelectors.length; s++) {
-  var sel = formSelectors[s];
-  assert(stylesCss.indexOf(sel) !== -1, 'CSS has selector "' + sel + '"');
+for (const selector of ['input', 'select', 'textarea', '.form-control', '.dashboard-input', '.dashboard-select', '.dashboard-textarea']) {
+  assert(stylesCss.includes(selector), `CSS has selector "${selector}"`);
 }
-
-assert(stylesCss.indexOf('background: var(--bg-primary)') !== -1, 'Uses bg-primary for inputs');
-assert(stylesCss.indexOf('var(--color-accent)') !== -1 || stylesCss.indexOf('#3b82f6') !== -1, 'Blue focus state exists');
+assert(stylesCss.includes('background: var(--bg-primary)'), 'Uses bg-primary for inputs');
+assert(stylesCss.includes('var(--color-accent)') || stylesCss.includes('#3b82f6'), 'Blue focus state exists');
 
 console.log('\n--- Router Functions ---\n');
-var routerFuncs = ['normalizeCanonicalTabId', 'findTabId', 'getTabConfig', 'setActiveTab', 'restoreLastTab'];
-for (var r = 0; r < routerFuncs.length; r++) {
-  assert(stateJs.indexOf(routerFuncs[r]) !== -1, 'Router function "' + routerFuncs[r] + '" exists');
+for (const fnName of ['normalizeCanonicalTabId', 'findTabId', 'getTabConfig', 'setActiveTab', 'restoreLastTab', 'isPublicRoutableTab']) {
+  assert(stateJs.includes(fnName), `Router function "${fnName}" exists`);
 }
+assert(appJs.includes("rawHash ? 'overview' : DashboardState.restoreLastTab()"), 'Explicit invalid hashes route to overview');
 
 console.log('\n--- Alias support ---\n');
-assert(stateJs.indexOf('aliases') !== -1, 'aliases field exists in registry');
-assert(stateJs.indexOf('codingworkspace') !== -1, 'Alias codingworkspace exists');
-assert(stateJs.indexOf('coding_workspace') !== -1, 'Alias coding_workspace exists');
-assert(stateJs.indexOf('codingWorkspace') !== -1, 'Alias codingWorkspace exists');
-assert(stateJs.indexOf('release-health') !== -1, 'Alias release-health exists');
-assert(stateJs.indexOf('releasecheck') !== -1, 'Alias releasecheck exists');
+for (const alias of ['codingworkspace', 'coding_workspace', 'codingWorkspace', 'release-health', 'releasecheck']) {
+  assert(stateJs.includes(alias), `Alias ${alias} exists`);
+}
 
 console.log('\n--- Service Worker ---\n');
-assert(swJs.indexOf('/api/dashboard') !== -1, 'SW excludes /api/dashboard from caching');
-assert(swJs.indexOf('CACHE_NAME') !== -1, 'SW has CACHE_NAME');
-assert(swJs.indexOf('network-first') !== -1 || swJs.indexOf('network') !== -1, 'SW has network-first strategy');
+assert(swJs.includes("url.pathname.startsWith('/api/dashboard')"), 'SW excludes /api/dashboard from caching');
+assert(swJs.includes('CACHE_NAME'), 'SW has CACHE_NAME');
+assert(swJs.includes('telegram-aios-dashboard-static-v31-stable-nav'), 'SW cache version bumped');
 
 console.log('\n--- Autofill CSS ---\n');
-assert(stylesCss.indexOf('-webkit-autofill') !== -1, 'Autofill override exists');
-assert(stylesCss.indexOf('-webkit-text-fill-color') !== -1, 'Autofill text color override');
+assert(stylesCss.includes('-webkit-autofill'), 'Autofill override exists');
+assert(stylesCss.includes('-webkit-text-fill-color'), 'Autofill text color override');
 
 console.log('\n----------------------------------------');
 console.log('Total: ' + (passed + failed) + ' | PASS: ' + passed + ' | FAIL: ' + failed + '\n');

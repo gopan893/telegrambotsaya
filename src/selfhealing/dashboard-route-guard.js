@@ -3,17 +3,23 @@
 const utils = require('./selfhealing-utils');
 
 function createDashboardRouteGuard(store, services) {
-  const KNOWN_TABS = [
+  const PUBLIC_TABS = [
     'overview', 'ops', 'workspaces', 'users', 'permissions',
     'memory', 'goals', 'workflows', 'planner', 'executor',
     'agents', 'tools', 'integrations', 'backup', 'insights',
     'graph', 'benchmarks', 'incidents', 'audit', 'commands',
-    'env', 'settings', 'agent-evaluation', 'coding', 'release', 'routines', 'selfhealing'
+    'env', 'settings', 'agent-evaluation', 'coding', 'release'
+  ];
+
+  const INTERNAL_TABS = [
+    'routines', 'selfhealing', 'monitoring', 'cicd'
   ];
 
   const CRITICAL_TABS = [
-    'workspaces', 'agents', 'integrations', 'coding', 'release', 'routines', 'agent-evaluation', 'selfhealing'
+    'workspaces', 'agents', 'integrations', 'coding', 'release', 'agent-evaluation'
   ];
+
+  const KNOWN_TABS = PUBLIC_TABS.concat(INTERNAL_TABS);
 
   async function runDashboardGuardCheck(guard, ctx, svc) {
     switch (guard.id) {
@@ -35,12 +41,15 @@ function createDashboardRouteGuard(store, services) {
   async function checkTabRegistry() {
     const details = [];
     const missing = [];
-    for (const tab of KNOWN_TABS) {
-      details.push('Tab "' + tab + '" registered');
+    for (const tab of PUBLIC_TABS) {
+      details.push('Public tab "' + tab + '" registered');
+    }
+    for (const tab of INTERNAL_TABS) {
+      details.push('Internal tab "' + tab + '" intentionally hidden from public navigation');
     }
     return {
       status: missing.length === 0 ? 'passed' : 'failed',
-      summary: missing.length === 0 ? 'All ' + KNOWN_TABS.length + ' tabs registered' : 'Missing: ' + missing.join(', '),
+      summary: missing.length === 0 ? 'All public dashboard tabs registered; internal tabs hidden' : 'Missing: ' + missing.join(', '),
       details: details.join('\n')
     };
   }
@@ -115,7 +124,7 @@ function createDashboardRouteGuard(store, services) {
     };
   }
 
-  return { runDashboardGuardCheck, KNOWN_TABS, CRITICAL_TABS };
+  return { runDashboardGuardCheck, KNOWN_TABS, PUBLIC_TABS, INTERNAL_TABS, CRITICAL_TABS };
 }
 
 module.exports = { createDashboardRouteGuard };

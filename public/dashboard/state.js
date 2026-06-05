@@ -205,7 +205,9 @@ const DASHBOARD_TABS = {
     label: 'Routines',
     title: 'Routine Center',
     navIcon: '⏰',
-    navVisible: true,
+    navVisible: false,
+    routeEnabled: false,
+    internalOnly: true,
     aliases: ['routine', 'routine-center', 'daily-ops', 'rutinitas'],
     renderer: 'renderRoutines'
   },
@@ -213,7 +215,9 @@ const DASHBOARD_TABS = {
     label: 'Self-Healing',
     title: 'Self-Healing & Regression Guard',
     navIcon: '🛡️',
-    navVisible: true,
+    navVisible: false,
+    routeEnabled: false,
+    internalOnly: true,
     aliases: ['self-healing', 'regression-guard', 'regressionguard', 'repair', 'repair-planner', 'health'],
     renderer: 'renderSelfHealing'
   },
@@ -221,7 +225,9 @@ const DASHBOARD_TABS = {
     label: 'Monitoring',
     title: 'Real-Time Monitoring',
     navIcon: '📡',
-    navVisible: true,
+    navVisible: false,
+    routeEnabled: false,
+    internalOnly: true,
     aliases: ['monitor', 'realtime', 'realtime-monitoring', 'realtime_monitoring'],
     renderer: 'renderMonitoring'
   },
@@ -229,7 +235,9 @@ const DASHBOARD_TABS = {
     label: 'CI/CD',
     title: 'CI/CD Pipeline',
     navIcon: '🔄',
-    navVisible: true,
+    navVisible: false,
+    routeEnabled: false,
+    internalOnly: true,
     aliases: ['ci-cd', 'cicd', 'pipeline', 'deploy'],
     renderer: 'renderCicd'
   }
@@ -300,25 +308,39 @@ const DashboardState = (() => {
     }
   }
 
+  function isPublicRoutableTab(tabId) {
+    const config = DASHBOARD_TABS[tabId];
+    return Boolean(config && config.navVisible !== false && config.routeEnabled !== false && config.internalOnly !== true);
+  }
+
   function getTabConfig(tabId) {
-    return DASHBOARD_TABS[tabId] || null;
+    return isPublicRoutableTab(tabId) ? DASHBOARD_TABS[tabId] : null;
   }
 
   function getTabIds() {
+    return Object.keys(DASHBOARD_TABS).filter(isPublicRoutableTab);
+  }
+
+  function getAllTabIds() {
     return Object.keys(DASHBOARD_TABS);
+  }
+
+  function getInternalTabIds() {
+    return Object.keys(DASHBOARD_TABS).filter(id => !isPublicRoutableTab(id));
   }
 
   function getNavTabs() {
     return Object.entries(DASHBOARD_TABS)
-      .filter(([_, config]) => config.navVisible !== false)
+      .filter(([id]) => isPublicRoutableTab(id))
       .map(([id, config]) => ({ id, ...config }));
   }
 
   function findTabId(hash) {
     const clean = String(hash || '').replace(/^#/, '').trim().toLowerCase();
     if (!clean) return 'overview';
-    if (DASHBOARD_TABS[clean]) return clean;
+    if (isPublicRoutableTab(clean)) return clean;
     for (const [id, config] of Object.entries(DASHBOARD_TABS)) {
+      if (!isPublicRoutableTab(id)) continue;
       if ((config.aliases || []).some(a => a.toLowerCase() === clean)) {
         return id;
       }
@@ -333,7 +355,9 @@ const DashboardState = (() => {
   function restoreLastTab() {
     try {
       const saved = localStorage.getItem('dashboard_last_tab');
-      if (saved && DASHBOARD_TABS[saved]) return saved;
+      const canonical = findTabId(saved);
+      if (canonical && isPublicRoutableTab(canonical)) return canonical;
+      if (saved) localStorage.removeItem('dashboard_last_tab');
     } catch (_) {}
     return 'overview';
   }
@@ -348,8 +372,11 @@ const DashboardState = (() => {
     loadUserPreferences,
     getTabConfig,
     getTabIds,
+    getAllTabIds,
+    getInternalTabIds,
     getNavTabs,
     findTabId,
+    isPublicRoutableTab,
     normalizeCanonicalTabId,
     restoreLastTab
   };

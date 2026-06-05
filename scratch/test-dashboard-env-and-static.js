@@ -43,8 +43,9 @@ function run() {
   const indexHtml = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
   const apiJs = fs.readFileSync(path.join(publicDir, 'api.js'), 'utf8');
 
-  assert(indexHtml.includes('href="/dashboard/styles.css"'));
-  assert(indexHtml.includes('src="/dashboard/app.js"'));
+  assert(/href="\/dashboard\/styles\.css(?:\?[^"]*)?"/.test(indexHtml));
+  assert(/src="\/dashboard\/app\.js(?:\?[^"]*)?"/.test(indexHtml));
+  assert(indexHtml.includes('v=20260605-stable'));
   assert(apiJs.includes("API_BASE = '/api/dashboard'"));
   assert(!/localhost:10000|127\.0\.0\.1|http:\/\/localhost/i.test(apiJs));
   assert(!/localhost:10000|127\.0\.0\.1|http:\/\/localhost/i.test(indexHtml));
