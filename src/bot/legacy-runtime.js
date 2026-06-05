@@ -70,7 +70,11 @@ const config = readEnv();
 try {
   validateConfig(config);
 } catch (err) {
-  throw new Error(`${err.message}.`);
+  const msg = err.message || '';
+  if (msg.includes('TELEGRAM_TOKEN')) {
+    throw new Error(msg + '.');
+  }
+  console.warn('⚠️ ' + msg + '.');
 }
 
 const {
@@ -1283,8 +1287,10 @@ async function initRedis() {
   try {
     redisClient = new RedisClass(REDIS_URL, {
       maxRetriesPerRequest: 2,
-      retryStrategy: (times) => (times > 2 ? null : Math.min(times * 200, 2000))
+      retryStrategy: (times) => (times > 2 ? null : Math.min(times * 200, 2000)),
+      lazyConnect: true
     });
+    redisClient.on('error', () => {});
 
     await redisClient.ping();
     console.log('✅ Redis terhubung.');
