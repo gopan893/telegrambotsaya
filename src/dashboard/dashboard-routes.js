@@ -26,6 +26,8 @@ const agentExecutorRoutes = require('./agent-executor-routes');
 const agentEvaluationRoutes = require('./agent-evaluation-routes');
 const integrationExecutionRoutes = require('./integration-execution-routes');
 const selfhealingRoutes = require('./selfhealing-routes');
+const monitoringRoutes = require('./monitoring-routes');
+const cicdRoutes = require('./cicd-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -337,6 +339,12 @@ function registerDashboardRoutes(app, rawServices = {}) {
   integrationExecutionRoutes.registerIntegrationExecutionRoutes(router, services);
   if (services.selfHealingSystem) {
     selfhealingRoutes.registerSelfHealingRoutes(router, services);
+  }
+  if (services.monitoringSystem) {
+    monitoringRoutes.registerMonitoringRoutes(router, services);
+  }
+  if (services.cicdSystem) {
+    cicdRoutes.registerCicdRoutes(router, services);
   }
 
   router.get('/summary', async (req, res) => {

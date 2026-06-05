@@ -216,6 +216,22 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['self-healing', 'regression-guard', 'regressionguard', 'repair', 'repair-planner', 'health'],
     renderer: 'renderSelfHealing'
+  },
+  monitoring: {
+    label: 'Monitoring',
+    title: 'Real-Time Monitoring',
+    navIcon: '📡',
+    navVisible: true,
+    aliases: ['monitor', 'realtime', 'realtime-monitoring', 'realtime_monitoring'],
+    renderer: 'renderMonitoring'
+  },
+  cicd: {
+    label: 'CI/CD',
+    title: 'CI/CD Pipeline',
+    navIcon: '🔄',
+    navVisible: true,
+    aliases: ['ci-cd', 'cicd', 'pipeline', 'deploy'],
+    renderer: 'renderCicd'
   }
 };
 

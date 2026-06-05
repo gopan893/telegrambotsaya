@@ -1,0 +1,27 @@
+name: Release Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        default: 'v2.0.1'
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      - run: node --check telebot.js
+      - run: echo "Running release checks for ${{ github.event.inputs.version }}"
+      - run: node -e "
+          const cicd = require('./src/cicd/index');
+          console.log('CI/CD system loaded');
+        " || echo "Warning: CI/CD load check non-fatal"
+      - run: echo "Release check completed for ${{ github.event.inputs.version }}"

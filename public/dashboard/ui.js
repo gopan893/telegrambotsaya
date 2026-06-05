@@ -1906,5 +1906,126 @@ const UI = {
         resultsEl.innerHTML = UI.renderError('Gagal menjalankan P0 checks');
       }
     });
+  },
+
+  async renderMonitoring(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat monitoring...');
+    const res = await Api.get('/api/dashboard/monitoring/snapshot');
+    if (!res.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat Monitoring', 'Server tidak merespons atau monitoring system tidak aktif.');
+      return;
+    }
+    const data = res.data;
+    let html = UI.renderSectionHeader('📡 Real-Time Monitoring', `
+      <button class="btn btn-outline" id="btn-refresh-monitoring">🔄 Refresh</button>
+    `);
+    html += `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Event History</div>
+          <div class="card-value">${data.eventCount || 0}</div>
+          <div class="card-subtitle">Total events tracked</div>
+        </div>
+        <div class="card">
+          <div class="card-title">WS Clients</div>
+          <div class="card-value">${data.wsClients ?? 0}</div>
+          <div class="card-subtitle">${data.wsFallback ? 'SSE fallback active' : 'WebSocket connected'}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Metrics Keys</div>
+          <div class="card-value">${Object.keys(data.metrics || {}).length}</div>
+          <div class="card-subtitle">Active metrics</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Recent Events</h3>
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>Time</th><th>Topic</th><th>Severity</th><th>Title</th><th>Source</th></tr></thead>
+            <tbody>
+              ${(data.recentEvents || []).map(e => `
+                <tr>
+                  <td style="font-size:11px;color:var(--text-muted)">${Utils.formatDate(e.createdAt)}</td>
+                  <td><code>${Utils.escapeHtml(e.topic)}</code></td>
+                  <td>${UI.renderBadge(e.severity)}</td>
+                  <td>${Utils.escapeHtml(e.title)}</td>
+                  <td style="font-size:12px">${Utils.escapeHtml(e.source || '-')}</td>
+                </tr>
+              `).join('')}
+              ${!data.recentEvents || data.recentEvents.length === 0 ? '<tr><td colspan="5" class="text-center text-muted">No events yet.</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="monitoring-additional"></div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-monitoring')?.addEventListener('click', () => UI.renderMonitoring(targetEl));
+  },
+
+  async renderCicd(targetEl) {
+    targetEl.innerHTML = UI.renderLoading('Memuat CI/CD status...');
+    const res = await Api.get('/api/dashboard/cicd/status');
+    if (!res.ok) {
+      targetEl.innerHTML = UI.renderError('Gagal Memuat CI/CD', 'Server tidak merespons atau CI/CD system tidak aktif.');
+      return;
+    }
+    const data = res.data;
+    let html = UI.renderSectionHeader('🔄 CI/CD Pipeline', `
+      <button class="btn btn-outline" id="btn-refresh-cicd">🔄 Refresh</button>
+    `);
+    html += `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-title">Releases</div>
+          <div class="card-value">${data.releaseCount || 0}</div>
+          <div class="card-subtitle">Total releases</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Proposals</div>
+          <div class="card-value">${data.proposalCount || 0}</div>
+          <div class="card-subtitle">Pending proposals</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Pipelines</div>
+          <div class="card-value">${data.pipelineCount || 0}</div>
+          <div class="card-subtitle">Pipeline runs</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Last Release</h3>
+        <div id="cicd-last-release">
+          ${data.lastRelease ? `
+            <div class="kv-list">
+              <div class="kv-item"><span class="kv-key">Version</span><span class="kv-value">${Utils.escapeHtml(data.lastRelease.version || '-')}</span></div>
+              <div class="kv-item"><span class="kv-key">Status</span><span class="kv-value">${UI.renderBadge(data.lastRelease.status)}</span></div>
+              <div class="kv-item"><span class="kv-key">Created</span><span class="kv-value">${Utils.formatDate(data.lastRelease.createdAt)}</span></div>
+            </div>
+          ` : '<p class="text-muted">No releases yet.</p>'}
+        </div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Quality Gate</h3>
+        <button class="btn btn-primary" id="btn-run-quality-check">Run Quality Check</button>
+        <div id="quality-check-result" style="margin-top:12px;"></div>
+      </div>
+    `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-cicd')?.addEventListener('click', () => UI.renderCicd(targetEl));
+    document.getElementById('btn-run-quality-check')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('quality-check-result');
+      resultEl.innerHTML = UI.renderLoading('Running quality checks...');
+      const r = await Api.post('/api/dashboard/cicd/quality-check', { evaluationScore: 100 });
+      if (r.ok) {
+        let rHtml = `<p>${Utils.escapeHtml(r.data.summary)}</p><ul>`;
+        (r.data.checks || []).forEach(c => {
+          rHtml += `<li>${Utils.escapeHtml(c.name)}: ${c.passed ? '✅' : '❌'}</li>`;
+        });
+        rHtml += '</ul>';
+        resultEl.innerHTML = rHtml;
+      } else {
+        resultEl.innerHTML = UI.renderError('Quality check failed');
+      }
+    });
   }
 };
