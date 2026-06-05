@@ -107,6 +107,20 @@ function registerDevGovernanceRoutes(router, services) {
     return guards.safeDashboardResponse(res, result);
   });
 
+  devGovRouter.post('/workflow-route', (req, res) => {
+    const { prompt } = req.body || {};
+    if (!prompt) return guards.safeDashboardResponse(res, { ok: false, error: 'Prompt required' }, 400);
+    const decision = devGov.naturalDevWorkflowRouter.routeWorkflow(prompt, { services });
+    return guards.safeDashboardResponse(res, decision);
+  });
+
+  devGovRouter.post('/workflow-summary', (req, res) => {
+    const { prompt } = req.body || {};
+    if (!prompt) return guards.safeDashboardResponse(res, { ok: false, error: 'Prompt required' }, 400);
+    const result = devGov.naturalDevWorkflowRouter.getWorkflowSummary(prompt, { services });
+    return guards.safeDashboardResponse(res, result);
+  });
+
   router.use('/devgovernance', devGovRouter);
 }
 

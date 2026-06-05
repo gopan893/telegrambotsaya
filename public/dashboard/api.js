@@ -984,6 +984,14 @@ const Api = {
 
   async postDevGovernanceNextAgentPrompt(type) {
     return this.apiPost('/devgovernance/next-agent-prompt', { type });
+  },
+
+  async postDevGovernanceWorkflowRoute(prompt) {
+    return this.apiPost('/devgovernance/workflow-route', { prompt });
+  },
+
+  async postDevGovernanceWorkflowSummary(prompt) {
+    return this.apiPost('/devgovernance/workflow-summary', { prompt });
   }
 };
 

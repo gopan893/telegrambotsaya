@@ -14,6 +14,10 @@ const nextAgentPromptGenerator = require('./next-agent-prompt-generator');
 const ciCdGovernanceGate = require('./cicd-governance-gate');
 const store = require('./devgovernance-store');
 const utils = require('./devgovernance-utils');
+const devWorkflowIntentDetector = require('./dev-workflow-intent-detector');
+const devWorkflowPolicy = require('./dev-workflow-policy');
+const devWorkflowPromptBuilder = require('./dev-workflow-prompt-builder');
+const naturalDevWorkflowRouter = require('./natural-dev-workflow-router');
 
 module.exports = {
   contractManager,
@@ -28,6 +32,10 @@ module.exports = {
   testMatrixGenerator,
   nextAgentPromptGenerator,
   ciCdGovernanceGate,
+  devWorkflowIntentDetector,
+  devWorkflowPolicy,
+  devWorkflowPromptBuilder,
+  naturalDevWorkflowRouter,
   store,
   utils
 };

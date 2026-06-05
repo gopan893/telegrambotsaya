@@ -2118,6 +2118,19 @@ const UI = {
           <button id="gov-copy-prompt" class="btn btn-sm btn-outline" style="margin-top:8px; display:none;" onclick="UI._govCopyPrompt()">📋 Copy Prompt</button>
         </div>
       </div>
+      <div class="panel" style="margin-top:16px;">
+        <h3 class="panel-title">Natural Workflow Detector</h3>
+        <p style="margin-bottom:8px;">Ketik prompt biasa untuk mendeteksi workflow intent:</p>
+        <div class="form-group">
+          <textarea id="gov-workflow-prompt" class="form-input" rows="3" placeholder="Contoh: token Codex habis, lanjut OpenCode"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="UI._govDetectWorkflow()">Detect Workflow</button>
+        <div id="gov-workflow-result" style="margin-top:12px;"></div>
+        <div id="gov-workflow-detail" style="margin-top:8px; display:none;">
+          <pre id="gov-workflow-text" style="padding:12px; background:var(--bg-secondary); border-radius:8px; font-size:12px; max-height:300px; overflow:auto; white-space:pre-wrap;"></pre>
+          <button id="gov-copy-workflow" class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="UI._govCopyWorkflow()">📋 Copy Workflow</button>
+        </div>
+      </div>
     `;
     targetEl.innerHTML = html;
   },
@@ -2253,6 +2266,49 @@ const UI = {
     if (!promptEl) return;
     navigator.clipboard.writeText(promptEl.textContent).then(() => {
       Utils.showToast('Prompt copied to clipboard!', 'success');
+    }).catch(() => {
+      Utils.showToast('Failed to copy', 'error');
+    });
+  },
+
+  _govDetectWorkflow: async function() {
+    const el = document.getElementById('gov-workflow-result');
+    const detailEl = document.getElementById('gov-workflow-detail');
+    const textEl = document.getElementById('gov-workflow-text');
+    const prompt = document.getElementById('gov-workflow-prompt')?.value || '';
+    if (!prompt.trim()) {
+      el.innerHTML = '<p style="color:var(--danger);">Masukkan prompt terlebih dahulu.</p>';
+      return;
+    }
+    el.innerHTML = UI.renderLoading('Mendeteksi workflow...');
+    const r = await Api.apiPost('/devgovernance/workflow-route', { prompt });
+    if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
+    const d = r.data;
+    let html = '<div style="margin-top:8px;">';
+    html += '<div class="kv-row"><span class="kv-key">Intent</span><span class="kv-value">' + Utils.escapeHtml(d.intent || 'unknown') + '</span></div>';
+    html += '<div class="kv-row"><span class="kv-key">Confidence</span><span class="kv-value">' + ((d.confidence || 0) * 100).toFixed(0) + '%</span></div>';
+    html += '<div class="kv-row"><span class="kv-key">Mode</span><span class="kv-value">' + Utils.escapeHtml(d.mode || 'audit') + '</span></div>';
+    html += '<div class="kv-row"><span class="kv-key">Recommended Agent</span><span class="kv-value">' + Utils.escapeHtml(d.recommendedAgent || 'opencode') + '</span></div>';
+    html += '<div class="kv-row"><span class="kv-key">Risk Level</span><span class="kv-value">' + Utils.escapeHtml(d.policy?.riskLevel || 'low') + '</span></div>';
+    if (d.tokenExhausted) html += '<p style="color:var(--danger); margin-top:8px;">⚠️ Token exhausted. Recovery mode.</p>';
+    if (d.critical) html += '<p style="color:var(--danger); margin-top:8px;">🔴 P0 critical. Block feature work.</p>';
+    if (d.message) html += '<p style="margin-top:8px;">' + Utils.escapeHtml(d.message) + '</p>';
+    html += '<details style="margin-top:8px;"><summary>Allowed Actions</summary><ul>' + (d.policy?.allowedActions || []).map(a => '<li>✅ ' + Utils.escapeHtml(a) + '</li>').join('') + '</ul></details>';
+    html += '<details style="margin-top:8px;"><summary>Blocked Actions</summary><ul>' + (d.policy?.blockedActions || []).map(a => '<li>🚫 ' + Utils.escapeHtml(a) + '</li>').join('') + '</ul></details>';
+    html += '</div>';
+    el.innerHTML = html;
+    if (d.response?.prompt || d.response?.report || d.response?.steps) {
+      const text = d.response.prompt || d.response.report || (d.response.steps || []).join('\n');
+      textEl.textContent = text;
+      detailEl.style.display = 'block';
+    }
+  },
+
+  _govCopyWorkflow: function() {
+    const textEl = document.getElementById('gov-workflow-text');
+    if (!textEl) return;
+    navigator.clipboard.writeText(textEl.textContent).then(() => {
+      Utils.showToast('Workflow output copied!', 'success');
     }).catch(() => {
       Utils.showToast('Failed to copy', 'error');
     });
