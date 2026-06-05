@@ -350,11 +350,21 @@ function registerDashboardRoutes(app, rawServices = {}) {
 
   routineRoutes.registerRoutineDashboardRoutes(app, services);
 
-  const devGovRoutes = require('./devgovernance-routes');
-  devGovRoutes.registerDevGovernanceRoutes(router, services);
+  try {
+    const devGovRoutes = require('./devgovernance-routes');
+    devGovRoutes.registerDevGovernanceRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] DevGovernance routes skipped:', e.message);
+  }
 
-  const githubOpsRoutes = require('./githubops-routes');
-  githubOpsRoutes.registerGithubOpsRoutes(router, services);
+  try {
+    const githubOpsRoutes = require('./githubops-routes');
+    githubOpsRoutes.registerGithubOpsRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] GithubOps routes skipped:', e.message);
+  }
 
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);

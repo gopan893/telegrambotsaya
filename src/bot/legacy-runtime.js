@@ -9377,24 +9377,28 @@ try {
   log.warn('Routine system skipped:', e.message);
 }
 
-dashboard.registerDashboardRoutes(app, {
-  env: config,
-  storageManager,
-  aiOS,
-  opsSystem,
-  integrationsSystem,
-  getOpsServices,
-  getCalendarClient,
-  ensureUser,
-  getUsersSnapshot,
-  selfHealingSystem,
-  evaluationSystem: evaluationSystem || null,
-  executorSystem: executorSystem || null,
-  monitoringSystem: monitoringSystem || null,
-  cicdSystem: cicdSystem || null,
-  autoHealingSystem: autoHealingSystem || null,
-  logger: log
-});
+try {
+  dashboard.registerDashboardRoutes(app, {
+    env: config,
+    storageManager,
+    aiOS,
+    opsSystem,
+    integrationsSystem,
+    getOpsServices,
+    getCalendarClient,
+    ensureUser,
+    getUsersSnapshot,
+    selfHealingSystem,
+    evaluationSystem: evaluationSystem || null,
+    executorSystem: executorSystem || null,
+    monitoringSystem: monitoringSystem || null,
+    cicdSystem: cicdSystem || null,
+    autoHealingSystem: autoHealingSystem || null,
+    logger: log
+  });
+} catch (e) {
+  log.warn('[dashboard] Dashboard route registration skipped:', e.message);
+}
 
 try {
   const { registerRoutineDashboardRoutes } = require('../dashboard/routine-routes');

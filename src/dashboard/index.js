@@ -29,7 +29,12 @@ const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
 const devGovernanceRoutes = require('./devgovernance-routes');
-const githubOpsRoutes = require('./githubops-routes');
+let githubOpsRoutes;
+try {
+  githubOpsRoutes = require('./githubops-routes');
+} catch (e) {
+  githubOpsRoutes = { registerGithubOpsRoutes: () => {} };
+}
 
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
