@@ -248,6 +248,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['devgov', 'governance', 'dev-governance', 'dev_governance'],
     renderer: 'renderDevGovernance'
+  },
+  githubops: {
+    label: 'GitHub Ops',
+    title: 'GitHub Ops Pipeline',
+    navIcon: '🐙',
+    navVisible: true,
+    aliases: ['github-ops', 'githubops', 'ghops', 'gh-ops'],
+    renderer: 'renderGithubOps'
   }
 };
 

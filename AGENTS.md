@@ -60,7 +60,7 @@ Known dashboard tabs:
 overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, agent-evaluation, coding-workspace, release,
-routines, selfhealing, monitoring, cicd, devgovernance.
+routines, selfhealing, monitoring, cicd, devgovernance, githubops.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.

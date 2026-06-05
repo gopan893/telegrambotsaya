@@ -2312,5 +2312,67 @@ const UI = {
     }).catch(() => {
       Utils.showToast('Failed to copy', 'error');
     });
+  },
+
+  renderGithubOps: async function(targetEl) {
+    const actions = [
+      { key: 'repo', label: '🔍 Check Repo State', action: async () => GITHUBOPS.repoState() },
+      { key: 'manifest', label: '📋 Build Change Manifest', action: async () => GITHUBOPS.changeManifest() },
+      { key: 'scan', label: '🔒 Run Secret Scan', action: async () => GITHUBOPS.runSecretScan() },
+      { key: 'commit', label: '📝 Create Commit Plan', action: async () => GITHUBOPS.createCommitPlan() },
+      { key: 'pushplan', label: '📦 Create Push Plan', action: async () => GITHUBOPS.createPushPlan() },
+      { key: 'proposal', label: '📨 Create Push Proposal', action: async () => GITHUBOPS.createPushProposal() },
+      { key: 'pipeline', label: '🏗️ Run Full Pipeline', action: async () => GITHUBOPS.runFullPipeline() },
+      { key: 'workflows', label: '📜 List Workflows', action: async () => GITHUBOPS.listWorkflows() },
+      { key: 'release', label: '🚦 Check Release Gate', action: async () => GITHUBOPS.getReleaseGate() },
+      { key: 'pushlist', label: '📋 List Push Proposals', action: async () => GITHUBOPS.listPushProposals() },
+      { key: 'wflist', label: '📋 List Workflow Proposals', action: async () => GITHUBOPS.listWorkflowRunProposals() }
+    ];
+
+    let html = '<div class="tab-header"><h2>🐙 GitHub Ops Pipeline</h2></div>';
+    html += '<p style="color:var(--muted); margin-bottom:16px;">Inspect repo state, create proposals, and manage GitHub push/workflow approvals.</p>';
+    html += '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;">';
+
+    for (const a of actions) {
+      html += `<button class="btn btn-outline btn-sm" onclick="UI._ghAction('${a.key}')">${Utils.escapeHtml(a.label)}</button>`;
+    }
+    html += '</div>';
+    html += '<div id="gh-result" style="margin-top:12px; font-family:var(--font-mono); font-size:13px; white-space:pre-wrap;"></div>';
+    targetEl.innerHTML = html;
+  },
+
+  _ghAction: async function(key) {
+    const el = document.getElementById('gh-result');
+    if (!el) return;
+    el.innerHTML = UI.renderLoading('Processing...');
+
+    const actions = {
+      repo: GITHUBOPS.repoState,
+      manifest: GITHUBOPS.changeManifest,
+      scan: GITHUBOPS.runSecretScan,
+      commit: GITHUBOPS.createCommitPlan,
+      pushplan: GITHUBOPS.createPushPlan,
+      proposal: GITHUBOPS.createPushProposal,
+      pipeline: GITHUBOPS.runFullPipeline,
+      workflows: GITHUBOPS.listWorkflows,
+      release: GITHUBOPS.getReleaseGate,
+      pushlist: GITHUBOPS.listPushProposals,
+      wflist: GITHUBOPS.listWorkflowRunProposals
+    };
+
+    const fn = actions[key];
+    if (!fn) { el.innerHTML = UI.renderError('Unknown action'); return; }
+
+    try {
+      const r = await fn();
+      if (!r.ok) {
+        el.innerHTML = UI.renderError('Error', r.error || 'Request failed');
+        return;
+      }
+      const data = r.data || r;
+      el.innerHTML = '<pre style="background:var(--bg-secondary); padding:12px; border-radius:6px; overflow-x:auto; max-height:60vh;">' + Utils.escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
+    } catch (e) {
+      el.innerHTML = UI.renderError('Exception', e.message);
+    }
   }
 };

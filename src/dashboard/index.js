@@ -29,6 +29,7 @@ const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
 const devGovernanceRoutes = require('./devgovernance-routes');
+const githubOpsRoutes = require('./githubops-routes');
 
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
@@ -60,6 +61,7 @@ module.exports = {
   cicdRoutes,
   routineRoutes,
   devGovernanceRoutes,
+  githubOpsRoutes,
   utils,
   actions: require('./dashboard-actions')
 };

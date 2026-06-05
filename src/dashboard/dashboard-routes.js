@@ -353,6 +353,9 @@ function registerDashboardRoutes(app, rawServices = {}) {
   const devGovRoutes = require('./devgovernance-routes');
   devGovRoutes.registerDevGovernanceRoutes(router, services);
 
+  const githubOpsRoutes = require('./githubops-routes');
+  githubOpsRoutes.registerGithubOpsRoutes(router, services);
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);
