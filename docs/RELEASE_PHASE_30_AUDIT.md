@@ -7,14 +7,13 @@ Tanggal audit: 2026-06-05
 Dashboard production menampilkan beberapa halaman yang belum layak menjadi menu utama:
 
 - `Routines`
-- `Self-Healing`
 - `Monitoring`
 - `CI/CD`
 
 Penyebabnya:
 
 1. `public/dashboard/index.html` mengekspos tab internal sebagai item sidebar.
-2. `public/dashboard/state.js` menandai tab internal sebagai `navVisible: true`, sehingga hash seperti `#selfhealing` tetap dianggap route normal.
+2. `public/dashboard/state.js` menandai tab internal sebagai `navVisible: true`, sehingga hash seperti `#monitoring` tetap dianggap route normal.
 3. `dashboard_last_tab` dari `localStorage` bisa memulihkan tab internal lama setelah reload.
 4. `realtime-monitoring.js` dan `cicd.js` dimuat di shell utama, padahal modul tersebut masih eksperimental dan bergantung pada service runtime khusus.
 5. Service worker memakai cache lama, sehingga browser mobile/PWA dapat terus menyajikan asset dashboard sebelum fix.
@@ -47,8 +46,9 @@ Penyebabnya:
    - Agent Evaluation
    - Coding Workspace
    - Release
+   - Self-Healing
 
-2. Tab internal tetap ada di registry untuk kompatibilitas modul, tetapi diberi:
+2. Tab internal yang belum siap tetap ada di registry untuk kompatibilitas modul, tetapi diberi:
    - `navVisible: false`
    - `routeEnabled: false`
    - `internalOnly: true`
@@ -71,12 +71,13 @@ Penyebabnya:
 Backend dan modul internal tidak dihapus:
 
 - `src/dashboard/routine-routes.js`
-- `src/dashboard/selfhealing-routes.js`
 - `src/dashboard/monitoring-routes.js`
 - `src/dashboard/cicd-routes.js`
-- modul `src/routines`, `src/selfhealing`, `src/monitoring`, dan `src/cicd`
+- modul `src/routines`, `src/monitoring`, dan `src/cicd`
 
 Ini sengaja agar fitur tersebut tetap bisa dimatangkan nanti tanpa memutus kompatibilitas fase sebelumnya.
+
+Catatan Phase 32: `Self-Healing` sudah dipromosikan menjadi tab stabil karena panelnya read-only/proposal-only dan diperlukan untuk regression guard.
 
 ## Risiko Deployment
 

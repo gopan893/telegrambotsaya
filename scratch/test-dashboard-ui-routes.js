@@ -8,7 +8,7 @@ const { registerDashboardRoutes } = require('../src/dashboard/dashboard-routes')
 function listen(app) {
   const server = http.createServer(app);
   return new Promise((resolve) => {
-    server.listen(0, () => resolve(server));
+    server.listen(0, '127.0.0.1', () => resolve(server));
   });
 }
 

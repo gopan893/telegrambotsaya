@@ -102,6 +102,21 @@ Phase 25 menambahkan action-aware natural chat. Pesan seperti `jalankan backup s
 | `/evalgates` | Lihat status quality gates evaluation v2. |
 | `/evalcompare` | Bandingkan dua evaluation run terakhir dan tampilkan regresi. |
 
+## Self-Healing & Regression Guard
+
+| Command | Fungsi |
+| --- | --- |
+| `/selfheal` | Status Self-Healing Ops, dashboard URL, dan command yang tersedia. |
+| `/healthcheck` | Jalankan guard suite ringan untuk dashboard, natural chat, executor, integration gate, storage, security, dan PWA. |
+| `/regressioncheck` | Jalankan guard P0/P1 untuk regresi kritis. |
+| `/dashboardcheck` | Cek registry/routing dashboard agar tab stabil tidak fallback ke Overview dan tab internal tetap tersembunyi. |
+| `/repairplans` | Daftar repair plan terbaru dari guard failure. |
+| `/repairplan <planId>` | Detail repair plan, severity, kategori, dan suggested repair. |
+| `/repairprompt <planId>` | Generate prompt perbaikan untuk Codex/Hermes, admin-only. |
+| `/propose_repair <planId>` | Buat executor proposal dari repair plan, admin-only. Proposal tidak dijalankan otomatis. |
+
+Self-Healing tidak menjalankan shell, tidak mengubah repo dari runtime bot, dan tidak melakukan auto-repair. Guard check bersifat read-only; repair prompt/proposal hanya menyiapkan langkah perbaikan yang tetap harus melalui approval executor.
+
 ## Approved External Integrations
 
 | Command | Fungsi |

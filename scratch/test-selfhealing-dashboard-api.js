@@ -28,14 +28,16 @@ assert(stateJs.indexOf('renderSelfHealing') >= 0, 'state.js references renderSel
 assert(stateJs.indexOf('self-healing') >= 0, 'state.js has self-healing alias');
 assert(stateJs.indexOf('regression-guard') >= 0, 'state.js has regression-guard alias');
 
-// Check index.html keeps self-healing out of public navigation
+// Check index.html exposes self-healing as the Phase 32 stable panel
 var indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard', 'index.html'), 'utf-8');
-assert(indexHtml.indexOf('data-tab="selfhealing"') === -1, 'index.html does not show selfhealing menu item');
-assert(indexHtml.indexOf('href="#selfhealing"') === -1, 'index.html does not show selfhealing hash link');
+assert(indexHtml.indexOf('data-tab="selfhealing"') >= 0, 'index.html has selfhealing menu item');
+assert(indexHtml.indexOf('href="#selfhealing"') >= 0, 'index.html has selfhealing hash link');
 
 // Check ui.js has renderSelfHealing
 var uiJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard', 'ui.js'), 'utf-8');
 assert(uiJs.indexOf('renderSelfHealing') >= 0, 'ui.js has renderSelfHealing function');
+assert(uiJs.indexOf("Api.apiGet('/selfhealing')") >= 0, 'renderSelfHealing uses dashboard API client relative GET');
+assert(uiJs.indexOf("Api.apiPost('/selfhealing/run'") >= 0, 'renderSelfHealing uses dashboard API client relative POST');
 
 // Check selfhealing route guards are registered in dashboard-routes
 var dbRoutes = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard', 'dashboard-routes.js'), 'utf-8');

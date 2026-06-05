@@ -35,15 +35,16 @@ const publicTabs = [
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
   'graph', 'benchmarks', 'incidents', 'audit', 'commands',
-  'env', 'settings', 'agent-evaluation', 'coding', 'release'
+  'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing'
 ];
-const internalTabs = ['routines', 'selfhealing', 'monitoring', 'cicd'];
+const internalTabs = ['routines', 'monitoring', 'cicd'];
 const expectedRenderers = {
   workspaces: 'renderWorkspaces',
   agents: 'renderAgents',
   integrations: 'renderIntegrations',
   coding: 'renderCodingWorkspace',
   release: 'renderRelease',
+  selfhealing: 'renderSelfHealing',
   'agent-evaluation': 'renderAgentEvaluation'
 };
 

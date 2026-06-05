@@ -14,7 +14,13 @@ function createStore(storageManager) {
   async function getCollection(key) {
     if (!storageManager) return [];
     try {
-      const raw = await storageManager.get(key);
+      const raw = storageManager.safeRead
+        ? await storageManager.safeRead(key, [])
+        : storageManager.loadData
+          ? await storageManager.loadData(key, [])
+          : storageManager.get
+            ? await storageManager.get(key)
+            : [];
       return Array.isArray(raw) ? raw : [];
     } catch (_) {
       return [];
@@ -24,7 +30,10 @@ function createStore(storageManager) {
   async function saveCollection(key, data) {
     if (!storageManager) return false;
     try {
-      await storageManager.set(key, data);
+      if (storageManager.safeWrite) await storageManager.safeWrite(key, data);
+      else if (storageManager.saveData) await storageManager.saveData(key, data);
+      else if (storageManager.set) await storageManager.set(key, data);
+      else return false;
       return true;
     } catch (_) {
       return false;

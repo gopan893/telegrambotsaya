@@ -4900,6 +4900,178 @@ async function buildWorkspacesText(userId) {
   ].join('\n');
 }
 
+function formatSelfHealingRunSummary(result = {}) {
+  const rows = (result.results || []).slice(0, 12).map(run => {
+    return `- ${run.status} | ${run.severity || '-'} | ${run.guardId || '-'} | ${run.summary || '-'}`;
+  });
+  return [
+    result.summary || 'Self-healing check selesai.',
+    '',
+    rows.length ? rows.join('\n') : 'Tidak ada guard result.',
+    '',
+    'Repair bersifat plan/proposal saja. Tidak ada auto-repair.'
+  ].join('\n');
+}
+
+function formatRepairPlanBrief(plan = {}) {
+  return [
+    `${plan.id || '-'} | ${plan.status || 'draft'} | risk=${plan.riskLevel || '-'}`,
+    plan.title || 'Untitled repair plan',
+    `Area: ${(plan.affectedAreas || []).join(', ') || '-'}`,
+    `Approval: ${plan.requiresApproval ? 'required' : 'not required'}`
+  ].join('\n');
+}
+
+async function handleSelfHealingCommands(chatId, userId, cmd, args, msg) {
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  const commands = new Set([
+    '/selfheal',
+    '/healthcheck',
+    '/regressioncheck',
+    '/dashboardcheck',
+    '/repairplans',
+    '/repairplan',
+    '/repairprompt',
+    '/propose_repair'
+  ]);
+  if (!commands.has(cmd)) return false;
+
+  if (!selfHealingSystem) {
+    await sendChunkedMessage(chatId, 'Self-Healing system belum tersedia di runtime ini. Bot tetap berjalan normal.', replyOpt);
+    return true;
+  }
+
+  const ctx = { workspaceId: '', userId };
+
+  if (cmd === '/selfheal') {
+    const guards = await selfHealingSystem.store.getGuards();
+    const plans = await selfHealingSystem.store.getRepairPlans();
+    await sendChunkedMessage(chatId, [
+      'Self-Healing / Regression Guard',
+      '',
+      `Guards: ${guards.length}`,
+      `Repair plans: ${plans.length}`,
+      `Dashboard: ${WEBHOOK_URL ? `${WEBHOOK_URL.replace(/\/$/, '')}/dashboard#selfhealing` : '/dashboard#selfhealing'}`,
+      '',
+      'Commands:',
+      '/healthcheck - run semua guard read-only',
+      '/regressioncheck - run P0/critical guard',
+      '/dashboardcheck - run dashboard route guard',
+      '/repairplans - daftar repair plan',
+      '/repairplan <id> - detail repair plan',
+      '/repairprompt <id> - generate prompt repair',
+      '/propose_repair <id> - buat executor proposal, tidak auto-run',
+      '',
+      'Catatan: tidak ada shell executor, auto-approve, atau auto-repair.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/healthcheck') {
+    const result = await selfHealingSystem.runAllChecks(ctx);
+    await sendChunkedMessage(chatId, `Health Check Suite\n\n${formatSelfHealingRunSummary(result)}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/regressioncheck') {
+    const result = await selfHealingSystem.runP0Checks(ctx);
+    await sendChunkedMessage(chatId, `P0 Regression Check\n\n${formatSelfHealingRunSummary(result)}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/dashboardcheck') {
+    const result = await selfHealingSystem.healthCheckSuite.runHealthCheckSuite({ category: 'dashboard' }, ctx);
+    await sendChunkedMessage(chatId, `Dashboard Route Guard\n\n${formatSelfHealingRunSummary(result)}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/repairplans') {
+    const plans = (await selfHealingSystem.store.getRepairPlans()).slice(-10).reverse();
+    const body = plans.length ? plans.map(formatRepairPlanBrief).join('\n\n') : 'Belum ada repair plan.';
+    await sendChunkedMessage(chatId, `Repair Plans\n\n${body}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/repairplan') {
+    const planId = String(args || '').trim();
+    if (!planId) {
+      await sendChunkedMessage(chatId, 'Contoh: /repairplan rp_xxx', replyOpt);
+      return true;
+    }
+    const plan = await selfHealingSystem.store.getRepairPlan(planId);
+    if (!plan) {
+      await sendChunkedMessage(chatId, `Repair plan tidak ditemukan: ${planId}`, replyOpt);
+      return true;
+    }
+    await sendChunkedMessage(chatId, [
+      'Repair Plan Detail',
+      '',
+      formatRepairPlanBrief(plan),
+      '',
+      `Problem: ${plan.problemSummary || '-'}`,
+      `Root cause hypothesis: ${plan.suspectedRootCause || '-'}`,
+      '',
+      'Files:',
+      (plan.filesLikelyAffected || []).map(file => `- ${file}`).join('\n') || '-',
+      '',
+      'Tests:',
+      (plan.testsToRun || []).map(test => `- ${test}`).join('\n') || '-'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/repairprompt') {
+    if (!isAdmin(userId)) {
+      await sendChunkedMessage(chatId, 'Generate repair prompt hanya untuk admin/owner.', replyOpt);
+      return true;
+    }
+    const planId = String(args || '').trim();
+    if (!planId) {
+      await sendChunkedMessage(chatId, 'Contoh: /repairprompt rp_xxx', replyOpt);
+      return true;
+    }
+    const plan = await selfHealingSystem.store.getRepairPlan(planId);
+    if (!plan) {
+      await sendChunkedMessage(chatId, `Repair plan tidak ditemukan: ${planId}`, replyOpt);
+      return true;
+    }
+    const prompt = selfHealingSystem.repairPromptGenerator.generateCodexRepairPrompt(plan);
+    plan.codexPrompt = prompt;
+    plan.status = 'prompt_ready';
+    await selfHealingSystem.store.saveRepairPlan(plan);
+    await selfHealingSystem.store.savePrompt({ repairPlanId: plan.id, type: 'codex', prompt });
+    await sendChunkedMessage(chatId, `Codex Repair Prompt\n\n${prompt}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_repair') {
+    if (!isAdmin(userId)) {
+      await sendChunkedMessage(chatId, 'Repair proposal hanya untuk admin/owner.', replyOpt);
+      return true;
+    }
+    const planId = String(args || '').trim();
+    if (!planId) {
+      await sendChunkedMessage(chatId, 'Contoh: /propose_repair rp_xxx', replyOpt);
+      return true;
+    }
+    const result = await selfHealingSystem.repairProposalBridge.createRepairExecutorProposal(planId, {
+      workspaceId: '',
+      userId,
+      evaluationSystem: evaluationSystem || null
+    });
+    await sendChunkedMessage(chatId, result.ok ? [
+      'Repair proposal dibuat.',
+      `Proposal ID: ${result.proposalId || '-'}`,
+      `Approval required: ${result.requiresApproval ? 'yes' : 'no'}`,
+      '',
+      'Belum dijalankan. Gunakan /approve lalu /runexec sesuai flow executor.'
+    ].join('\n') : `Gagal membuat repair proposal: ${result.error || result.reason || 'unknown'}`, replyOpt);
+    return true;
+  }
+
+  return false;
+}
+
 async function handleAiosCommands(chatId, userId, cmd, args, msg) {
   const services = getAiosServices();
   const replyOpt = { reply_to_message_id: msg.message_id };
@@ -7811,6 +7983,14 @@ async function handleHelp(chatId, msg) {
 /dbstatus - status PostgreSQL/storage
 /redisstatus - status Redis/cache
 /audit [recent] - ringkasan audit dashboard [admin]
+/selfheal - status Self-Healing / Regression Guard
+/healthcheck - run semua guard read-only
+/regressioncheck - run P0/critical regression guard
+/dashboardcheck - run dashboard route guard
+/repairplans - daftar repair plan
+/repairplan id - detail repair plan
+/repairprompt id - generate Codex repair prompt [admin]
+/propose_repair id - buat executor proposal, tidak auto-run [admin]
 /whoami - identitas user dan role workspace
 /workspace - workspace aktif dan permission
 /workspaces - daftar workspace yang bisa diakses
@@ -8087,6 +8267,14 @@ function isUnknownCommand(cmd) {
     '/nextcodex',
     '/nextopencode',
     '/p0prompt',
+    '/selfheal',
+    '/healthcheck',
+    '/regressioncheck',
+    '/dashboardcheck',
+    '/repairplans',
+    '/repairplan',
+    '/repairprompt',
+    '/propose_repair',
     '/whoami',
     '/workspaces',
     '/belajar',
@@ -9654,6 +9842,7 @@ await withUserActionLock(userId, async () => {
   if (resolvedCmd === '/improve') { await handleImproveStatus(chatId, userId, msg); return; }
   if (await handleAdaptiveCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleSelfHealingCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAgentCommands(chatId, userId, resolvedCmd, args, msg)) return;

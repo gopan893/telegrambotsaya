@@ -112,11 +112,15 @@ function createHealthCheckSuite(store, services) {
       return { status: 'warning', summary: 'Storage manager not available', details: '' };
     }
     try {
-      const health = await services.storageManager.getStorageHealth();
-      const redisOk = health?.redis?.available;
+      const health = services.storageManager.getStorageStatus
+        ? services.storageManager.getStorageStatus()
+        : services.storageManager.healthCheck
+          ? await services.storageManager.healthCheck()
+          : {};
+      const redisOk = Boolean(health?.redis?.available || health?.redisAvailable || health?.redis === 'available');
       return {
-        status: redisOk ? 'passed' : 'failed',
-        summary: redisOk ? 'Redis connected' : 'Redis disconnected',
+        status: redisOk ? 'passed' : 'warning',
+        summary: redisOk ? 'Redis connected' : 'Redis unavailable or not configured',
         details: JSON.stringify(utils.sanitizeOutput(health || {}))
       };
     } catch (e) {

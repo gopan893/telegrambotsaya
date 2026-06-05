@@ -215,9 +215,7 @@ const DASHBOARD_TABS = {
     label: 'Self-Healing',
     title: 'Self-Healing & Regression Guard',
     navIcon: '🛡️',
-    navVisible: false,
-    routeEnabled: false,
-    internalOnly: true,
+    navVisible: true,
     aliases: ['self-healing', 'regression-guard', 'regressionguard', 'repair', 'repair-planner', 'health'],
     renderer: 'renderSelfHealing'
   },

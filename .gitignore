@@ -18,9 +18,15 @@ knowledge.json
 lessons.json
 user_memory.json
 rel_*.json
+regression_guards.json
+regression_guard_runs.json
+selfhealing_repair_plans.json
+selfhealing_repair_prompts.json
+selfhealing_proposals.json
 
 # File lokal sementara.
 *.log
 *.tmp
+scratch/.devgovernance/
 FULL_*.txt
 *.tar.gz

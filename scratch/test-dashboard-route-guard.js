@@ -25,9 +25,9 @@ assert(guard.KNOWN_TABS.indexOf('workspaces') >= 0, 'KNOWN_TABS contains workspa
 assert(guard.KNOWN_TABS.indexOf('overview') >= 0, 'KNOWN_TABS contains overview');
 assert(guard.KNOWN_TABS.indexOf('selfhealing') >= 0, 'KNOWN_TABS contains selfhealing');
 assert(Array.isArray(guard.PUBLIC_TABS), 'PUBLIC_TABS is array');
-assert(guard.PUBLIC_TABS.indexOf('selfhealing') === -1, 'selfhealing is not a public tab');
+assert(guard.PUBLIC_TABS.indexOf('selfhealing') >= 0, 'selfhealing is a public tab');
 assert(Array.isArray(guard.INTERNAL_TABS), 'INTERNAL_TABS is array');
-assert(guard.INTERNAL_TABS.indexOf('selfhealing') >= 0, 'selfhealing is an internal tab');
+assert(guard.INTERNAL_TABS.indexOf('selfhealing') === -1, 'selfhealing is not an internal tab');
 assert(Array.isArray(guard.CRITICAL_TABS), 'CRITICAL_TABS is array');
 
 // Test tab registry check

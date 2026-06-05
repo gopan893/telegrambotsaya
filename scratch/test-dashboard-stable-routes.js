@@ -26,10 +26,11 @@ const publicTabs = [
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
   'graph', 'benchmarks', 'incidents', 'audit', 'commands',
-  'env', 'settings', 'agent-evaluation', 'coding', 'release'
+  'env', 'settings', 'agent-evaluation', 'coding', 'release',
+  'selfhealing'
 ];
 
-const internalTabs = ['routines', 'selfhealing', 'monitoring', 'cicd'];
+const internalTabs = ['routines', 'monitoring', 'cicd'];
 
 let passed = 0;
 let failed = 0;
@@ -87,6 +88,7 @@ test('DashboardState refuses direct routing to internal tabs', () => {
   for (const tab of internalTabs) {
     assert.strictEqual(DashboardState.findTabId(tab), null, `${tab} should not resolve as public tab`);
   }
+  assert.strictEqual(DashboardState.findTabId('selfhealing'), 'selfhealing', 'selfhealing is a stable public Phase 32 tab');
   assert.strictEqual(DashboardState.findTabId('agents'), 'agents', 'agents remains routable');
 });
 

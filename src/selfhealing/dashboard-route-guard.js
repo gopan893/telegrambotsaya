@@ -8,15 +8,15 @@ function createDashboardRouteGuard(store, services) {
     'memory', 'goals', 'workflows', 'planner', 'executor',
     'agents', 'tools', 'integrations', 'backup', 'insights',
     'graph', 'benchmarks', 'incidents', 'audit', 'commands',
-    'env', 'settings', 'agent-evaluation', 'coding', 'release'
+    'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing'
   ];
 
   const INTERNAL_TABS = [
-    'routines', 'selfhealing', 'monitoring', 'cicd'
+    'routines', 'monitoring', 'cicd'
   ];
 
   const CRITICAL_TABS = [
-    'workspaces', 'agents', 'integrations', 'coding', 'release', 'agent-evaluation'
+    'workspaces', 'agents', 'integrations', 'coding', 'release', 'agent-evaluation', 'selfhealing'
   ];
 
   const KNOWN_TABS = PUBLIC_TABS.concat(INTERNAL_TABS);

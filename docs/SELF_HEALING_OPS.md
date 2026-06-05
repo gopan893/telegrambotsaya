@@ -1,7 +1,7 @@
 # Self-Healing Ops System
 
 ## Overview
-Self-Healing Ops adalah sistem monitoring dan regression guard untuk Telegram AI OS Dashboard. Sistem ini mendeteksi regresi pada dashboard routing, natural chat, executor safety, integration gates, dan coding workspace, lalu menghasilkan repair plan dan prompt perbaikan secara aman (read-only).
+Self-Healing Ops adalah sistem monitoring dan regression guard untuk Telegram AI OS Dashboard. Sistem ini mendeteksi regresi pada dashboard routing, natural chat, executor safety, integration gates, dan coding workspace, lalu menghasilkan repair plan, prompt perbaikan, dan executor proposal secara aman tanpa auto-repair.
 
 ## What It Does
 - Menjalankan health check suite terhadap 11 kategori guard
@@ -48,7 +48,7 @@ Self-Healing Ops adalah sistem monitoring dan regression guard untuk Telegram AI
 5. Menunggu approval → executed atau rejected
 
 ## Dashboard Tab
-Modul dashboard Self-Healing tersedia sebagai modul internal/protected. Pada stable public dashboard, tab ini tidak ditampilkan di sidebar dan hash `#selfhealing` diarahkan kembali ke Overview sampai UX modul siap dirilis sebagai halaman normal.
+Dashboard tersedia di tab **Self-Healing** atau via URL `#selfhealing`. Panel ini hanya menjalankan guard check read-only, membuat repair plan/prompt, dan membuat executor proposal jika diminta; tidak ada auto-repair atau mutasi repo langsung.
 
 ## Telegram Commands
 - `/selfheal` – Jalankan self-healing check
@@ -60,11 +60,12 @@ Modul dashboard Self-Healing tersedia sebagai modul internal/protected. Pada sta
 - `/propose_repair <id>` – Buat executor proposal
 
 ## Security
-- Read-only checks
+- Guard check bersifat read-only
 - No secrets in output
 - Sanitized responses
 - Rate-limited guard runs
 - Evaluation v2 gate before external proposals
+- Repair proposal tidak menjalankan aksi apa pun sebelum approval executor
 
 ## Phase 33 Recommendation
 - Add auto-healing with human approval loop

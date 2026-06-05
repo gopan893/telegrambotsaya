@@ -41,7 +41,9 @@ function registerSelfHealingRoutes(router, services = {}) {
     if (category) filters.category = category;
     if (severity) filters.severity = severity;
     if (enabled !== undefined) filters.enabled = enabled;
-    const result = await selfHealing.runAllChecks({ workspaceId: req.body?.workspaceId || '' });
+    const result = Object.keys(filters).length > 0
+      ? await selfHealing.healthCheckSuite.runHealthCheckSuite(filters, { workspaceId: req.body?.workspaceId || '' })
+      : await selfHealing.runAllChecks({ workspaceId: req.body?.workspaceId || '' });
     return guards.safeDashboardResponse(res, { ok: true, ...result });
   });
 
