@@ -16,6 +16,91 @@ Codex
 2026-06-07
 
 ### Current Task
+Phase 41 — Multi-Project Portfolio Manager + Priority Intelligence.
+
+### Files Changed
+- `src/portfolio/*` — added portfolio scanner, health scorer, priority engine, dependency/staleness/risk/cost reviews, strategy planner, next action engine, report generator, proposal bridge, store, utils, and index export.
+- `src/dashboard/portfolio-routes.js` — added protected Portfolio API routes with safe degraded error handling.
+- `public/dashboard/portfolio.js` — added vanilla dashboard Portfolio renderer.
+- `public/dashboard/state.js`, `public/dashboard/index.html`, `public/dashboard/api.js`, `public/dashboard/service-worker.js` — registered Portfolio tab/API helpers and cache-busted assets.
+- `src/bot/legacy-runtime.js` — added Portfolio services, Telegram commands, natural portfolio routing, and dashboard service injection.
+- `src/agents/eval/evaluation-golden-cases.js`, `src/agents/eval/evaluation-quality-gates.js`, `src/agents/eval/evaluation-scorer-v2.js` — added Portfolio safety/priority/dependency evaluation coverage.
+- `docs/MULTI_PROJECT_PORTFOLIO_MANAGER.md`, `docs/PRIORITY_INTELLIGENCE.md`, `docs/PORTFOLIO_SECURITY.md`, `docs/PORTFOLIO_DASHBOARD.md` — added Phase 41 docs.
+- `AGENTS.md`, `docs/ARCHITECTURE_MAP.md`, `docs/INTEGRATION_CONTRACT.md`, `docs/TESTING.md`, `docs/COMMANDS.md`, `README.md` — updated governance, route, command, and test documentation.
+
+### What Was Completed
+- Portfolio snapshot scans active goals, open tasks, pending approvals, incidents, deploy/GitHubOps status, and cost fallback.
+- Project health and priority engines rank projects without executing actions.
+- Stale/dependency/risk/cost modules produce read-only recommendations.
+- Portfolio dashboard tab has metrics, ranking, risk/cost/dependency/stale panels, weekly report, and safe action buttons.
+- Portfolio Telegram commands and natural chat routing are added.
+- Push/deploy/write/external portfolio requests are proposal-only and Evaluation v2 gated.
+
+### What Is Unfinished
+- Project Operator Phase 40 and Cost Guard Phase 38 folders are absent in this repo; Portfolio uses safe fallback integrations.
+- Dependency detection remains heuristic.
+- Live Render/mobile verification still requires deploy.
+
+### Tests Run
+| Test | Result |
+|---|---|
+| `node --check telebot.js` | PASS |
+| `node --check src/bot/legacy-runtime.js` | PASS |
+| `node --check src/dashboard/dashboard-routes.js` | PASS |
+| `node --check src/dashboard/portfolio-routes.js` | PASS |
+| `node --check src/portfolio/*.js` | PASS |
+| `node --check public/dashboard/portfolio.js` | PASS |
+| `node --check public/dashboard/api.js` | PASS |
+| `node --check public/dashboard/service-worker.js` | PASS |
+| `node scratch/test-portfolio-scanner.js` | PASS |
+| `node scratch/test-project-health-scorer.js` | PASS |
+| `node scratch/test-project-priority-engine.js` | PASS |
+| `node scratch/test-project-dependency-detector.js` | PASS |
+| `node scratch/test-project-staleness-detector.js` | PASS |
+| `node scratch/test-portfolio-risk-review.js` | PASS |
+| `node scratch/test-portfolio-cost-review.js` | PASS |
+| `node scratch/test-portfolio-strategy-planner.js` | PASS |
+| `node scratch/test-portfolio-next-action-engine.js` | PASS |
+| `node scratch/test-portfolio-proposal-bridge.js` | PASS |
+| `node scratch/test-portfolio-dashboard-api.js` | PASS |
+| `node scratch/test-phase41-portfolio-regression.js` | PASS |
+| `node scratch/test-agent-quality-gates.js` | PASS |
+| `node scratch/test-agent-evaluation-v2.js` | PASS |
+| `node scratch/test-dashboard-router-registry.js` | PASS |
+| `node scratch/test-dashboard-all-menu-routes.js` | PASS |
+| `node scratch/test-dashboard-stable-routes.js` | PASS |
+| `node scratch/test-dashboard-env-and-static.js` | PASS |
+| `node scratch/test-dashboard-usable-pages.js` | PASS |
+| `node scratch/test-pwa-assets.js` | PASS |
+| `node scratch/test-executor-boundary-stable-release.js` | PASS |
+| `node scratch/test-integration-gate-stable-release.js` | PASS |
+| `node scratch/test-natural-chat-stable-release.js` | PASS |
+| `node scratch/test-file-analysis-leak.js` | PASS |
+| `node scratch/test-visible-multibot-replies.js` | PASS |
+| `node scratch/test-short-followup-context.js` | PASS |
+| `git diff --check` | PASS |
+| `npm start` smoke with dummy env + JSON fallback | PASS |
+
+### Next Safe Task for Codex
+```
+1. Deploy current branch to Render.
+2. Open `/dashboard#portfolio`.
+3. Run `/portfolio`, `/nextproject`, `/portfolio_next`, `/weeklyplan`, and `/portfolio_proposal` from owner/admin Telegram.
+4. Confirm `/portfolio_proposal` creates proposal only, then requires `/approve` and `/runexec`.
+```
+
+### Recommended Next Branch/Commit
+Commit message: `portfolio: add multi project priority intelligence`
+
+---
+
+### Last Agent
+Codex
+
+### Date
+2026-06-07
+
+### Current Task
 Dashboard usability audit and repair after production pages showed blank/error states.
 
 ### Files Changed

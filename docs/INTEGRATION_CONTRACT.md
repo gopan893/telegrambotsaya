@@ -59,6 +59,23 @@ Production incident repair/rollback actions MUST follow:
 
 No direct repair, rollback, deploy, shell, or external write action may run from observability detection or dashboard analysis.
 
+## Portfolio Contract
+
+Portfolio Manager actions MUST follow:
+
+1. portfolio scan/ranking/report as read-only
+2. dependency/staleness/risk/cost review as read-only
+3. strategy plan creation as read-only
+4. if write/external/danger action is needed, create action plan only
+5. Evaluation v2 gate
+6. executor proposal
+7. approval
+8. run
+
+No direct GitHub push, workflow dispatch, Render deploy, rollback, shell, repo mutation, or hard delete may run from Portfolio routes, Telegram commands, or natural chat.
+
+Dashboard tab `portfolio` must have menu item, registry entry, `public/dashboard/portfolio.js` renderer, protected API route, and route tests.
+
 ## Module Creation Contract
 
 Before creating a new file/module:

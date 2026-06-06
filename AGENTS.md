@@ -60,7 +60,7 @@ Known dashboard tabs:
 overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
-routines, selfhealing, monitoring, cicd, devgovernance, githubops,
+routines, selfhealing, monitoring, cicd, devgovernance, githubops, portfolio,
 deploy.
 
 Agent routing rules:
@@ -102,6 +102,11 @@ Phase 37 observability rule:
 - Incident flow is health check → classify → timeline/root cause → response plan → Evaluation v2 → executor proposal → approval → run.
 - No direct repair/rollback/deploy from dashboard, Telegram, or runtime.
 
+Phase 41 portfolio rule:
+- Portfolio ranking/report/weekly/monthly plan must remain read-only.
+- Portfolio push/deploy/write/external actions must become Evaluation v2 gated executor proposals.
+- No direct GitHub push, workflow dispatch, Render deploy, rollback, shell, or repo mutation from runtime.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js
@@ -113,6 +118,7 @@ Specific test files to run when relevant:
 - scratch/test-selfhealing-health-suite.js
 - scratch/test-file-analysis-leak.js
 - scratch/test-pwa-assets.js
+- scratch/test-phase41-portfolio-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

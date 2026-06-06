@@ -13,7 +13,8 @@ const stateJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'state.js
 const appJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'app.js'), 'utf8');
 const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'utf8');
 const observabilityJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'observability.js'), 'utf8');
-const dashboardRenderers = `${uiJs}\n${observabilityJs}`;
+const portfolioJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'portfolio.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}`;
 const html = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
 
 let passed = 0;
@@ -51,6 +52,7 @@ const menuExpectations = {
   benchmarks: { title: 'Benchmarks Audit', renderer: 'renderBenchmarks' },
   incidents: { title: 'Incidents Log', renderer: 'renderIncidents' },
   observability: { title: 'Observability / Incidents', renderer: 'renderObservability' },
+  portfolio: { title: 'Portfolio', renderer: 'renderPortfolio' },
   audit: { title: 'Audit Log', renderer: 'renderAuditLog' },
   commands: { title: 'Command Catalog', renderer: 'renderCommands' },
   env: { title: 'Environment Check', renderer: 'renderEnv' },

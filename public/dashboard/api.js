@@ -992,6 +992,34 @@ const Api = {
 
   async postDevGovernanceWorkflowSummary(prompt) {
     return this.apiPost('/devgovernance/workflow-summary', { prompt });
+  },
+
+  // Portfolio
+  async getPortfolio(filters = {}) {
+    const query = new URLSearchParams(filters).toString();
+    return this.apiGet(`/portfolio${query ? `?${query}` : ''}`);
+  },
+
+  async getPortfolioSnapshot(filters = {}) {
+    const query = new URLSearchParams(filters).toString();
+    return this.apiGet(`/portfolio/snapshot${query ? `?${query}` : ''}`);
+  },
+
+  async getPortfolioPriorities(filters = {}) {
+    const query = new URLSearchParams(filters).toString();
+    return this.apiGet(`/portfolio/priorities${query ? `?${query}` : ''}`);
+  },
+
+  async createPortfolioWeeklyPlan(payload = {}) {
+    return this.apiPost('/portfolio/weekly-plan', payload);
+  },
+
+  async createPortfolioMonthlyPlan(payload = {}) {
+    return this.apiPost('/portfolio/monthly-plan', payload);
+  },
+
+  async createPortfolioProposal(payload = {}) {
+    return this.apiPost('/portfolio/proposal', payload);
   }
 };
 
