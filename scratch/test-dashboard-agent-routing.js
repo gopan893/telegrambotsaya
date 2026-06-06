@@ -30,7 +30,8 @@ assert.strictEqual(DashboardState.findTabId('multibot'), 'agents', 'Agents alias
 assert(app.includes('DashboardState.findTabId'), 'Dashboard router should use registry-based tab lookup');
 assert(app.includes('e.preventDefault()'), 'Nav click should prevent default anchor fallback');
 assert(app.includes("rawHash ? 'overview' : DashboardState.restoreLastTab()"), 'Unknown explicit tab should fall back to overview');
-assert(sw.includes('telegram-aios-dashboard-static-v31-stable-nav'), 'PWA cache version should be bumped');
+assert(app.includes('ensureRenderedContent'), 'Router should guard against blank tab content');
+assert(sw.includes('telegram-aios-dashboard-static-v32-menu-render-fix'), 'PWA cache version should be bumped');
 assert(!/api\/dashboard.*cache\.put|cache\.put.*api\/dashboard/i.test(sw), 'Service worker must not cache dashboard API responses');
 assert(!/8617592038:|postgresql:\/\/|rediss?:\/\/|sk-[a-z0-9_-]{4,}/i.test(html + app + sw), 'Dashboard static routing assets must not leak secret values');
 

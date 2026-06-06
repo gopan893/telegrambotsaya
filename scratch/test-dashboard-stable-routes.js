@@ -102,6 +102,8 @@ test('stale lastTab values for internal tabs restore to overview', () => {
 test('app router falls back to overview for unknown or disabled hash', () => {
   assert(appJs.includes("rawHash ? 'overview' : DashboardState.restoreLastTab()"), 'routeTab should use overview for invalid explicit hash');
   assert(appJs.includes("window.history.replaceState(null, '', '#overview')"), 'routeTab should replace invalid hash with #overview');
+  assert(appJs.includes('ensureRenderedContent'), 'routeTab should guard against blank rendered pages');
+  assert(appJs.includes('renderRoutePlaceholder'), 'routeTab should show a safe placeholder for blank pages');
 });
 
 test('dashboard shell loads stable Phase 33 monitoring/cicd scripts', () => {
@@ -110,8 +112,8 @@ test('dashboard shell loads stable Phase 33 monitoring/cicd scripts', () => {
 });
 
 test('asset version query busts stale PWA dashboard cache', () => {
-  assert(html.includes('v=20260605-stable'), 'dashboard shell should version static assets');
-  assert(swJs.includes('telegram-aios-dashboard-static-v31-stable-nav'), 'service worker cache name should be bumped');
+  assert(html.includes('v=20260606-menu-render-fix'), 'dashboard shell should version static assets');
+  assert(swJs.includes('telegram-aios-dashboard-static-v32-menu-render-fix'), 'service worker cache name should be bumped');
 });
 
 test('service worker does not cache dashboard API responses', () => {

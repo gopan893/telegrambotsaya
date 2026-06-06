@@ -16,6 +16,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let serverOnline = false;
 
+  function renderRouteError(title, message) {
+    if (!tabContent) return;
+    tabContent.innerHTML = `
+      <div class="error-state dashboard-route-error">
+        <span style="font-size:32px; display:block; margin-bottom:12px;">⚠️</span>
+        <h3>${Utils.escapeHtml(title || 'Dashboard Error')}</h3>
+        <p style="color:var(--text-secondary); margin-top:8px;">${Utils.escapeHtml(message || 'Halaman belum bisa dimuat.')}</p>
+        <button class="btn btn-outline" type="button" onclick="window.location.reload()">Reload Dashboard</button>
+      </div>
+    `;
+  }
+
+  function renderRoutePlaceholder(tabId, config) {
+    if (!tabContent) return;
+    const title = config?.title || tabId || 'Dashboard Page';
+    tabContent.innerHTML = `
+      <div style="padding:24px 0;">
+        <div class="section-header" style="margin-bottom:24px;">
+          <h2>${Utils.escapeHtml(title)}</h2>
+        </div>
+        <div class="empty-state">
+          <span class="empty-state-emoji">📄</span>
+          <h3>${Utils.escapeHtml(title)}</h3>
+          <p>Halaman ini belum mengirim konten. Coba reload dashboard atau pilih menu lain.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function ensureRenderedContent(tabId, config) {
+    if (!tabContent) return;
+    const text = (tabContent.textContent || '').trim();
+    const html = (tabContent.innerHTML || '').trim();
+    if (!text && !html) renderRoutePlaceholder(tabId, config);
+  }
+
   // Ensure confirm-modal is hidden on startup
   const confirmModal = document.getElementById('confirm-modal');
   if (confirmModal) confirmModal.classList.add('hidden');
@@ -43,7 +79,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabId) {
         const canonical = DashboardState.normalizeCanonicalTabId(tabId);
         if (canonical) {
-          window.location.hash = `#${canonical}`;
+          const nextHash = `#${canonical}`;
+          if (window.location.hash === nextHash) {
+            routeTab();
+          } else {
+            window.location.hash = nextHash;
+          }
         }
         if (sidebar) sidebar.classList.remove('open');
         e.preventDefault();
@@ -53,33 +94,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Main UI routing based on active tab hash
   const routeTab = async () => {
-    if (!Auth.isLoggedIn()) {
-      showLoginView();
-      return;
-    }
-
-    const rawHash = window.location.hash.substring(1) || '';
-    const tabId = DashboardState.findTabId(rawHash) || '';
-    const canonical = tabId || (rawHash ? 'overview' : DashboardState.restoreLastTab());
-
-    if (rawHash && !tabId) {
-      window.history.replaceState(null, '', '#overview');
-    }
-
-    // Save and set active tab
-    DashboardState.setActiveTab(canonical);
-
-    // Highlight nav item
-    navItems.forEach(nav => {
-      if (nav.getAttribute('data-tab') === canonical) {
-        nav.classList.add('active');
-      } else {
-        nav.classList.remove('active');
+    try {
+      if (!Auth.isLoggedIn()) {
+        showLoginView();
+        return;
       }
-    });
 
-    // Render the tab
-    await renderTabContent(canonical);
+      const rawHash = window.location.hash.substring(1) || '';
+      const tabId = DashboardState.findTabId(rawHash) || '';
+      const canonical = tabId || (rawHash ? 'overview' : DashboardState.restoreLastTab());
+
+      if (rawHash && !tabId) {
+        window.history.replaceState(null, '', '#overview');
+      }
+
+      // Save and set active tab
+      DashboardState.setActiveTab(canonical);
+
+      // Highlight nav item
+      navItems.forEach(nav => {
+        if (nav.getAttribute('data-tab') === canonical) {
+          nav.classList.add('active');
+        } else {
+          nav.classList.remove('active');
+        }
+      });
+
+      // Render the tab
+      await renderTabContent(canonical);
+    } catch (err) {
+      console.error('Dashboard route error:', err);
+      renderRouteError('Gagal membuka halaman', err.message || 'Router dashboard mengalami error.');
+    }
   };
 
   async function renderTabContent(tabId) {
@@ -90,6 +136,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const rendererName = config.renderer;
     const renderFn = UI[rendererName];
+    if (tabContent) {
+      tabContent.innerHTML = UI.renderLoading(`Membuka ${config.title || tabId}...`);
+    }
 
     if (typeof renderFn === 'function') {
       try {
@@ -98,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           renderFn.call(UI, tabContent);
         }
+        ensureRenderedContent(tabId, config);
       } catch (err) {
         console.error(`Error rendering tab "${tabId}":`, err);
         tabContent.innerHTML = `
@@ -110,18 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else {
       // Known tab but renderer missing — show placeholder
-      tabContent.innerHTML = `
-        <div style="padding:40px 24px;">
-          <div class="section-header" style="margin-bottom:24px;">
-            <h2>${Utils.escapeHtml(config.title || tabId)}</h2>
-          </div>
-          <div class="empty-state">
-            <span class="empty-state-emoji">📄</span>
-            <h3>${Utils.escapeHtml(config.title || 'Page')}</h3>
-            <p>Page module belum tersedia atau belum termuat.</p>
-          </div>
-        </div>
-      `;
+      renderRoutePlaceholder(tabId, config);
     }
   }
 
