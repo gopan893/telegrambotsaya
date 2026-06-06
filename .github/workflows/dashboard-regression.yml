@@ -3,9 +3,9 @@ name: Dashboard Regression
 on:
   push:
     branches: [main, master]
-    paths:
-      - 'public/dashboard/**'
-      - 'src/dashboard/**'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   regression:
