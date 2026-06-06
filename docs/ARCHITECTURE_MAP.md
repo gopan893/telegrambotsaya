@@ -42,6 +42,7 @@
 | `monitoring` | ❌ |
 | `cicd` | ✅ |
 | `devgovernance` | ❌ |
+| `cost` | ✅ |
 
 ## Backend Dashboard Routes
 
@@ -372,6 +373,21 @@ Total known commands: 74
 - `storage-status-formatters.js`
 - `tool-routes.js`
 - `workspace-routes.js`
+
+### cost/
+
+- `cost-usage-store.js`
+- `token-estimator.js`
+- `cost-estimator.js`
+- `model-cost-registry.js`
+- `model-selection-policy.js`
+- `budget-policy.js`
+- `budget-guard.js`
+- `usage-aggregator.js`
+- `cost-alerts.js`
+- `prompt-compression-advisor.js`
+- `cost-utils.js`
+- `index.js`
 
 ### deploy/
 

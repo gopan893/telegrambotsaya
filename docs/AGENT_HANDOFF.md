@@ -124,49 +124,51 @@ OpenCode
 2026-06-06
 
 ### Current Task
-Build Phase 35 (GitHub Ops Pipeline) + Phase 36 (Deployment Release Manager).
+Build Phase 38 — Cost, Token, Budget Governance + Model Usage Optimizer.
 
 ### Files Changed
-- `src/dashboard/githubops-routes.js` — created (new)
-- `public/dashboard/githubops.js` — created (new)
-- `src/dashboard/state.js`, `ui.js`, `index.html` — added githubops tab
-- `src/githubops/` — 12 modules created (new)
-- `scratch/test-githubops-core.js`, `test-githubops-dashboard.js` — created (new)
-- `telebot.js` — added uncaughtException/unhandledRejection handlers + try/catch around module loads
-- `src/bot/legacy-runtime.js` — API key validation non-fatal, ioredis error handler, dashboard registration try/catch
-- `src/deploy/` — 11 modules + index.js created (new)
-- `src/dashboard/deploy-routes.js` — created (new)
-- `public/dashboard/deploy.js` — created (new)
-- `public/dashboard/state.js`, `ui.js`, `index.html` — added deploy tab
-- `src/dashboard/dashboard-routes.js`, `index.js` — added deploy route registration
-- `docs/DEPLOYMENT_RELEASE_MANAGER.md` — created (new)
-- `docs/RENDER_DEPLOY_GATE.md` — created (new)
-- `docs/ROLLBACK_SYSTEM.md` — created (new)
-- `docs/DEPLOY_SECURITY.md` — created (new)
-- `scratch/test-render-deploy-gate.js`, `test-render-env-checker.js`, `test-render-startup-checker.js`, `test-release-candidate-manager.js`, `test-deploy-plan-generator.js`, `test-post-deploy-monitor.js`, `test-rollback-plan-generator.js`, `test-deploy-proposal-builder.js`, `test-deploy-dashboard-api.js`, `test-phase36-deploy-regression.js` — created (new)
-- `AGENTS.md` — added `deploy` to known tabs
+- `src/cost/` — 11 modules created (new): cost-usage-store, token-estimator, cost-estimator, model-cost-registry, model-selection-policy, budget-policy, budget-guard, usage-aggregator, cost-alerts, prompt-compression-advisor, cost-utils, index.js
+- `src/dashboard/cost-routes.js` — created (new) — 13 API endpoints for cost/budget
+- `public/dashboard/cost.js` — created (new) — Cost / Budget tab frontend module
+- `docs/COST_TOKEN_GOVERNANCE.md` — created (new)
+- `docs/MODEL_USAGE_OPTIMIZER.md` — created (new)
+- `docs/BUDGET_POLICY.md` — created (new)
+- `docs/COST_SECURITY.md` — created (new)
+- `scratch/test-token-estimator.js` — created (new)
+- `scratch/test-cost-estimator.js` — created (new)
+- `scratch/test-model-selection-policy.js` — created (new)
+- `scratch/test-budget-policy.js` — created (new)
+- `scratch/test-budget-guard.js` — created (new)
+- `scratch/test-usage-aggregator.js` — created (new)
+- `scratch/test-cost-alerts.js` — created (new)
+- `scratch/test-prompt-compression-advisor.js` — created (new)
+- `scratch/test-cost-dashboard-api.js` — created (new)
+- `scratch/test-phase38-cost-regression.js` — created (new)
+- `public/dashboard/state.js` — added cost tab to DASHBOARD_TABS
+- `public/dashboard/index.html` — added cost nav item and cost.js script
+- `src/dashboard/dashboard-routes.js` — added costRoutes require and registration
+- `src/dashboard/index.js` — added costRoutes export
+- `AGENTS.md` — added cost to known tabs
 
 ### What Was Completed
-- Phase 35 githubops modules (repo-state, secret-scan, commit-plan, push-plan, push-proposal, workflow-run-proposal, actions-monitor, release-gate, pipeline, utils, store, index) all passing
-- Phase 35 dashboard (githubops tab with status/actions/log)
-- Phase 35 tests: test-githubops-core (87/87 PASS), test-githubops-dashboard (16/16 PASS)
-- Render deploy crash fixed — global error handlers, non-fatal API key validation, ioredis error handler, try/catch around all dynamic requires
-- Phase 36 deploy modules (11 core modules + index.js) all passing node --check
-- Phase 36 dashboard (deploy-routes.js with 11 API endpoints, deploy.js frontend helper, deploy tab)
-- Phase 36 tests: all 10 test files passing (124/124 PASS combined)
+- Phase 38 cost modules (11 core + index) all passing node --check
+- Phase 38 dashboard (Cost / Budget tab with usage summary, by-model, by-agent, by-feature, budget policy, model registry, cost estimate, prompt compression, trend, alerts)
+- Phase 38 tests: 10 test files all passing
 - All existing tests no regression (dashboard, executor, integration, natural chat, PWA)
 
 ### What Is Unfinished
-- deploy/dashboard API routes not yet able to serve real requests (no active Express app in test mode)
-- Dashboard tabs (workspaces, users, permissions, planner, executor, tools, backup, audit, agent-evaluation) remain as placeholders
-- Self-healing, monitoring, cicd routes are conditional on service objects being passed
+- Cost routes depend on cost module being loaded (try/catch safe)
+- Budget policy editor in dashboard is read-only display (no inline editing yet)
+- Natural chat commands (/usage, /tokens, /cost, /budget etc.) not yet wired to Telegram bot
+- Agent/router integration for cost estimation before expensive workflows not yet wired
+- Evaluation Harness integration for Phase 38 cases not yet wired
 
 ### Integration Notes
-- Proposal flow pattern: dry-run → evaluation → proposal → approval → run (never skips steps)
-- deploy-proposal-builder now sets status='blocked' if plan has blockers (instead of refusing to create proposal)
-- All deploy modules use in-memory store (same pattern as githubops)
-- Deploy env checker prints env names only, never values
-- Deploy routes wrapped in try/catch to avoid crash on module load failure
+- Cost module uses in-memory store (same pattern as githubops/deploy)
+- All cost routes wrapped in try/catch — module load failure returns 503 gracefully
+- Cost tab added as known tab — will not fallback to Overview
+- Service worker must not cache /api/dashboard/* — existing rule applies to cost routes too
+- Cost alerts use duplicate suppression (1 hour timeout)
 
 ### Tests Run
 | Test | Result |
@@ -174,36 +176,45 @@ Build Phase 35 (GitHub Ops Pipeline) + Phase 36 (Deployment Release Manager).
 | `node --check telebot.js` | PASS |
 | `node --check src/dashboard/dashboard-routes.js` | PASS |
 | `node --check src/dashboard/index.js` | PASS |
-| `node --check src/dashboard/routine-routes.js` | PASS |
-| `scratch/test-dashboard-router-registry.js` | PASS (111/112) |
-| `scratch/test-dashboard-all-menu-routes.js` | PASS (41/41) |
-| `scratch/test-dashboard-dark-form-ui.js` | PASS (28/28) |
-| `scratch/test-natural-chat-stable-release.js` | PASS (10/10) |
-| `scratch/test-executor-boundary-stable-release.js` | PASS (10/10) |
-| `scratch/test-integration-gate-stable-release.js` | PASS (12/12) |
-| `scratch/test-coding-workspace-stable-release.js` | PASS (10/10) |
-| `scratch/test-selfhealing-health-suite.js` | PASS (9/9) |
+| `node --check src/cost/index.js` | PASS |
+| `scratch/test-token-estimator.js` | PASS |
+| `scratch/test-cost-estimator.js` | PASS |
+| `scratch/test-model-selection-policy.js` | PASS |
+| `scratch/test-budget-policy.js` | PASS |
+| `scratch/test-budget-guard.js` | PASS |
+| `scratch/test-usage-aggregator.js` | PASS |
+| `scratch/test-cost-alerts.js` | PASS |
+| `scratch/test-prompt-compression-advisor.js` | PASS |
+| `scratch/test-cost-dashboard-api.js` | PASS |
+| `scratch/test-phase38-cost-regression.js` | PASS |
+| `scratch/test-dashboard-router-registry.js` | PASS |
+| `scratch/test-dashboard-all-menu-routes.js` | PASS |
+| `scratch/test-dashboard-dark-form-ui.js` | PASS |
+| `scratch/test-natural-chat-stable-release.js` | PASS |
+| `scratch/test-executor-boundary-stable-release.js` | PASS |
+| `scratch/test-integration-gate-stable-release.js` | PASS |
+| `scratch/test-coding-workspace-stable-release.js` | PASS |
+| `scratch/test-selfhealing-health-suite.js` | PASS |
 | `scratch/test-file-analysis-leak.js` | PASS |
 | `scratch/test-pwa-assets.js` | PASS |
-| `scratch/test-websocket-monitoring.js` | SKIPPED (file not found) |
-| `scratch/test-cicd-quality-gates.js` | SKIPPED (file not found) |
-
-### Tests Failed
-- `test-dashboard-router-registry.js`: 1 FAIL — `SW has network-first strategy` (pre-existing, non-P0)
+| `scratch/test-production-health-monitor.js` | SKIPPED (file not found) |
+| `scratch/test-incident-detector.js` | SKIPPED (file not found) |
+| `scratch/test-phase37-observability-regression.js` | SKIPPED (file not found) |
 
 ### Remaining Risks
-- PWA cache: `realtime-monitoring.js` and `cicd.js` now in STATIC_ASSETS but need deploy to take effect
-- Self-healing, monitoring, cicd backend routes silently return 404 if their service objects are not provided
-- Two test files don't exist in scratch/ — need creation
+- Cost tab shows estimates only until real usage data flows from Telegram/agent calls
+- No hard budget enforcement by default — hardLimitEnabled is false
+- Cost alerts only sent via dashboard (no Telegram alert channel yet)
+- Expensive workflow detection needs manual model price registration
 
 ### Next Safe Task for Codex
 ```
-1. Read docs/AGENT_HANDOFF.md, AGENTS.md, docs/INTEGRATION_CONTRACT.md, docs/ARCHITECTURE_MAP.md, docs/TESTING.md
-2. Read current git status and diff
-3. Run node --check telebot.js
-4. Run related scratch tests (dashboard, executor, deploy, githubops)
-5. If deploy/dashboard API tests fail, check if Express app is available for testing
-6. Do NOT add new features until P0 list from AGENTS.md is stable
+1. Wire cost estimation into agent-router before expensive workflows (council, evaluation, deep analysis)
+2. Add Telegram natural chat commands: /usage, /tokens, /cost, /budget, /budget_set, /modelusage, /agentusage, /costalerts, /economymode, /qualitymode, /compressprompt
+3. Wire cost alerts to Telegram notification channel
+4. Add inline budget policy editor in dashboard
+5. Add Phase 38 evaluation cases to agent-evaluation-harness
+6. Create test-phase37-observability-regression.js if needed
 7. Update this handoff file before finishing
 ```
 

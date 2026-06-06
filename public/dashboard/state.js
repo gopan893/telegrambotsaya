@@ -266,6 +266,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['deployment', 'release-manager', 'render', 'rollback', 'release-control'],
     renderer: 'renderDeploy'
+  },
+  cost: {
+    label: 'Cost / Budget',
+    title: 'Cost, Token & Budget Governance',
+    navIcon: '💰',
+    navVisible: true,
+    aliases: ['token', 'tokens', 'budget', 'usage', 'model-usage', 'cost-governance', 'biaya'],
+    renderer: 'renderCost'
   }
 };
 

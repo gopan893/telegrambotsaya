@@ -30,6 +30,12 @@ const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
 const observabilityRoutes = require('./observability-routes');
+let costRoutes;
+try {
+  costRoutes = require('./cost-routes');
+} catch (e) {
+  costRoutes = { registerCostRoutes: () => {} };
+}
 
 function getDashboardServices(services = {}) {
   return {
@@ -389,6 +395,13 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Deploy routes skipped:', e.message);
+  }
+
+  try {
+    costRoutes.registerCostRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Cost routes skipped:', e.message);
   }
 
   router.get('/summary', async (req, res) => {

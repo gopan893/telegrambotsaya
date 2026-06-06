@@ -44,6 +44,13 @@ try {
   deployRoutes = { registerDeployRoutes: () => {} };
 }
 
+let costRoutes;
+try {
+  costRoutes = require('./cost-routes');
+} catch (e) {
+  costRoutes = { registerCostRoutes: () => {} };
+}
+
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
   registerCodingWorkspaceRoutes: (...args) => dashboardRoutes.registerCodingWorkspaceRoutes(...args),
@@ -77,6 +84,7 @@ module.exports = {
   devGovernanceRoutes,
   githubOpsRoutes,
   deployRoutes,
+  costRoutes,
   utils,
   actions: require('./dashboard-actions')
 };

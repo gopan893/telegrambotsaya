@@ -64,6 +64,28 @@ node scratch/test-selfhealing-dashboard-api.js
 node scratch/test-selfhealing-natural-chat.js
 ```
 
+## Phase 38 Cost / Token / Budget Tests
+
+```bash
+node scratch/test-token-estimator.js
+node scratch/test-cost-estimator.js
+node scratch/test-model-selection-policy.js
+node scratch/test-budget-policy.js
+node scratch/test-budget-guard.js
+node scratch/test-usage-aggregator.js
+node scratch/test-cost-alerts.js
+node scratch/test-prompt-compression-advisor.js
+node scratch/test-cost-dashboard-api.js
+node scratch/test-phase38-cost-regression.js
+```
+
+Also verify:
+```bash
+node --check src/cost/index.js
+node --check src/dashboard/cost-routes.js
+node --check src/dashboard/dashboard-routes.js
+```
+
 ## Phase 36 Deploy Tests
 
 ```bash
