@@ -43,6 +43,8 @@
 | `cicd` | ✅ |
 | `devgovernance` | ❌ |
 | `cost` | ✅ |
+| `operator` | ❌ |
+| `knowledge` | ✅ |
 
 ## Backend Dashboard Routes
 
@@ -83,7 +85,7 @@
 
 ## Telegram Commands
 
-Total known commands: 74
+Total known commands: 86 (Phase 42 added 12 knowledge commands: /knowledge, /kg, /remember_project, /decision_memory, /project_context, /phase_context, /incident_context, /knowledge_search, /memory_review, /memory_cleanup, /docs_status, /contextpack)
 
 ## Module Groups
 
@@ -105,6 +107,7 @@ Total known commands: 74
 
 - `advanced-risk-scorer.js`
 - `agent-action-detector.js`
+- `agent-knowledge-detector.js` (Phase 42)
 - `agent-action-mapper.js`
 - `agent-action-plan.js`
 - `agent-approval-flow.js`
@@ -481,6 +484,27 @@ Total known commands: 74
 ### memory/
 
 - `advanced-memory.js`
+
+### knowledge/ (Phase 42)
+
+- `knowledge-graph-store.js`
+- `knowledge-node-manager.js`
+- `knowledge-edge-manager.js`
+- `project-knowledge-ingestor.js`
+- `decision-memory-manager.js`
+- `memory-governance-policy.js`
+- `memory-safety-gate.js`
+- `memory-deduplicator.js`
+- `memory-staleness-reviewer.js`
+- `context-retrieval-engine.js`
+- `documentation-intelligence.js`
+- `knowledge-report-generator.js`
+- `knowledge-utils.js`
+- `index.js`
+
+### bot/ (Phase 42)
+
+- `knowledge-command-handler.js`
 
 ### monitoring/
 

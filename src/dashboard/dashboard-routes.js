@@ -36,6 +36,12 @@ try {
 } catch (e) {
   costRoutes = { registerCostRoutes: () => {} };
 }
+let knowledgeRoutes;
+try {
+  knowledgeRoutes = require('./knowledge-routes');
+} catch (e) {
+  knowledgeRoutes = { registerKnowledgeRoutes: () => {} };
+}
 
 function getDashboardServices(services = {}) {
   return {
@@ -402,6 +408,13 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Cost routes skipped:', e.message);
+  }
+
+  try {
+    knowledgeRoutes.registerKnowledgeRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Knowledge routes skipped:', e.message);
   }
 
   router.get('/summary', async (req, res) => {

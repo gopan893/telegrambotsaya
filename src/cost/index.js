@@ -12,6 +12,9 @@ const costAlerts = require('./cost-alerts');
 const promptCompressionAdvisor = require('./prompt-compression-advisor');
 const costUtils = require('./cost-utils');
 
+let knowledgeBridge = null;
+try { knowledgeBridge = require('../knowledge/project-knowledge-ingestor'); } catch (_) { knowledgeBridge = null; }
+
 module.exports = {
   costUsageStore,
   tokenEstimator,
@@ -23,5 +26,6 @@ module.exports = {
   usageAggregator,
   costAlerts,
   promptCompressionAdvisor,
-  costUtils
+  costUtils,
+  knowledgeBridge
 };

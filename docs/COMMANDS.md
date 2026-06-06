@@ -397,3 +397,30 @@ Bot dapat memakai AI OS context secara natural untuk pesan seperti:
 - `Apa dependency terbesar dari roadmap bot saya?`
 
 Sapaan sederhana, kalkulator sederhana, unit conversion, dan health-advice ringan tetap melewati router ringan agar tidak berat.
+
+## Phase 42 Knowledge Graph Commands
+
+| Command | Purpose |
+|---|---|
+| `/knowledge` | Knowledge graph overview. |
+| `/kg` | Alias `/knowledge`. |
+| `/remember_project <title> \| <summary>` | Record a decision memory (safety gate + dedup). |
+| `/decision_memory [query]` | List / search decision memory. |
+| `/project_context [query]` | Build project context pack. |
+| `/phase_context <n>` | Build phase context. |
+| `/incident_context [query]` | Build incident context. |
+| `/knowledge_search <query>` | Search nodes and edges. |
+| `/memory_review` | Stale / duplicate review plan. |
+| `/memory_cleanup` | Archive plan (no hard delete). |
+| `/docs_status` | Documentation intelligence findings. |
+| `/contextpack [query]` | Build context pack. |
+
+### Natural chat Phase 42
+
+- `kenapa kita tidak pakai React?` → decision context.
+- `apa masalah Render deploy terakhir?` → incident/deploy context.
+- `apa saja keputusan penting project ini?` → decision summary.
+- `cari konteks phase 36` → phase context.
+- `hapus memory yang duplikat` → cleanup plan (no hard delete).
+- `apa yang harus OpenCode baca sebelum lanjut?` → handoff context.
+- `ingat ini sebagai keputusan project: ...` → safety gate + decision record.

@@ -274,6 +274,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['token', 'tokens', 'budget', 'usage', 'model-usage', 'cost-governance', 'biaya'],
     renderer: 'renderCost'
+  },
+  knowledge: {
+    label: 'Knowledge',
+    title: 'Project Knowledge Graph & Memory',
+    navIcon: '🕸️',
+    navVisible: true,
+    aliases: ['memory-graph', 'knowledge-graph', 'project-memory', 'decisions', 'long-memory', 'graph'],
+    renderer: 'renderKnowledge'
   }
 };
 

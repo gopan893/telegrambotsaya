@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'telegram-aios-dashboard-static-v34-phase37-observability';
+const CACHE_NAME = 'telegram-aios-dashboard-static-v35-phase42-knowledge';
 const STATIC_ASSETS = [
   '/dashboard',
   '/dashboard/styles.css',

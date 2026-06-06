@@ -59,6 +59,32 @@ Production incident repair/rollback actions MUST follow:
 
 No direct repair, rollback, deploy, shell, or external write action may run from observability detection or dashboard analysis.
 
+## Knowledge / Memory Contract (Phase 42)
+
+Knowledge ingestion MUST follow:
+
+1. memory safety gate (secret detection + redaction)
+2. deduplication (fingerprint or explicit allow)
+3. knowledge graph store create (or merge)
+4. audit log entry
+
+Memory must never:
+
+- Store raw secret values.
+- Hard delete (archive only).
+- Mutate protected decisions.
+- Bypass the safety gate.
+
+Knowledge retrieval must:
+
+- Filter by query / context (no global dump).
+- Redact any secret-shaped content from output.
+- Avoid unrelated technical detail in personal/emotional chat.
+
+The knowledge graph is the source of truth for decision memory. Modules that
+need to know *why* a project rule exists should query the knowledge graph,
+not the prompt.
+
 ## Module Creation Contract
 
 Before creating a new file/module:

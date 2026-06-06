@@ -207,9 +207,21 @@ function shouldUseAgentExecutor(text = '', context = {}, services = {}) {
   };
 }
 
+let knowledgeDetector = null;
+try { knowledgeDetector = require('./agent-knowledge-detector'); } catch (_) { knowledgeDetector = null; }
+
+function detectKnowledgeContext(text = '', context = {}, services = {}) {
+  if (!knowledgeDetector) return { hasKnowledgeIntent: false, knowledgeType: '', reason: 'detector_unavailable' };
+  const detected = knowledgeDetector.detectKnowledgeIntent(text, context);
+  if (!detected.hasKnowledgeIntent) return detected;
+  const payload = knowledgeDetector.retrieveKnowledgeForIntent(detected, services);
+  return { ...detected, payload };
+}
+
 module.exports = {
   detectActionIntent,
   extractId,
   inferActionRisk,
-  shouldUseAgentExecutor
+  shouldUseAgentExecutor,
+  detectKnowledgeContext
 };

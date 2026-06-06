@@ -14,6 +14,18 @@ const operatorProposalBridge = require('./operator-proposal-bridge');
 const operatorReportGenerator = require('./operator-report-generator');
 const operatorUtils = require('./operator-utils');
 
+let knowledgeBridge = null;
+try {
+  const ingestor = require('../knowledge/project-knowledge-ingestor');
+  knowledgeBridge = {
+    ingestProjectGoal: ingestor.ingestProjectGoal,
+    ingestOperatorPlan: ingestor.ingestOperatorPlan,
+    ingestTask: ingestor.ingestTask
+  };
+} catch (_) {
+  knowledgeBridge = null;
+}
+
 module.exports = {
   projectOperatorStore,
   projectGoalAnalyzer,
@@ -27,5 +39,6 @@ module.exports = {
   operatorEvaluationGate,
   operatorProposalBridge,
   operatorReportGenerator,
-  operatorUtils
+  operatorUtils,
+  knowledgeBridge
 };

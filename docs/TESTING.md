@@ -115,6 +115,27 @@ node scratch/test-observability-dashboard-api.js
 node scratch/test-phase37-observability-regression.js
 ```
 
+## Phase 42 Knowledge Graph Tests
+
+```bash
+node --check src/knowledge/*.js
+node --check src/dashboard/knowledge-routes.js
+node --check public/dashboard/knowledge.js
+node scratch/test-knowledge-graph-store.js
+node scratch/test-knowledge-node-manager.js
+node scratch/test-knowledge-edge-manager.js
+node scratch/test-project-knowledge-ingestor.js
+node scratch/test-decision-memory-manager.js
+node scratch/test-memory-governance-policy.js
+node scratch/test-memory-safety-gate.js
+node scratch/test-memory-deduplicator.js
+node scratch/test-memory-staleness-reviewer.js
+node scratch/test-context-retrieval-engine.js
+node scratch/test-documentation-intelligence.js
+node scratch/test-knowledge-dashboard-api.js
+node scratch/test-phase42-knowledge-regression.js
+```
+
 ## Security / Leak Tests
 
 ```bash

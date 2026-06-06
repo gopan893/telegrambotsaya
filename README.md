@@ -303,3 +303,22 @@ GET /api/dashboard
 ```
 
 Endpoint ini hanya menampilkan metadata publik seperti health ringkas, tipe storage, modul aktif, dan daftar command. Memory user, prompt internal, token, dan data sensitif tidak diekspos.
+
+## Phase 42 — Project Knowledge Graph & Long-Term Memory
+
+Project knowledge graph (in-memory, archive-only, secret-safe) plus
+long-term memory governance.
+
+- Modules: `src/knowledge/` (13 files + index)
+- Dashboard: tab **Knowledge** at `/dashboard#knowledge`
+- API: `/api/dashboard/knowledge/*` (protected, sanitized, no cache)
+- Telegram: `/knowledge`, `/kg`, `/remember_project`, `/decision_memory`,
+  `/project_context`, `/phase_context`, `/incident_context`,
+  `/knowledge_search`, `/memory_review`, `/memory_cleanup`,
+  `/docs_status`, `/contextpack`
+- Docs: `docs/PROJECT_KNOWLEDGE_GRAPH.md`, `LONG_TERM_MEMORY_GOVERNANCE.md`,
+  `DECISION_MEMORY.md`, `KNOWLEDGE_SECURITY.md`, `KNOWLEDGE_DASHBOARD.md`
+
+Protected decisions (15 core) cannot be renamed, archived, or silently
+overwritten. Secrets are detected at ingest, redacted, and never stored
+in raw form. Memory is archived, never hard-deleted.

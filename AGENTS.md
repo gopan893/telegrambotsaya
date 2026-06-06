@@ -61,7 +61,7 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator.
+deploy, cost, operator, knowledge.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.

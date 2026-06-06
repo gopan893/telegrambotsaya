@@ -19,6 +19,9 @@ const devWorkflowPolicy = require('./dev-workflow-policy');
 const devWorkflowPromptBuilder = require('./dev-workflow-prompt-builder');
 const naturalDevWorkflowRouter = require('./natural-dev-workflow-router');
 
+let knowledgeIntegration = null;
+try { knowledgeIntegration = require('../knowledge'); } catch (_) { knowledgeIntegration = null; }
+
 module.exports = {
   contractManager,
   handoffOrchestrator,
@@ -37,5 +40,6 @@ module.exports = {
   devWorkflowPromptBuilder,
   naturalDevWorkflowRouter,
   store,
-  utils
+  utils,
+  knowledgeIntegration
 };
