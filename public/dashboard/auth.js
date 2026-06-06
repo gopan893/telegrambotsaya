@@ -91,3 +91,5 @@ const Auth = {
     Utils.showToast('Token tidak valid atau salah. Silakan masukkan token yang benar.', 'danger');
   }
 };
+
+window.Auth = Auth;

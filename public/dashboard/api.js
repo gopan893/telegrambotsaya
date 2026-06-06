@@ -997,3 +997,7 @@ const Api = {
 
 const apiGet = (path, options) => Api.apiGet(path, options);
 const apiPost = (path, body, options) => Api.apiPost(path, body, options);
+
+window.Api = Api;
+window.apiGet = apiGet;
+window.apiPost = apiPost;

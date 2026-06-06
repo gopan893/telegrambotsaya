@@ -2189,12 +2189,12 @@ const UI = {
     const data = r.data;
     const errors = data.validation?.errors || [];
     const warnings = data.validation?.warnings || [];
-    el.innerHTML = \`
-      <p><strong>Status:</strong> \${data.validation?.ok ? '✅ Valid' : '❌ Invalid'}</p>
-      <p>Sections: \${data.validation?.summary?.sectionCount || 0}</p>
-      \${errors.length ? '<p style="color:var(--danger);">Errors:<br>' + errors.map(e => '⚠️ ' + Utils.escapeHtml(e)).join('<br>') + '</p>' : ''}
-      \${warnings.length ? '<p style="color:var(--warning);">Warnings:<br>' + warnings.map(w => '⚠️ ' + Utils.escapeHtml(w)).join('<br>') + '</p>' : ''}
-    \`;
+    el.innerHTML = `
+      <p><strong>Status:</strong> ${data.validation?.ok ? '✅ Valid' : '❌ Invalid'}</p>
+      <p>Sections: ${data.validation?.summary?.sectionCount || 0}</p>
+      ${errors.length ? '<p style="color:var(--danger);">Errors:<br>' + errors.map(e => '⚠️ ' + Utils.escapeHtml(e)).join('<br>') + '</p>' : ''}
+      ${warnings.length ? '<p style="color:var(--warning);">Warnings:<br>' + warnings.map(w => '⚠️ ' + Utils.escapeHtml(w)).join('<br>') + '</p>' : ''}
+    `;
   },
 
   _govShowHandoff: async function() {
@@ -2203,23 +2203,23 @@ const UI = {
     const r = await Api.apiGet('/devgovernance/handoff');
     if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
     const h = r.data.handoff || r.data.summary || {};
-    el.innerHTML = \`
+    el.innerHTML = `
       <div class="tab-header"><h2>📋 Agent Handoff</h2>
         <button class="btn btn-outline btn-sm" onclick="UI.renderDevGovernance(document.getElementById('tab-content'))">Back</button>
       </div>
       <div class="panel" style="margin-top:16px;">
-        <div class="kv-row"><span class="kv-key">ID</span><span class="kv-value">\${Utils.escapeHtml(h.id || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">Last Agent</span><span class="kv-value">\${Utils.escapeHtml(h.lastAgent || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">Task</span><span class="kv-value">\${Utils.escapeHtml(h.currentTask || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">Goal</span><span class="kv-value">\${Utils.escapeHtml(h.goal || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">Files Changed</span><span class="kv-value">\${(h.filesChanged || []).length}</span></div>
-        <div class="kv-row"><span class="kv-key">Tests Run</span><span class="kv-value">\${(h.testsRun || []).length}</span></div>
-        <div class="kv-row"><span class="kv-key">Tests Failed</span><span class="kv-value">\${(h.testsFailed || []).length}</span></div>
+        <div class="kv-row"><span class="kv-key">ID</span><span class="kv-value">${Utils.escapeHtml(h.id || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Last Agent</span><span class="kv-value">${Utils.escapeHtml(h.lastAgent || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Task</span><span class="kv-value">${Utils.escapeHtml(h.currentTask || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Goal</span><span class="kv-value">${Utils.escapeHtml(h.goal || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">Files Changed</span><span class="kv-value">${(h.filesChanged || []).length}</span></div>
+        <div class="kv-row"><span class="kv-key">Tests Run</span><span class="kv-value">${(h.testsRun || []).length}</span></div>
+        <div class="kv-row"><span class="kv-key">Tests Failed</span><span class="kv-value">${(h.testsFailed || []).length}</span></div>
       </div>
-      \${(h.filesChanged || []).length ? '<div class="panel"><h3 class="panel-title">Files Changed</h3><ul>' + h.filesChanged.map(f => '<li>' + Utils.escapeHtml(f) + '</li>').join('') + '</ul></div>' : ''}
-      \${(h.remainingRisks || []).length ? '<div class="panel"><h3 class="panel-title">Risks</h3><ul>' + h.remainingRisks.map(r => '<li>⚠️ ' + Utils.escapeHtml(r) + '</li>').join('') + '</ul></div>' : ''}
-      \${h.nextAgentTask ? '<div class="panel"><h3 class="panel-title">Next Agent Task</h3><pre style="white-space:pre-wrap;">' + Utils.escapeHtml(h.nextAgentTask) + '</pre></div>' : ''}
-    \`;
+      ${(h.filesChanged || []).length ? '<div class="panel"><h3 class="panel-title">Files Changed</h3><ul>' + h.filesChanged.map(f => '<li>' + Utils.escapeHtml(f) + '</li>').join('') + '</ul></div>' : ''}
+      ${(h.remainingRisks || []).length ? '<div class="panel"><h3 class="panel-title">Risks</h3><ul>' + h.remainingRisks.map(r => '<li>⚠️ ' + Utils.escapeHtml(r) + '</li>').join('') + '</ul></div>' : ''}
+      ${h.nextAgentTask ? '<div class="panel"><h3 class="panel-title">Next Agent Task</h3><pre style="white-space:pre-wrap;">' + Utils.escapeHtml(h.nextAgentTask) + '</pre></div>' : ''}
+    `;
   },
 
   _govScanArchitecture: async function() {
@@ -2239,12 +2239,12 @@ const UI = {
     const items = coll.collisions || [];
     const critical = coll.critical || [];
     const warnings = coll.warnings || [];
-    el.innerHTML = \`
-      <p><strong>Total:</strong> \${items.length} | <strong>Critical:</strong> \${critical.length} | <strong>Warnings:</strong> \${warnings.length}</p>
-      \${critical.length ? '<div style="color:var(--danger);"><strong>Critical:</strong><ul>' + critical.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
-      \${warnings.length ? '<div style="color:var(--warning);"><strong>Warnings:</strong><ul>' + warnings.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
-      \${!items.length ? '<p>✅ No collisions detected</p>' : ''}
-    \`;
+    el.innerHTML = `
+      <p><strong>Total:</strong> ${items.length} | <strong>Critical:</strong> ${critical.length} | <strong>Warnings:</strong> ${warnings.length}</p>
+      ${critical.length ? '<div style="color:var(--danger);"><strong>Critical:</strong><ul>' + critical.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
+      ${warnings.length ? '<div style="color:var(--warning);"><strong>Warnings:</strong><ul>' + warnings.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
+      ${!items.length ? '<p>✅ No collisions detected</p>' : ''}
+    `;
   },
 
   _govCheckDashboardRoutes: async function() {
@@ -2255,11 +2255,11 @@ const UI = {
     const dr = r.data.dashboardRoutes || {};
     const issues = dr.issues || [];
     const critical = dr.critical || [];
-    el.innerHTML = \`
-      <p><strong>Issues:</strong> \${issues.length} | <strong>Critical:</strong> \${critical.length}</p>
-      \${critical.length ? '<div style="color:var(--danger);"><ul>' + critical.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
-      \${!critical.length ? '<p>✅ No critical route issues</p>' : ''}
-    \`;
+    el.innerHTML = `
+      <p><strong>Issues:</strong> ${issues.length} | <strong>Critical:</strong> ${critical.length}</p>
+      ${critical.length ? '<div style="color:var(--danger);"><ul>' + critical.map(c => '<li>⚠️ ' + Utils.escapeHtml(c.message) + '</li>').join('') + '</ul></div>' : ''}
+      ${!critical.length ? '<p>✅ No critical route issues</p>' : ''}
+    `;
   },
 
   _govCheckBackendFrontend: async function() {
@@ -2268,12 +2268,12 @@ const UI = {
     const r = await Api.apiGet('/devgovernance/backend-frontend');
     if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
     const bf = r.data.backendFrontend?.report || r.data.backendFrontend || {};
-    el.innerHTML = \`
-      <p><strong>Frontend Calls:</strong> \${bf.summary?.frontendCalls || 0} | <strong>Backend Routes:</strong> \${bf.summary?.backendRoutes || 0}</p>
-      <p><strong>Matched:</strong> \${bf.summary?.matched || 0} | <strong>Missing:</strong> \${bf.summary?.missing || 0} | <strong>Unused:</strong> \${bf.summary?.unused || 0}</p>
-      \${(bf.missing || []).length ? '<div style="color:var(--warning);"><strong>Missing Backend Routes:</strong><ul>' + bf.missing.map(m => '<li>' + Utils.escapeHtml(m.endpoint) + '</li>').join('') + '</ul></div>' : ''}
-      \${!bf.summary?.missing ? '<p>✅ All frontend calls match backend routes</p>' : ''}
-    \`;
+    el.innerHTML = `
+      <p><strong>Frontend Calls:</strong> ${bf.summary?.frontendCalls || 0} | <strong>Backend Routes:</strong> ${bf.summary?.backendRoutes || 0}</p>
+      <p><strong>Matched:</strong> ${bf.summary?.matched || 0} | <strong>Missing:</strong> ${bf.summary?.missing || 0} | <strong>Unused:</strong> ${bf.summary?.unused || 0}</p>
+      ${(bf.missing || []).length ? '<div style="color:var(--warning);"><strong>Missing Backend Routes:</strong><ul>' + bf.missing.map(m => '<li>' + Utils.escapeHtml(m.endpoint) + '</li>').join('') + '</ul></div>' : ''}
+      ${!bf.summary?.missing ? '<p>✅ All frontend calls match backend routes</p>' : ''}
+    `;
   },
 
   _govGenerateTestMatrix: async function() {
@@ -2283,14 +2283,14 @@ const UI = {
     const r = await Api.apiPost('/devgovernance/test-matrix', { changeManifest: desc ? { filesChanged: [desc] } : null });
     if (!r.ok) { el.innerHTML = UI.renderError('Failed'); return; }
     const matrix = r.data.matrix || {};
-    el.innerHTML = \`
-      <p><strong>Areas:</strong> \${(matrix.areas || []).join(', ') || 'All'}</p>
-      <p><strong>Total Tests:</strong> \${matrix.total}</p>
+    el.innerHTML = `
+      <p><strong>Areas:</strong> ${(matrix.areas || []).join(', ') || 'All'}</p>
+      <p><strong>Total Tests:</strong> ${matrix.total}</p>
       <details>
         <summary>View Test List</summary>
-        <ul style="max-height:200px; overflow:auto;">\${(matrix.tests || []).map(t => '<li><code>' + Utils.escapeHtml(t) + '</code></li>').join('')}</ul>
+        <ul style="max-height:200px; overflow:auto;">${(matrix.tests || []).map(t => '<li><code>' + Utils.escapeHtml(t) + '</code></li>').join('')}</ul>
       </details>
-    \`;
+    `;
   },
 
   _govGeneratePrompt: async function() {
@@ -2442,3 +2442,5 @@ const UI = {
     }
   }
 };
+
+window.UI = UI;

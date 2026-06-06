@@ -10,6 +10,7 @@
  */
 
 const assert = require('assert');
+const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -106,14 +107,19 @@ test('app router falls back to overview for unknown or disabled hash', () => {
   assert(appJs.includes('renderRoutePlaceholder'), 'routeTab should show a safe placeholder for blank pages');
 });
 
+test('dashboard frontend scripts are syntax valid', () => {
+  execSync('node --check public/dashboard/ui.js', { stdio: 'pipe' });
+  execSync('node --check public/dashboard/app.js', { stdio: 'pipe' });
+});
+
 test('dashboard shell loads stable Phase 33 monitoring/cicd scripts', () => {
   assert(html.includes('realtime-monitoring.js'), 'realtime-monitoring.js should load for live monitoring tab');
   assert(html.includes('cicd.js'), 'cicd.js should load for CI/CD tab helpers');
 });
 
 test('asset version query busts stale PWA dashboard cache', () => {
-  assert(html.includes('v=20260606-menu-render-fix'), 'dashboard shell should version static assets');
-  assert(swJs.includes('telegram-aios-dashboard-static-v32-menu-render-fix'), 'service worker cache name should be bumped');
+  assert(html.includes('v=20260606-ui-parse-fix'), 'dashboard shell should version static assets');
+  assert(swJs.includes('telegram-aios-dashboard-static-v33-ui-parse-fix'), 'service worker cache name should be bumped');
 });
 
 test('service worker does not cache dashboard API responses', () => {

@@ -15,6 +15,8 @@ jobs:
           node-version: 20
           cache: 'npm'
       - run: npm ci --ignore-scripts
+      - run: node --check public/dashboard/ui.js
+      - run: node --check public/dashboard/app.js
       - run: node --check src/dashboard/dashboard-routes.js
       - run: node scratch/run-existing-tests.js scratch/test-dashboard-stable-routes.js scratch/test-dashboard-router-registry.js scratch/test-dashboard-all-menu-routes.js scratch/test-dashboard-dark-form-ui.js scratch/test-dashboard-route-guard.js scratch/test-pwa-assets.js
       - name: Load dashboard routes

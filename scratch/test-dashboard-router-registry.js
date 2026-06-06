@@ -97,7 +97,7 @@ for (const alias of ['codingworkspace', 'coding_workspace', 'codingWorkspace', '
 console.log('\n--- Service Worker ---\n');
 assert(swJs.includes("url.pathname.startsWith('/api/dashboard')"), 'SW excludes /api/dashboard from caching');
 assert(swJs.includes('CACHE_NAME'), 'SW has CACHE_NAME');
-assert(swJs.includes('telegram-aios-dashboard-static-v32-menu-render-fix'), 'SW cache version bumped');
+assert(swJs.includes('telegram-aios-dashboard-static-v33-ui-parse-fix'), 'SW cache version bumped');
 
 console.log('\n--- Autofill CSS ---\n');
 assert(stylesCss.includes('-webkit-autofill'), 'Autofill override exists');
