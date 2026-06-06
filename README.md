@@ -53,10 +53,10 @@ Storage production:
 - Jika `REDIS_URL` tersedia, bot memakai Redis sebagai cache/session sementara.
 - Jika Redis error atau `REDIS_URL` kosong, bot tetap berjalan dengan memory/local fallback.
 
-Contoh `DATABASE_URL` PostgreSQL Render:
+Contoh konfigurasi PostgreSQL Render:
 
 ```env
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DATABASE_URL=<set-in-render-environment>
 STORAGE_DRIVER=auto
 ```
 
