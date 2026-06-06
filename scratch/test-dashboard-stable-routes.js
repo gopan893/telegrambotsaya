@@ -26,7 +26,7 @@ const publicTabs = [
   'overview', 'ops', 'workspaces', 'users', 'permissions',
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
-  'graph', 'benchmarks', 'incidents', 'audit', 'commands',
+  'graph', 'benchmarks', 'incidents', 'observability', 'audit', 'commands',
   'env', 'settings', 'agent-evaluation', 'coding', 'release',
   'selfhealing', 'monitoring', 'cicd'
 ];
@@ -118,8 +118,8 @@ test('dashboard shell loads stable Phase 33 monitoring/cicd scripts', () => {
 });
 
 test('asset version query busts stale PWA dashboard cache', () => {
-  assert(html.includes('v=20260606-ui-parse-fix'), 'dashboard shell should version static assets');
-  assert(swJs.includes('telegram-aios-dashboard-static-v33-ui-parse-fix'), 'service worker cache name should be bumped');
+  assert(html.includes('v=20260606-phase37-observability'), 'dashboard shell should version static assets');
+  assert(swJs.includes('telegram-aios-dashboard-static-v34-phase37-observability'), 'service worker cache name should be bumped');
 });
 
 test('service worker does not cache dashboard API responses', () => {
@@ -131,7 +131,7 @@ test('service worker does not cache dashboard API responses', () => {
 test('frontend files do not contain hard-coded secrets', () => {
   const combined = [html, stateJs, appJs, swJs].join('\n');
   const forbidden = [
-    /8617592038:[A-Za-z0-9_-]+/,
+    /\d{8,12}:[A-Za-z0-9_-]{20,}/,
     /postgresql:\/\/[^'"\s]+/i,
     /rediss?:\/\/[^'"\s]+/i,
     /sk-[A-Za-z0-9_-]+/,

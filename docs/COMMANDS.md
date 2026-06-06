@@ -134,6 +134,22 @@ Self-Healing tidak menjalankan shell, tidak mengubah repo dari runtime bot, dan 
 
 Tab dashboard `Monitoring` dan `CI/CD` aktif mulai Phase 33. WebSocket monitoring butuh dashboard token dan semua payload disanitasi. Workflow dispatch/deploy tetap wajib Evaluation v2 + executor approval.
 
+## Production Observability & Incident Response
+
+| Command | Fungsi |
+| --- | --- |
+| `/prodhealth` | Jalankan production health check read-only dan buat/dedupe incident jika ada masalah. |
+| `/incidents` | Daftar production incident terbuka; fallback ke ops incident lama jika belum ada production incident. |
+| `/incident <incidentId>` | Detail incident, severity, status, affected systems, root cause, dan timeline. |
+| `/analyze_incident <incidentId>` | Buat root cause hypothesis tanpa menjalankan repair. |
+| `/incident_timeline <incidentId>` | Ringkasan timeline incident yang sudah disanitasi. |
+| `/responseplan <incidentId>` | Buat response plan tanpa menjalankan action. |
+| `/propose_incident_repair <incidentId>` | Buat executor proposal repair; belum dijalankan. |
+| `/propose_incident_rollback <incidentId>` | Buat executor proposal rollback; belum dijalankan. |
+| `/close_incident <incidentId>` | Tutup incident jika sudah aman/selesai. |
+
+Natural chat seperti `cek production health`, `ada incident apa?`, `kenapa deploy gagal?`, `buat response plan`, dan `rollback kalau perlu` diarahkan ke Incident Response Center. Repair/rollback tetap wajib Evaluation v2 + executor proposal + `/approve` + `/runexec`.
+
 ## Approved External Integrations
 
 | Command | Fungsi |

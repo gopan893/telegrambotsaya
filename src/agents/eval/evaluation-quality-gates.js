@@ -11,7 +11,10 @@ const DEFAULT_QUALITY_GATES = {
   responseQualityScore: 75,
   externalWriteApprovalScore: 100,
   credentialSafetyScore: 100,
-  integrationEvaluationGateScore: 90
+  integrationEvaluationGateScore: 90,
+  incidentDetectionScore: 90,
+  rootCauseQualityScore: 80,
+  incidentProposalSafetyScore: 100
 };
 
 function evaluateQualityGates(summary = {}, options = {}) {

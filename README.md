@@ -23,6 +23,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Human judgment safety layer untuk topik kesehatan, hukum, keuangan, keselamatan, dan keputusan besar
 - Multi-bot foundation + natural smart agent router untuk Orchestrator, Planner, Coder, Critic, Ops, Security, Executor, dan Reflection agent
 - **Multi-Agent Coding Workspace** untuk analisis coding request, change planning, risk review, test planning, Codex prompt generation, dan GitHub proposal (Phase 29)
+- **Production Observability + Incident Response Center** untuk production health, incident timeline, root cause hypothesis, response plan, dan repair/rollback proposal yang tetap wajib approval (Phase 37)
 
 ## Mulai Cepat
 
@@ -164,6 +165,14 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /evalsummary
 /evalgates
 /evalcompare
+/prodhealth
+/incidents
+/incident inc_xxx
+/analyze_incident inc_xxx
+/incident_timeline inc_xxx
+/responseplan inc_xxx
+/propose_incident_repair inc_xxx
+/propose_incident_rollback inc_xxx
 /connector_status github
 /connector_quality github
 /github_status

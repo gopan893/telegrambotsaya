@@ -29,6 +29,7 @@ const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
 const devGovernanceRoutes = require('./devgovernance-routes');
+const observabilityRoutes = require('./observability-routes');
 let githubOpsRoutes;
 try {
   githubOpsRoutes = require('./githubops-routes');
@@ -70,6 +71,7 @@ module.exports = {
   workspaceRoutes,
   selfhealingRoutes,
   monitoringRoutes,
+  observabilityRoutes,
   cicdRoutes,
   routineRoutes,
   devGovernanceRoutes,

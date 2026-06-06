@@ -38,7 +38,7 @@ function services() {
   assert.ok(suite.summary.averageScore >= 80);
   assert.equal(suite.summary.qualityGateStatus, 'passed');
   const userFacingOutputs = suite.results.map(item => item.outputText).join('\n');
-  assert.ok(!/sk-xxxx|postgresql:\/\/|rediss?:\/\/|8617592038:/i.test(userFacingOutputs));
+  assert.ok(!/sk-xxxx|postgresql:\/\/|rediss?:\/\/|\d{8,12}:[A-Za-z0-9_-]{20,}/i.test(userFacingOutputs));
 
   console.log('test-agent-evaluation-v2: ok');
 })().catch((err) => {

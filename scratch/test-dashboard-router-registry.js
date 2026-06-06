@@ -16,6 +16,8 @@ const indexHtml = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.
 const stylesCss = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'styles.css'), 'utf8');
 const swJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'service-worker.js'), 'utf8');
 const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'utf8');
+const observabilityJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'observability.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}`;
 
 let passed = 0;
 let failed = 0;
@@ -34,7 +36,7 @@ const publicTabs = [
   'overview', 'ops', 'workspaces', 'users', 'permissions',
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
-  'graph', 'benchmarks', 'incidents', 'audit', 'commands',
+  'graph', 'benchmarks', 'incidents', 'observability', 'audit', 'commands',
   'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing', 'monitoring', 'cicd'
 ];
 const internalTabs = ['routines'];
@@ -47,6 +49,7 @@ const expectedRenderers = {
   selfhealing: 'renderSelfHealing',
   monitoring: 'renderMonitoring',
   cicd: 'renderCicd',
+  observability: 'renderObservability',
   'agent-evaluation': 'renderAgentEvaluation'
 };
 
@@ -73,7 +76,7 @@ assert((stateJs.match(/routeEnabled:\s*false/g) || []).length >= internalTabs.le
 
 console.log('\n--- Critical public tabs have render functions ---\n');
 for (const [tabId, fnName] of Object.entries(expectedRenderers)) {
-  assert(uiJs.includes(fnName), `${tabId} has renderer ${fnName} in ui.js`);
+  assert(dashboardRenderers.includes(fnName), `${tabId} has renderer ${fnName}`);
 }
 
 console.log('\n--- Dark Form UI Styles ---\n');
@@ -97,7 +100,7 @@ for (const alias of ['codingworkspace', 'coding_workspace', 'codingWorkspace', '
 console.log('\n--- Service Worker ---\n');
 assert(swJs.includes("url.pathname.startsWith('/api/dashboard')"), 'SW excludes /api/dashboard from caching');
 assert(swJs.includes('CACHE_NAME'), 'SW has CACHE_NAME');
-assert(swJs.includes('telegram-aios-dashboard-static-v33-ui-parse-fix'), 'SW cache version bumped');
+assert(swJs.includes('telegram-aios-dashboard-static-v34-phase37-observability'), 'SW cache version bumped');
 
 console.log('\n--- Autofill CSS ---\n');
 assert(stylesCss.includes('-webkit-autofill'), 'Autofill override exists');

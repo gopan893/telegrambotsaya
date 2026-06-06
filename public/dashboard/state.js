@@ -145,6 +145,14 @@ const DASHBOARD_TABS = {
     aliases: ['incident', 'kejadian', 'insiden'],
     renderer: 'renderIncidents'
   },
+  observability: {
+    label: 'Observability',
+    title: 'Observability / Incidents',
+    navIcon: '🛰️',
+    navVisible: true,
+    aliases: ['incident-center', 'production', 'prod-monitor', 'health-monitor', 'observability-center', 'incidents'],
+    renderer: 'renderObservability'
+  },
   audit: {
     label: 'Audit Log',
     title: 'Audit Log',

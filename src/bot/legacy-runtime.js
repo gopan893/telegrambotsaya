@@ -34,6 +34,7 @@ const executorSystem = require('../executor');
 const toolsSystem = require('../tools');
 const backupSystem = require('../backup');
 const integrationsSystem = require('../integrations');
+const observabilitySystem = require('../observability');
 const multibotSystem = require('../multibot');
 const smartAgentSystem = require('../agents');
 const {
@@ -2686,6 +2687,325 @@ function formatRecoveryPlan(recovery) {
   ].join('\n');
 }
 
+function formatProductionHealth(health = {}) {
+  const checks = health.checks || [];
+  const problemChecks = checks.filter(check => check.status !== 'healthy');
+  return [
+    'Production Health',
+    '',
+    `Status: ${health.status || 'unknown'}`,
+    `Checks: ${checks.length}`,
+    `Warnings: ${(health.warnings || []).length}`,
+    `Blockers: ${(health.blockers || []).length}`,
+    '',
+    problemChecks.length ? 'Degraded checks:' : 'Semua check utama sehat.',
+    ...(problemChecks.length ? problemChecks.map(check => `- ${check.id}: ${check.status}${(check.warnings || check.blockers || [])[0] ? ` — ${(check.warnings || check.blockers || [])[0]}` : ''}`) : []),
+    '',
+    'Catatan: health check read-only dan output sudah disanitasi.'
+  ].join('\n');
+}
+
+function formatProductionIncidentLine(incident = {}, index = 0) {
+  return `${index + 1}. ${incident.id} — ${incident.title} [${incident.severity}/${incident.status}] ${incident.updatedAt || incident.lastSeenAt || ''}`;
+}
+
+function formatProductionIncidentDetail(incident = {}, timeline = []) {
+  if (!incident) return 'Incident tidak ditemukan.';
+  return [
+    `Incident: ${incident.id}`,
+    `Title: ${incident.title}`,
+    `Severity: ${incident.severity}`,
+    `Status: ${incident.status}`,
+    `Affected: ${(incident.affectedSystems || []).join(', ') || '-'}`,
+    `First seen: ${incident.firstSeenAt || '-'}`,
+    `Last seen: ${incident.lastSeenAt || '-'}`,
+    '',
+    incident.summary || '-',
+    '',
+    incident.rootCauseHypothesis ? [
+      'Root cause hypothesis:',
+      `- Confidence: ${incident.rootCauseHypothesis.confidence}`,
+      `- Cause: ${incident.rootCauseHypothesis.likelyCause}`,
+      `- Mitigation: ${incident.rootCauseHypothesis.recommendedMitigation}`
+    ].join('\n') : 'Root cause belum dianalisis. Gunakan /analyze_incident <id>.',
+    '',
+    'Timeline:',
+    ...(timeline.length ? timeline.slice(-6).map(event => `- ${event.time || '-'} ${event.type || 'event'}: ${event.summary || '-'}`) : ['- belum ada event']),
+    '',
+    'Actions:',
+    `/responseplan ${incident.id}`,
+    `/propose_incident_repair ${incident.id}`,
+    `/propose_incident_rollback ${incident.id}`
+  ].join('\n');
+}
+
+async function getLatestProductionIncident(services) {
+  const incidents = await observabilitySystem.incidentStore.listIncidents({ status: 'open', limit: 1 }, services);
+  return incidents[0] || null;
+}
+
+async function handleObservabilityCommands(chatId, userId, cmd, args, msg) {
+  const commands = new Set([
+    '/prodhealth',
+    '/incidents',
+    '/incident',
+    '/analyze_incident',
+    '/incident_timeline',
+    '/responseplan',
+    '/propose_incident_repair',
+    '/propose_incident_rollback',
+    '/close_incident'
+  ]);
+  if (!commands.has(cmd)) return false;
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    await sendChunkedMessage(chatId, 'Production Observability hanya untuk admin/owner.', replyOpt);
+    return true;
+  }
+
+  const services = getObservabilityServices(userId);
+
+  if (cmd === '/prodhealth') {
+    const health = await observabilitySystem.productionHealthMonitor.runProductionHealthCheck(services);
+    const detection = await observabilitySystem.incidentDetector.detectIncidentFromHealthCheck(health, services);
+    const suffix = detection.incident ? `\nIncident: ${detection.incident.id} (${detection.deduped ? 'existing' : 'new'})` : '';
+    await sendChunkedMessage(chatId, `${formatProductionHealth(health)}${suffix}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/incidents') {
+    const incidents = await observabilitySystem.incidentStore.listIncidents({ status: 'open', limit: 10 }, services);
+    const opsIncidents = !incidents.length && opsSystem?.incidentHandler?.listRecentIncidents
+      ? opsSystem.incidentHandler.listRecentIncidents(getOpsServices(), 5)
+      : [];
+    const body = incidents.length
+      ? incidents.map(formatProductionIncidentLine).join('\n')
+      : (opsIncidents.length ? `Production incident belum ada.\n\nOps incidents lama:\n${opsIncidents.map(formatIncidentLine).join('\n')}` : 'Belum ada production incident terbuka.');
+    await sendChunkedMessage(chatId, `Production Incidents\n\n${body}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/incident') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await sendChunkedMessage(chatId, 'Format: /incident <incidentId>', replyOpt);
+      return true;
+    }
+    const incident = await observabilitySystem.incidentStore.getIncident(incidentId, services);
+    if (incident) {
+      const tl = await observabilitySystem.incidentTimeline.getIncidentTimeline(incident.id, services);
+      await sendChunkedMessage(chatId, formatProductionIncidentDetail(incident, tl), replyOpt);
+      return true;
+    }
+    const oldIncident = opsSystem.incidentHandler.getIncident(incidentId, getOpsServices());
+    await sendChunkedMessage(chatId, formatIncidentDetail(oldIncident), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/analyze_incident') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await sendChunkedMessage(chatId, 'Format: /analyze_incident <incidentId>', replyOpt);
+      return true;
+    }
+    const incident = await observabilitySystem.incidentStore.getIncident(incidentId, services);
+    if (!incident) {
+      await sendChunkedMessage(chatId, `Incident tidak ditemukan: ${incidentId}`, replyOpt);
+      return true;
+    }
+    const analysis = await observabilitySystem.rootCauseAnalyzer.analyzeRootCause(incident, services);
+    await observabilitySystem.incidentStore.updateIncident(incident.id, { rootCauseHypothesis: analysis, status: 'investigating' }, services);
+    await sendChunkedMessage(chatId, [
+      'Root Cause Hypothesis',
+      '',
+      `Confidence: ${analysis.confidence}`,
+      `Likely cause: ${analysis.likelyCause}`,
+      `Evidence: ${(analysis.evidence || []).join('; ') || '-'}`,
+      `Next checks: ${(analysis.recommendedNextChecks || []).join('; ') || '-'}`,
+      `Mitigation: ${analysis.recommendedMitigation}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/incident_timeline') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await sendChunkedMessage(chatId, 'Format: /incident_timeline <incidentId>', replyOpt);
+      return true;
+    }
+    const incident = await observabilitySystem.incidentStore.getIncident(incidentId, services);
+    const summary = incident ? await observabilitySystem.incidentTimeline.summarizeIncidentTimeline(incident, services) : 'Incident tidak ditemukan.';
+    await sendChunkedMessage(chatId, `Incident Timeline\n\n${summary}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/responseplan') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await sendChunkedMessage(chatId, 'Format: /responseplan <incidentId>', replyOpt);
+      return true;
+    }
+    const result = await observabilitySystem.incidentResponsePlanner.createIncidentResponsePlan(incidentId, services);
+    await sendChunkedMessage(chatId, result.ok
+      ? `${observabilitySystem.incidentResponsePlanner.buildIncidentResponseSummary(result.plan)}\n\nBelum ada action dijalankan. Proposal repair/rollback harus dibuat dan di-approve.`
+      : `Response plan gagal: ${result.error || 'unknown'}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/propose_incident_repair' || cmd === '/propose_incident_rollback') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await sendChunkedMessage(chatId, `Format: ${cmd} <incidentId>`, replyOpt);
+      return true;
+    }
+    const incident = await observabilitySystem.incidentStore.getIncident(incidentId, services);
+    if (!incident) {
+      await sendChunkedMessage(chatId, `Incident tidak ditemukan: ${incidentId}`, replyOpt);
+      return true;
+    }
+    let planId = incident.responsePlanId;
+    if (!planId) {
+      const planned = await observabilitySystem.incidentResponsePlanner.createIncidentResponsePlan(incidentId, services);
+      planId = planned.plan?.id;
+    }
+    const result = cmd === '/propose_incident_rollback'
+      ? await observabilitySystem.incidentProposalBuilder.createIncidentRollbackProposal(planId, services, { actorId: userId, userId })
+      : await observabilitySystem.incidentProposalBuilder.createIncidentRepairProposal(planId, services, { actorId: userId, userId });
+    await sendChunkedMessage(chatId, result.ok ? [
+      cmd === '/propose_incident_rollback' ? 'Rollback proposal dibuat.' : 'Repair proposal dibuat.',
+      `Proposal: ${result.proposal.id}`,
+      `Risk: ${result.proposal.riskLevel}`,
+      `Evaluation gate: ${result.evaluation?.passed ? 'passed' : result.evaluation?.reason || 'not passed'}`,
+      '',
+      'Belum dijalankan.',
+      `Approve: /approve ${result.proposal.id}`,
+      `Run setelah approve: /runexec ${result.proposal.id}`
+    ].join('\n') : `Proposal gagal: ${result.error || 'Evaluation/executor unavailable'}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/close_incident') {
+    const incidentId = String(args || '').trim();
+    if (!incidentId) {
+      await sendChunkedMessage(chatId, 'Format: /close_incident <incidentId>', replyOpt);
+      return true;
+    }
+    const incident = await observabilitySystem.incidentStore.getIncident(incidentId, services);
+    if (!incident) {
+      await sendChunkedMessage(chatId, `Incident tidak ditemukan: ${incidentId}`, replyOpt);
+      return true;
+    }
+    await observabilitySystem.incidentStore.updateIncident(incident.id, { status: 'closed', closedAt: new Date().toISOString() }, services);
+    await sendChunkedMessage(chatId, `Incident ${incident.id} ditutup.`, replyOpt);
+    return true;
+  }
+
+  return false;
+}
+
+function detectNaturalObservabilityIntent(text = '') {
+  const q = String(text || '').toLowerCase();
+  if (!q || q.startsWith('/')) return { handled: false };
+  if (/cek .*production health|production health|prodhealth|health produksi|status produksi/.test(q)) return { handled: true, type: 'health' };
+  if (/ada incident apa|incident apa|insiden apa|daftar incident|incident terbuka/.test(q)) return { handled: true, type: 'list' };
+  if (/kenapa deploy gagal|deploy gagal|app down setelah deploy|dashboard error setelah push/.test(q)) return { handled: true, type: 'analyze_latest_deploy' };
+  if (/buat response plan|buat rencana response|response plan/.test(q)) return { handled: true, type: 'response_plan' };
+  if (/rollback kalau perlu|buat rollback|rollback proposal|perlu rollback/.test(q)) return { handled: true, type: 'rollback_proposal' };
+  if (/tutup incident ini|close incident|tutup insiden/.test(q)) return { handled: true, type: 'close_help' };
+  return { handled: false };
+}
+
+async function handleNaturalObservabilityRoute(chatId, userId, userText, msg) {
+  const intent = detectNaturalObservabilityIntent(userText);
+  if (!intent.handled) return { handled: false };
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    const answer = 'Production Observability hanya untuk admin/owner. Saya tidak menjalankan diagnosis produksi dari akun non-admin.';
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+  const services = getObservabilityServices(userId);
+
+  if (intent.type === 'health') {
+    const health = await observabilitySystem.productionHealthMonitor.runProductionHealthCheck(services);
+    const detection = await observabilitySystem.incidentDetector.detectIncidentFromHealthCheck(health, services);
+    const answer = `${formatProductionHealth(health)}${detection.incident ? `\nIncident: ${detection.incident.id}` : ''}`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'list') {
+    const incidents = await observabilitySystem.incidentStore.listIncidents({ status: 'open', limit: 8 }, services);
+    const answer = incidents.length
+      ? `Production incidents terbuka:\n${incidents.map(formatProductionIncidentLine).join('\n')}`
+      : 'Belum ada production incident terbuka.';
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  const incident = await getLatestProductionIncident(services);
+  if (!incident && ['response_plan', 'rollback_proposal', 'analyze_latest_deploy'].includes(intent.type)) {
+    const created = await observabilitySystem.incidentDetector.detectIncidentFromDeployFailure({
+      summary: 'User asked about deploy failure; incident created for investigation.'
+    }, services);
+    const answer = `Saya buat incident investigasi deploy: ${created.incident.id}.\nBelum ada aksi dijalankan.\nLanjut: /analyze_incident ${created.incident.id}`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'analyze_latest_deploy') {
+    const analysis = await observabilitySystem.rootCauseAnalyzer.analyzeRootCause(incident, services);
+    await observabilitySystem.incidentStore.updateIncident(incident.id, { rootCauseHypothesis: analysis, status: 'investigating' }, services);
+    const answer = [
+      `Incident terbaru: ${incident.id}`,
+      `Kemungkinan penyebab: ${analysis.likelyCause}`,
+      `Confidence: ${analysis.confidence}`,
+      `Next checks: ${(analysis.recommendedNextChecks || []).join('; ') || '-'}`,
+      '',
+      'Saya belum menjalankan repair/rollback. Jika perlu: /responseplan ' + incident.id
+    ].join('\n');
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'response_plan') {
+    const result = await observabilitySystem.incidentResponsePlanner.createIncidentResponsePlan(incident.id, services);
+    const answer = result.ok
+      ? `${observabilitySystem.incidentResponsePlanner.buildIncidentResponseSummary(result.plan)}\n\nBelum ada aksi dijalankan. Repair/rollback harus proposal + approval.`
+      : `Response plan gagal: ${result.error || 'unknown'}`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'rollback_proposal') {
+    let planId = incident.responsePlanId;
+    if (!planId) {
+      const planned = await observabilitySystem.incidentResponsePlanner.createIncidentResponsePlan(incident.id, services);
+      planId = planned.plan?.id;
+    }
+    const result = await observabilitySystem.incidentProposalBuilder.createIncidentRollbackProposal(planId, services, { actorId: userId, userId });
+    const answer = result.ok ? [
+      'Rollback proposal dibuat, belum dijalankan.',
+      `Proposal: ${result.proposal.id}`,
+      `Risk: ${result.proposal.riskLevel}`,
+      `Approve: /approve ${result.proposal.id}`,
+      `Run setelah approve: /runexec ${result.proposal.id}`
+    ].join('\n') : `Rollback proposal belum dibuat: ${result.error || 'Evaluation/executor unavailable'}`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'close_help') {
+    const answer = incident
+      ? `Untuk menutup incident terbaru gunakan: /close_incident ${incident.id}`
+      : 'Tidak ada incident terbuka untuk ditutup.';
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  return { handled: false };
+}
+
 async function handleOpsCommands(chatId, userId, cmd, args, msg) {
   const opsCommands = new Set([
     '/ops',
@@ -3413,6 +3733,26 @@ function getBackupServices(actorId = '') {
     ...getToolServices(actorId),
     actorId: actorId || '',
     actorType: 'telegram'
+  };
+}
+
+function getObservabilityServices(actorId = '') {
+  return {
+    ...getExecutorServices(actorId),
+    actorId: actorId || '',
+    actorType: 'telegram',
+    env: config,
+    evaluationSystem: evaluationSystem || smartAgentSystem.agentEvaluationV2 || null,
+    executorSystem,
+    integrationsSystem,
+    selfHealingSystem,
+    autoHealingSystem,
+    monitoringSystem,
+    cicdSystem,
+    observabilitySystem,
+    ownerChatId: OWNER_CHAT_ID,
+    sendChunkedMessage,
+    logger: log
   };
 }
 
@@ -8154,6 +8494,15 @@ async function handleHelp(chatId, msg) {
 /github_actions - status GitHub Actions read-only
 /propose_workflow workflowId - proposal workflow dispatch [admin]
 /propose_deploy - proposal deploy Render [admin]
+/prodhealth - production health check read-only [admin]
+/incidents - daftar production incidents [admin]
+/incident incidentId - detail incident production/ops [admin]
+/analyze_incident incidentId - root cause hypothesis [admin]
+/incident_timeline incidentId - timeline incident [admin]
+/responseplan incidentId - buat response plan tanpa aksi langsung [admin]
+/propose_incident_repair incidentId - proposal repair, tidak auto-run [admin]
+/propose_incident_rollback incidentId - proposal rollback, tidak auto-run [admin]
+/close_incident incidentId - tutup incident [admin]
 /whoami - identitas user dan role workspace
 /workspace - workspace aktif dan permission
 /workspaces - daftar workspace yang bisa diakses
@@ -8197,8 +8546,8 @@ async function handleHelp(chatId, msg) {
 /benchmarkfull - benchmark lengkap lebih berat [admin]
 /benchmarks - riwayat benchmark [admin]
 /diag atau /diagnose - diagnosis operasional [admin]
-/incidents - daftar incident [admin]
-/incident incidentId - detail incident [admin]
+/incidents - daftar production incident [admin]
+/incident incidentId - detail production/ops incident [admin]
 /recover - rekomendasi recovery aman [admin]
 /recover confirm action - jalankan recovery aman [admin]
 /reliability - reliability score [admin]
@@ -9759,6 +10108,7 @@ try {
     evaluationSystem: evaluationSystem || null,
     executorSystem: executorSystem || null,
     monitoringSystem: monitoringSystem || null,
+    observabilitySystem,
     cicdSystem: cicdSystem || null,
     autoHealingSystem: autoHealingSystem || null,
     logger: log
@@ -10016,6 +10366,7 @@ await withUserActionLock(userId, async () => {
   if (await handleAdaptiveCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleSelfHealingCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleObservabilityCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handlePhase33OpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
@@ -10176,6 +10527,26 @@ Data endpoint membutuhkan Authorization Bearer token.`;
         intent: 'plugin_hook'
       });
     }
+    return;
+  }
+
+  const observabilityNaturalResult = await handleNaturalObservabilityRoute(chatId, userId, userText, msg);
+  if (observabilityNaturalResult?.handled) {
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: observabilityNaturalResult.answer,
+      intent: `natural_observability:${observabilityNaturalResult.type}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: observabilityNaturalResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, observabilityNaturalResult.answer);
     return;
   }
 

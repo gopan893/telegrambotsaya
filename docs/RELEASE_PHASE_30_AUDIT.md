@@ -65,9 +65,9 @@ Penyebabnya:
 
 4. Phase 33 mempromosikan `Monitoring` dan `CI/CD` menjadi tab stabil setelah WebSocket auth, API fallback, dan proposal-only CI/CD flow ditambahkan.
 
-5. Cache PWA dinaikkan ke `telegram-aios-dashboard-static-v33-ui-parse-fix`.
+5. Cache PWA dinaikkan ke `telegram-aios-dashboard-static-v34-phase37-observability`.
 
-6. Static asset diberi query version `v=20260606-ui-parse-fix` agar browser yang masih memegang cache lama mengambil asset baru.
+6. Static asset diberi query version `v=20260606-phase37-observability` agar browser yang masih memegang cache lama mengambil asset baru.
 
 ## Yang Tidak Dihapus
 

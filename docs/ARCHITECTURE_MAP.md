@@ -28,7 +28,8 @@
 | `insights` | ❌ |
 | `graph` | ❌ |
 | `benchmarks` | ❌ |
-| `incidents` | ❌ |
+| `incidents` | ✅ |
+| `observability` | ✅ |
 | `audit` | ❌ |
 | `commands` | ❌ |
 | `env` | ❌ |
@@ -221,6 +222,21 @@ Total known commands: 74
 - `autoheal-runner.js`
 - `autoheal-store.js`
 - `autoheal-utils.js`
+- `index.js`
+
+### observability/
+
+- `production-health-monitor.js`
+- `incident-store.js`
+- `incident-detector.js`
+- `incident-classifier.js`
+- `incident-timeline.js`
+- `root-cause-analyzer.js`
+- `incident-response-planner.js`
+- `incident-proposal-builder.js`
+- `incident-notifier.js`
+- `observability-sanitizer.js`
+- `observability-utils.js`
 - `index.js`
 
 ### backup/

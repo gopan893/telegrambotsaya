@@ -59,7 +59,7 @@ Dashboard rules:
 Known dashboard tabs:
 overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
-backup, insights, agent-evaluation, coding-workspace, release,
+backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
 deploy.
 
@@ -96,6 +96,11 @@ Always run:
 Run existing related scratch tests.
 If test file is missing, report SKIPPED honestly.
 Do not invent passing results.
+
+Phase 37 observability rule:
+- Production incident repair/rollback must remain proposal-only.
+- Incident flow is health check → classify → timeline/root cause → response plan → Evaluation v2 → executor proposal → approval → run.
+- No direct repair/rollback/deploy from dashboard, Telegram, or runtime.
 
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js

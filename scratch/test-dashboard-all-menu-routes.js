@@ -12,6 +12,8 @@ const ROOT = path.join(__dirname, '..');
 const stateJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'state.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'app.js'), 'utf8');
 const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'utf8');
+const observabilityJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'observability.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}`;
 const html = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
 
 let passed = 0;
@@ -48,6 +50,7 @@ const menuExpectations = {
   graph: { title: 'Knowledge Graph', renderer: 'renderGraph' },
   benchmarks: { title: 'Benchmarks Audit', renderer: 'renderBenchmarks' },
   incidents: { title: 'Incidents Log', renderer: 'renderIncidents' },
+  observability: { title: 'Observability / Incidents', renderer: 'renderObservability' },
   audit: { title: 'Audit Log', renderer: 'renderAuditLog' },
   commands: { title: 'Command Catalog', renderer: 'renderCommands' },
   env: { title: 'Environment Check', renderer: 'renderEnv' },
@@ -63,10 +66,10 @@ const menuExpectations = {
 console.log('--- Public tabs have renderers and own titles ---\n');
 for (const [tabId, expected] of Object.entries(menuExpectations)) {
   assert(html.includes(`data-tab="${tabId}"`), `${tabId} exists in public sidebar`);
-  assert(uiJs.includes(expected.renderer), `${tabId} has renderer ${expected.renderer}`);
+  assert(dashboardRenderers.includes(expected.renderer), `${tabId} has renderer ${expected.renderer}`);
   const titleFound = stateJs.includes(`title: '${expected.title}'`) ||
     stateJs.includes(`title: "${expected.title}"`) ||
-    uiJs.includes(expected.title);
+    dashboardRenderers.includes(expected.title);
   assert(titleFound, `${tabId} renders or registers title "${expected.title}"`);
 }
 

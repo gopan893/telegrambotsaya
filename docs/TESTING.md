@@ -79,6 +79,20 @@ node scratch/test-deploy-dashboard-api.js
 node scratch/test-phase36-deploy-regression.js
 ```
 
+## Phase 37 Observability Tests
+
+```bash
+node scratch/test-production-health-monitor.js
+node scratch/test-incident-detector.js
+node scratch/test-incident-classifier.js
+node scratch/test-incident-timeline.js
+node scratch/test-root-cause-analyzer.js
+node scratch/test-incident-response-planner.js
+node scratch/test-incident-proposal-builder.js
+node scratch/test-observability-dashboard-api.js
+node scratch/test-phase37-observability-regression.js
+```
+
 ## Security / Leak Tests
 
 ```bash

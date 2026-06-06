@@ -56,7 +56,11 @@ function detectActionIntent(text = '', context = {}, services = {}) {
   let targetId = '';
   let reason = '';
 
-  if (/\brestore\b|\bpulihkan\b/.test(lower)) {
+  if (/\brollback\b/.test(lower)) {
+    actionType = 'restore.run';
+    targetType = 'deploy';
+    reason = 'rollback request';
+  } else if (/\brestore\b|\bpulihkan\b/.test(lower)) {
     actionType = 'restore.run';
     targetType = 'backup';
     targetId = targetIds.backup;

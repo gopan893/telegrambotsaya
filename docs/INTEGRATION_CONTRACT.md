@@ -44,6 +44,21 @@ Deploy/rollback actions MUST follow:
 
 No direct deploy. No auto-rollback. No secret exposure.
 
+## Observability / Incident Contract
+
+Production incident repair/rollback actions MUST follow:
+
+1. production health check or incident detection
+2. severity classification
+3. timeline/root-cause analysis
+4. response plan creation
+5. Evaluation v2 gate
+6. executor proposal
+7. approval
+8. run
+
+No direct repair, rollback, deploy, shell, or external write action may run from observability detection or dashboard analysis.
+
 ## Module Creation Contract
 
 Before creating a new file/module:

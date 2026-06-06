@@ -29,6 +29,7 @@ const selfhealingRoutes = require('./selfhealing-routes');
 const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
+const observabilityRoutes = require('./observability-routes');
 
 function getDashboardServices(services = {}) {
   return {
@@ -41,6 +42,7 @@ function getDashboardServices(services = {}) {
     evaluationSystem: services.evaluationSystem || null,
     executorSystem: services.executorSystem || null,
     monitoringSystem: services.monitoringSystem || null,
+    observabilitySystem: services.observabilitySystem || null,
     cicdSystem: services.cicdSystem || null,
     autoHealingSystem: services.autoHealingSystem || null,
     routineRegistry: services.routineRegistry || null,
@@ -347,6 +349,12 @@ function registerDashboardRoutes(app, rawServices = {}) {
   agentExecutorRoutes.registerAgentExecutorRoutes(router, services);
   agentEvaluationRoutes.registerAgentEvaluationRoutes(router, services);
   integrationExecutionRoutes.registerIntegrationExecutionRoutes(router, services);
+  try {
+    observabilityRoutes.registerObservabilityRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Observability routes skipped:', e.message);
+  }
   if (services.selfHealingSystem) {
     selfhealingRoutes.registerSelfHealingRoutes(router, services);
   }

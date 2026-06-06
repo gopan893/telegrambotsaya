@@ -23,6 +23,12 @@ function runPostDeployChecks(deployPlanId, services) {
   };
 
   store.addPostDeployReport(report);
+  if (!allOk) {
+    try {
+      const observability = require('../observability');
+      Promise.resolve(observability.incidentDetector.detectIncidentFromDeployFailure(report, services)).catch(() => {});
+    } catch (_) {}
+  }
   return report;
 }
 

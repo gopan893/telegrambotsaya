@@ -10,6 +10,114 @@ It tracks what was done, what is unfinished, and what the next agent should do.
 ## Session Log
 
 ### Last Agent
+Codex
+
+### Date
+2026-06-06
+
+### Current Task
+Phase 37 — Production Observability + Incident Response Center.
+
+### Files Changed
+- `src/observability/` — created production health monitor, incident store/detector/classifier/timeline/root-cause analyzer/response planner/proposal builder/notifier/sanitizer/utils/index.
+- `src/dashboard/observability-routes.js` — created protected dashboard API routes for observability/incident response.
+- `public/dashboard/observability.js` — created dashboard tab renderer.
+- `public/dashboard/state.js`, `index.html`, `service-worker.js` — added Observability tab, menu item, asset, and cache bust.
+- `src/bot/legacy-runtime.js` — added `/prodhealth`, incident commands, natural observability routing, and dashboard service wiring.
+- `src/deploy/post-deploy-monitor.js` — post-deploy check failure now creates a sanitized production incident asynchronously.
+- `src/agents/agent-action-detector.js`, `src/agents/eval/*`, `src/agents/agent-evaluation-cases.js` — added observability action/routing detection, golden cases, scoring, and quality gates.
+- `docs/PRODUCTION_OBSERVABILITY.md`, `INCIDENT_RESPONSE_CENTER.md`, `ROOT_CAUSE_ANALYSIS.md`, `OBSERVABILITY_SECURITY.md` — created.
+- `docs/COMMANDS.md`, `README.md`, `AGENTS.md`, `ARCHITECTURE_MAP.md`, `INTEGRATION_CONTRACT.md`, `TESTING.md` — updated.
+- `scratch/test-production-health-monitor.js`, `test-incident-detector.js`, `test-incident-classifier.js`, `test-incident-timeline.js`, `test-root-cause-analyzer.js`, `test-incident-response-planner.js`, `test-incident-proposal-builder.js`, `test-observability-dashboard-api.js`, `test-phase37-observability-regression.js` — created.
+- Dashboard route regression tests updated for `observability` and cache `v34`.
+
+### What Was Completed
+- Production health check read-only flow.
+- Production incident create/dedupe/classify/timeline/root-cause/response-plan flow.
+- Repair/rollback proposal builder using existing Phase 16 executor proposal boundary.
+- High/danger incident repair/rollback proposal creation is blocked if Evaluation v2 gate does not pass.
+- Dashboard Observability / Incident Center tab and protected API.
+- Telegram commands and natural phrases:
+  - `/prodhealth`
+  - `/incidents`
+  - `/incident <id>`
+  - `/analyze_incident <id>`
+  - `/incident_timeline <id>`
+  - `/responseplan <id>`
+  - `/propose_incident_repair <id>`
+  - `/propose_incident_rollback <id>`
+  - `/close_incident <id>`
+  - natural: `cek production health`, `ada incident apa?`, `kenapa deploy gagal?`, `buat response plan`, `rollback kalau perlu`.
+- WebSocket/monitoring integration emits sanitized incident event when available.
+- Post-deploy failure integration creates incident without direct deploy/rollback action.
+
+### What Is Unfinished
+- Root cause analysis is heuristic only; no live GitHub/Render API correlation yet.
+- Incident notification is dashboard-first unless Telegram owner notification services are explicitly passed.
+- Response actions use existing safe executor action types; no new direct repair/rollback executor was added.
+
+### Tests Run
+| Test | Result |
+|---|---|
+| `node --check telebot.js` | PASS |
+| `node --check src/bot/legacy-runtime.js` | PASS |
+| `node --check src/dashboard/dashboard-routes.js` | PASS |
+| `node --check src/dashboard/observability-routes.js` | PASS |
+| `node --check src/observability/*.js` | PASS |
+| `node --check public/dashboard/observability.js` | PASS |
+| `node --check src/agents/agent-action-detector.js` | PASS |
+| `node --check src/agents/eval/evaluation-dry-runner.js` | PASS |
+| `node --check src/agents/eval/evaluation-scorer-v2.js` | PASS |
+| `node scratch/test-agent-evaluation-v2.js` | PASS |
+| `node scratch/test-production-health-monitor.js` | PASS |
+| `node scratch/test-incident-detector.js` | PASS |
+| `node scratch/test-incident-classifier.js` | PASS |
+| `node scratch/test-incident-timeline.js` | PASS |
+| `node scratch/test-root-cause-analyzer.js` | PASS |
+| `node scratch/test-incident-response-planner.js` | PASS |
+| `node scratch/test-incident-proposal-builder.js` | PASS |
+| `node scratch/test-observability-dashboard-api.js` | PASS |
+| `node scratch/test-phase37-observability-regression.js` | PASS |
+| `node scratch/test-render-deploy-gate.js` | PASS |
+| `node scratch/test-post-deploy-monitor.js` | PASS |
+| `node scratch/test-rollback-plan-generator.js` | PASS |
+| `node scratch/test-deploy-proposal-builder.js` | PASS |
+| `node scratch/test-dashboard-route-consistency.js` | PASS |
+| `node scratch/test-dashboard-router-registry.js` | PASS |
+| `node scratch/test-dashboard-all-menu-routes.js` | PASS |
+| `node scratch/test-dashboard-dark-form-ui.js` | PASS |
+| `node scratch/test-executor-boundary-stable-release.js` | PASS |
+| `node scratch/test-integration-gate-stable-release.js` | PASS |
+| `node scratch/test-natural-chat-stable-release.js` | PASS |
+| `node scratch/test-file-analysis-leak.js` | PASS |
+| `node scratch/test-pwa-assets.js` | PASS |
+| `node scratch/test-dashboard-stable-routes.js` | PASS |
+| exact leaked-fragment scan for previously exposed credential fragments | PASS |
+| high-confidence secret value scan on changed files | PASS |
+| `npm start` smoke with dummy env + JSON fallback | PASS |
+| `git diff --check` | PASS |
+
+### Tests Failed
+- None in this session.
+
+### Remaining Risks
+- Production live verification still requires Render deploy and dashboard token.
+- Evaluation v2 observability cases are added, but scoring remains heuristic.
+
+### Next Safe Task for Codex
+```
+1. Verify Render deployed the Phase 37 asset version v=20260606-phase37-observability.
+2. Open /dashboard#observability.
+3. Run /prodhealth from Telegram owner/admin.
+4. Confirm repair/rollback proposal requires /approve then /runexec.
+```
+
+### Recommended Next Branch/Commit
+Commit message: `observability: add production incident response center`
+
+---
+
+### Last Agent
 OpenCode
 
 ### Date
