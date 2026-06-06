@@ -45,7 +45,7 @@ function run() {
 
   assert(/href="\/dashboard\/styles\.css(?:\?[^"]*)?"/.test(indexHtml));
   assert(/src="\/dashboard\/app\.js(?:\?[^"]*)?"/.test(indexHtml));
-  assert(indexHtml.includes('v=20260606-phase37-observability'));
+  assert(indexHtml.includes('v=20260607-dashboard-usability-fix'));
   assert(apiJs.includes("API_BASE = '/api/dashboard'"));
   assert(!/localhost:10000|127\.0\.0\.1|http:\/\/localhost/i.test(apiJs));
   assert(!/localhost:10000|127\.0\.0\.1|http:\/\/localhost/i.test(indexHtml));

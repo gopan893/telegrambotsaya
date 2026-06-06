@@ -13,6 +13,79 @@ It tracks what was done, what is unfinished, and what the next agent should do.
 Codex
 
 ### Date
+2026-06-07
+
+### Current Task
+Dashboard usability audit and repair after production pages showed blank/error states.
+
+### Files Changed
+- `public/dashboard/ui.js` — replaced remaining placeholder pages with usable API-backed renderers for Workspaces, Users, Permissions, Planner, Executor, Tools, Backup, Audit Log, and Agent Evaluation; added safe dashboard context helpers; added GitHub Ops action bridge; fixed Deploy release-candidate action payload.
+- `public/dashboard/githubops.js` — fixed API base path from absolute `/api/dashboard/githubops` to Api-relative `/githubops`, preventing doubled `/api/dashboard/api/dashboard/...` requests.
+- `public/dashboard/deploy.js` — fixed API base path from absolute `/api/dashboard/deploy` to Api-relative `/deploy`, preventing doubled API paths.
+- `public/dashboard/index.html` — bumped dashboard asset version to `v=20260607-dashboard-usability-fix` so mobile/PWA browsers load the repaired JS.
+- `public/dashboard/service-worker.js` — bumped cache name to `telegram-aios-dashboard-static-v35-dashboard-usability` and pre-cached GitHub Ops/Deploy helper scripts.
+- `scratch/test-dashboard-usable-pages.js` — added regression test for placeholder removal, inline UI action methods, dashboard tab coverage, and API base path correctness.
+- `scratch/test-dashboard-router-registry.js`, `scratch/test-dashboard-stable-routes.js`, `scratch/test-dashboard-env-and-static.js` — updated dashboard cache/version assertions for the new asset version.
+- `docs/AGENT_HANDOFF.md` — updated this handoff.
+
+### What Was Completed
+- Audited dashboard frontend routing, tab renderers, helper scripts, service worker, and protected dashboard APIs.
+- Fixed pages that were visually present in the menu but still rendered non-usable placeholder content.
+- Fixed GitHub Ops and Deploy buttons that were calling broken doubled API paths.
+- Added missing `UI._ghAction(...)` handler so GitHub Ops inline buttons can execute safe dashboard requests.
+- Preserved approval boundaries: deploy/push/write actions still create plans/proposals or return gate results; no direct unsafe action was added.
+- Bumped PWA/static asset cache so stale mobile service worker should stop serving old dashboard JS that can cause `UI is not defined` or blank pages.
+- Verified main dashboard routes, dark form UI, PWA cache safety, and action endpoints against a local server with dummy env.
+
+### What Is Unfinished
+- Browser-level visual click-through was not performed with a real mobile browser session in this run; verification used static tests plus local HTTP/API smoke checks.
+- Some user-data endpoints return expected 403 under dummy local actor/workspace unless a real authorized dashboard actor is used.
+- CI/CD workflow-dispatch proposal returns expected `400 workflowId required` when tested without a workflow id.
+
+### Tests Run
+| Test | Result |
+|---|---|
+| `node --check telebot.js` | PASS |
+| `node --check public/dashboard/service-worker.js` | PASS |
+| `node --check public/dashboard/ui.js` | PASS |
+| `node --check public/dashboard/githubops.js` | PASS |
+| `node --check public/dashboard/deploy.js` | PASS |
+| `node scratch/test-dashboard-usable-pages.js` | PASS |
+| `node scratch/test-dashboard-router-registry.js` | PASS |
+| `node scratch/test-dashboard-all-menu-routes.js` | PASS |
+| `node scratch/test-dashboard-dark-form-ui.js` | PASS |
+| `node scratch/test-dashboard-route-consistency.js` | PASS |
+| `node scratch/test-dashboard-stable-routes.js` | PASS |
+| `node scratch/test-dashboard-env-and-static.js` | PASS |
+| `node scratch/test-pwa-assets.js` | PASS |
+| local `npm start` smoke with dummy env on port 34568 | PASS |
+| protected GET endpoint audit for dashboard tabs | PASS, with expected permission 403 for dummy user-data routes |
+| protected POST action audit for GitHubOps/Deploy/Self-Healing/CI/CD/Observability/Recovery/Integrity | PASS, no 404/500; expected 400 for missing `workflowId` |
+
+### Tests Failed
+- None.
+
+### Remaining Risks
+- Production Render still needs redeploy so new cache/versioned assets are served.
+- On Android/PWA, user may need one reload or `Clear App Cache` if the old service worker remains active until the new worker installs.
+
+### Next Safe Task for Codex
+```
+1. Deploy current branch to Render.
+2. Open /dashboard on mobile.
+3. Tap Reload once or Settings -> Clear App Cache if old UI still appears.
+4. Click each dashboard menu item and verify no page shows "UI is not defined", blank content, or placeholder text.
+```
+
+### Recommended Next Branch/Commit
+Suggested commit message if the user asks to commit: `dashboard: repair usable menu pages and cache bust assets`
+
+---
+
+### Last Agent
+Codex
+
+### Date
 2026-06-06
 
 ### Current Task
