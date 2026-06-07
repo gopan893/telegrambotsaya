@@ -3,9 +3,27 @@
 const messageHandler = require('./message-handler');
 const callbackHandler = require('./callback-handler');
 const errorHandler = require('./error-handler');
+const telegramControl = require('../telegram-control');
 
 async function handleTelegramUpdate(context = {}, update = {}) {
   if (!update || typeof update !== 'object') return false;
+  const runtimeResult = await telegramControl.runtimeDispatcher.dispatchTelegramUpdate(
+    update,
+    update.__botId || 'default',
+    {
+      ...context,
+      naturalRouter: telegramControl.naturalRouter,
+      botRegistry: context.botRegistry,
+      webhookRoute: context.config?.WEBHOOK_PATH || '/webhook',
+      safeSendMessage: context.safeSendMessage || (async (chatId, text, options = {}) => {
+        if (typeof context.sendTelegramMessage === 'function') {
+          return context.sendTelegramMessage(context.bot, chatId, text, options);
+        }
+        return { ok: false, reason: 'NO_SEND_SERVICE' };
+      })
+    }
+  );
+  if (runtimeResult?.handled && !runtimeResult?.passThrough) return runtimeResult;
 
   if (update.callback_query) {
     return callbackHandler.handleCallback(context, update.callback_query);

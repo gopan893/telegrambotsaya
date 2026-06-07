@@ -62,7 +62,8 @@ function safeString(val) {
 
 function isBotMessage(update) {
   if (!update) return false;
-  const msg = update.message || update.callback_query?.message || update.edited_message;
+  if (update.callback_query?.from) return update.callback_query.from.is_bot === true;
+  const msg = update.message || update.edited_message || update.channel_post || update.edited_channel_post;
   if (!msg) return false;
   return msg.from?.is_bot === true;
 }
@@ -71,6 +72,8 @@ function getChatId(update) {
   if (update?.message?.chat?.id) return update.message.chat.id;
   if (update?.callback_query?.message?.chat?.id) return update.callback_query.message.chat.id;
   if (update?.edited_message?.chat?.id) return update.edited_message.chat.id;
+  if (update?.channel_post?.chat?.id) return update.channel_post.chat.id;
+  if (update?.edited_channel_post?.chat?.id) return update.edited_channel_post.chat.id;
   return null;
 }
 
@@ -78,19 +81,30 @@ function getUserId(update) {
   if (update?.message?.from?.id) return update.message.from.id;
   if (update?.callback_query?.from?.id) return update.callback_query.from.id;
   if (update?.edited_message?.from?.id) return update.edited_message.from.id;
+  if (update?.channel_post?.from?.id) return update.channel_post.from.id;
+  if (update?.edited_channel_post?.from?.id) return update.edited_channel_post.from.id;
   return null;
 }
 
 function getMessageText(update) {
   if (update?.message?.text) return update.message.text;
+  if (update?.message?.caption) return update.message.caption;
   if (update?.callback_query?.data) return update.callback_query.data;
   if (update?.edited_message?.text) return update.edited_message.text;
+  if (update?.edited_message?.caption) return update.edited_message.caption;
+  if (update?.channel_post?.text) return update.channel_post.text;
+  if (update?.channel_post?.caption) return update.channel_post.caption;
+  if (update?.edited_channel_post?.text) return update.edited_channel_post.text;
+  if (update?.edited_channel_post?.caption) return update.edited_channel_post.caption;
   return '';
 }
 
 function getMessageId(update) {
   if (update?.message?.message_id) return update.message.message_id;
   if (update?.callback_query?.message?.message_id) return update.callback_query.message.message_id;
+  if (update?.edited_message?.message_id) return update.edited_message.message_id;
+  if (update?.channel_post?.message_id) return update.channel_post.message_id;
+  if (update?.edited_channel_post?.message_id) return update.edited_channel_post.message_id;
   return null;
 }
 

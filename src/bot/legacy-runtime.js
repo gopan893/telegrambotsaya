@@ -4427,6 +4427,25 @@ function getAgentServices(actorId = '') {
   };
 }
 
+function getTelegramRuntimeServices(actorId = '', extra = {}) {
+  return {
+    ...getAgentServices(actorId),
+    naturalRouter: telegramControl.naturalRouter,
+    runtimeDispatcher: telegramControl.runtimeDispatcher,
+    messageSyncChecker: telegramControl.messageSyncChecker,
+    botRegistry: multibotSystem.botRegistry,
+    telegramClient: multibotSystem.telegramClient,
+    sendMessageAsBot: (botId, chatId, text, options = {}, services = {}) =>
+      multibotSystem.telegramClient.sendMessageAsBot(botId, chatId, text, options, {
+        ...getAgentServices(actorId),
+        ...services
+      }),
+    webhookRoute: extra.webhookRoute || WEBHOOK_PATH || '/webhook',
+    env: config,
+    logger: log
+  };
+}
+
 function getIntegrationServices(actorId = '') {
   return {
     ...getAgentServices(actorId),
@@ -10984,6 +11003,16 @@ try {
 
 async function handleMultiBotUpdate(update = {}) {
   if (isDuplicateIncomingUpdate(update)) return { ok: true, duplicate: true };
+  const runtimeResult = await telegramControl.runtimeDispatcher.dispatchTelegramUpdate(
+    update,
+    update.__botId || update.message?.__botId || update.callback_query?.__botId || 'default',
+    getTelegramRuntimeServices(update.callback_query?.from?.id || update.message?.from?.id || '', {
+      webhookRoute: 'multibot'
+    })
+  );
+  if (runtimeResult?.handled && !runtimeResult?.passThrough) {
+    return { ok: true, type: runtimeResult.type || 'telegram_runtime', runtimeResult };
+  }
   if (update.callback_query) {
     const cb = update.callback_query;
     try {
@@ -10997,7 +11026,7 @@ async function handleMultiBotUpdate(update = {}) {
   if (!msg || msg.from?.is_bot) return { ok: true, ignored: true };
   const chatId = msg.chat.id;
   const userId = normalizeId(msg.from.id);
-  const text = String(msg.text || msg.caption || '').trim();
+  const text = String(msg.text || msg.caption || runtimeResult?.normalized?.text || '').trim();
   if (!text) return { ok: true, ignored: true };
 
   const cmd = getCommandBase(text);
@@ -11020,7 +11049,7 @@ async function handleMultiBotUpdate(update = {}) {
 
   const routed = await handleNaturalAgentRoute(chatId, userId, text, msg);
   if (!routed?.handled) {
-    await safeSendMessage(chatId, 'Saya bertindak sebagai Orchestrator Agent. Pesan diterima, tapi tidak perlu multi-agent route khusus.', { reply_to_message_id: msg.message_id });
+    await safeSendMessage(chatId, 'Pesan diterima. Bisa jelaskan sedikit lagi konteks atau tujuan yang ingin kamu capai?', { reply_to_message_id: msg.message_id });
   }
   return { ok: true, type: 'message' };
 }
@@ -11071,6 +11100,18 @@ app.post(WEBHOOK_PATH, async (req, res) => {
 }
     if (!update || typeof update !== 'object') return res.sendStatus(200);
 
+    const runtimeResult = await telegramControl.runtimeDispatcher.dispatchTelegramUpdate(
+      update,
+      update.__botId || 'default',
+      getTelegramRuntimeServices(update.callback_query?.from?.id || update.message?.from?.id || update.edited_message?.from?.id || '', {
+        webhookRoute: WEBHOOK_PATH || '/webhook'
+      })
+    );
+    if (runtimeResult?.handled && !runtimeResult?.passThrough) {
+      return res.sendStatus(200);
+    }
+    const runtimeNormalized = runtimeResult?.normalized || null;
+
     if (update.callback_query) {
       const cb = update.callback_query;
       const chatId = cb.message?.chat?.id;
@@ -11114,16 +11155,16 @@ app.post(WEBHOOK_PATH, async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (!update.message) return res.sendStatus(200);
-    if (update.message.from?.is_bot) return res.sendStatus(200);
-    if (update.edited_message) return res.sendStatus(200);
+    const incomingMessage = update.message || update.edited_message || update.channel_post || update.edited_channel_post;
+    if (!incomingMessage) return res.sendStatus(200);
+    if (incomingMessage.from?.is_bot) return res.sendStatus(200);
 
-const msg = update.message;
+const msg = incomingMessage;
 const chatId = msg.chat.id;
-const userId = normalizeId(msg.from.id);
+const userId = normalizeId(msg.from?.id || msg.sender_chat?.id || chatId);
 
 await withUserActionLock(userId, async () => {
-  const text = String(msg.text || '').trim();
+  const text = String(msg.text || runtimeNormalized?.text || '').trim();
   const captionText = String(msg.caption || '').trim();
   const userText = text || captionText || ((msg.photo || msg.document || msg.voice) ? 'Analisis attachment ini.' : '');
   const cmd = getCommandBase(text);

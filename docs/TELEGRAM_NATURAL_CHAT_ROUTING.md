@@ -2,10 +2,25 @@
 
 ## Architecture
 
-Natural language messages are processed through a three-stage pipeline:
+Natural language messages are processed through a runtime sync pipeline before legacy handlers run:
 
 ```
-User Message (text)
+Telegram Update (message/caption/edit/callback/channel)
+    │
+    ▼
+┌─────────────────────────────────┐
+│  0. Update Normalizer           │ ← telegram-update-normalizer.js
+│     → Extract text/caption,     │
+│       chat/user/message metadata│
+└─────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────┐
+│  Runtime Dispatcher             │ ← telegram-runtime-dispatcher.js
+│     → bot-loop + duplicate guard│
+│     → diagnostics commands      │
+│     → context sync              │
+└─────────────────────────────────┘
     │
     ▼
 ┌─────────────────────────────────┐
@@ -32,6 +47,8 @@ User Message (text)
     ▼
 [Execute / Proposal / Response]
 ```
+
+The dispatcher is now the primary Telegram runtime entrypoint. Existing legacy command and natural handlers remain as fallback/execution handlers after the message has been normalized and saved into the short-lived session context.
 
 ## Intent Patterns Table
 
@@ -161,8 +178,24 @@ User: hai
 
 ## Session Context
 
-`telegram-session-context.js` maintains per-chat context with 30-minute TTL:
+`telegram-context-store.js` backs `telegram-session-context.js` and maintains per-chat/user context with 30-minute TTL:
 - Stores `latestTopic`, `latestCommand`, `latestIntent`, `previousResponse`
+- Stores sanitized `latestUserMessage` for short follow-ups
 - Enables follow-up resolution via `resolveFollowupContext()`
 - Cleanup runs every 5 minutes
 - Supports cross-user access detection
+
+Short follow-ups such as `Solusinya apa?`, `Terus gimana?`, `Lanjut`, and `Jelaskan` resolve against:
+1. the replied Telegram message,
+2. the latest per-user session topic,
+3. the latest sanitized user message.
+
+## Runtime Diagnostics
+
+Read-only diagnostics commands:
+
+- `/telegramcheck` — shows normalized text, command/intent, chat/user IDs, and multi-bot mapping.
+- `/webhookcheck` — same runtime report, focused on webhook route and mapping.
+- `/messagecheck` — shows the current normalized message shape safely.
+
+Diagnostics never print bot tokens, webhook secrets, database URLs, Redis URLs, or API keys.

@@ -1,10 +1,10 @@
 # Telegram Commands Reference
 
-196 built-in commands across 20 categories. Risk levels: 📖 read_only, 🟢 low, 🟡 medium, 🟠 high, 🔴 danger. 👑 = owner only.
+174 built-in commands across 20 categories. Risk levels: 📖 read_only, 🟢 low, 🟡 medium, 🟠 high, 🔴 danger. 👑 = owner only.
 
 ---
 
-## Core (8 commands)
+## Core (11 commands)
 
 | Command | Aliases | Description | Risk | Owner | Approval | Eval |
 |---------|---------|-------------|------|-------|----------|------|
@@ -14,6 +14,9 @@
 | `/status` | stats, server | Show bot and system status | 📖 | - | - | - |
 | `/health` | ping, live | Health check the bot | 📖 | - | - | - |
 | `/whoami` | me, saya | Show your user info and permissions | 📖 | - | - | - |
+| `/telegramcheck` | tgcheck | Diagnose Telegram runtime message normalization and routing | 📖 | - | - | - |
+| `/webhookcheck` | webhook_check | Diagnose Telegram webhook route and multi-bot mapping safely | 📖 | - | - | - |
+| `/messagecheck` | msgcheck | Show the normalized current Telegram message without secrets | 📖 | - | - | - |
 | `/settings` | config, set | Show or update bot settings | 🟢 | 👑 | - | - |
 
 ## Agents (10 commands)

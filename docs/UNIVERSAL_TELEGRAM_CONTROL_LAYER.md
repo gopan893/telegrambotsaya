@@ -10,6 +10,12 @@ The Telegram Control Layer is a modular middleware architecture that sits betwee
 Telegram Update (webhook)
        |
        v
+telegram-update-normalizer.js -- text/caption/callback/edit normalization
+       |
+       v
+telegram-runtime-dispatcher.js -- bot-loop guard, diagnostics, context sync
+       |
+       v
 telegram-rate-limit.js      -- rate limit check
 telegram-session-context.js  -- session restoration
 telegram-natural-router.js   -- entry router
@@ -33,7 +39,7 @@ telegram-command-registry.js  -- resolve command definition
                                 └── /approve → /runexec
 ```
 
-## 13 Modules
+## 17 Modules
 
 All modules live in `src/telegram-control/`:
 
@@ -52,10 +58,14 @@ All modules live in `src/telegram-control/`:
 | 11 | `telegram-rate-limit.js` | Per-user rate limiting by risk tier + bot-to-bot loop prevention |
 | 12 | `telegram-session-context.js` | Chat session context (30-min TTL, follow-up support) |
 | 13 | `telegram-utils.js` | Text sanitization, ID generation, secret pattern detection, Telegram update helpers |
+| 14 | `telegram-update-normalizer.js` | Normalizes text, captions, edits, callbacks, channel posts, and reply context |
+| 15 | `telegram-runtime-dispatcher.js` | Primary runtime entrypoint for webhook sync, diagnostics, context persistence, and safe pass-through |
+| 16 | `telegram-context-store.js` | Per-chat/user sanitized session context store with short follow-up resolution |
+| 17 | `telegram-message-sync-checker.js` | Builds safe `/telegramcheck`, `/webhookcheck`, and `/messagecheck` diagnostics |
 
 ## Command Registration
 
-Commands are defined via `BUILTIN_COMMANDS` array in `telegram-command-registry.js` (196 built-in commands). Each entry has:
+Commands are defined via `BUILTIN_COMMANDS` array in `telegram-command-registry.js` (174 built-in commands). Each entry has:
 
 - `name`, `aliases`, `module`, `category`, `description`, `examples`
 - `riskLevel`: `read_only | low | medium | high | danger`
@@ -66,9 +76,12 @@ Dynamic registration via `registerTelegramCommand(def)`. Command lookup supports
 
 ## Routing
 
-1. **Slash commands** (`/command ...`) → resolved directly from registry
-2. **Natural language** → `intent-classifier` matches against 49 regex patterns → mapped to a command or special intent (greeting, thanks, followup, refuse_full_auto, etc.)
-3. **Blocked patterns** (secrets/tokens) → immediately rejected with no processing
+1. **Normalize update** (`message.text`, `caption`, `edited_message`, `callback_query.data`, channel posts) → unified message shape.
+2. **Bot-loop + duplicate guard** → bot messages and repeated message IDs are ignored.
+3. **Diagnostics commands** (`/telegramcheck`, `/webhookcheck`, `/messagecheck`) → safe runtime report, no secrets.
+4. **Slash commands** (`/command ...`) → resolved directly from registry.
+5. **Natural language** → `intent-classifier` matches regex patterns → mapped to a command or special intent (greeting, thanks, followup, refuse_full_auto, etc.).
+6. **Blocked patterns** (secrets/tokens) → immediately rejected with no processing or storage.
 
 ## Permission Checking
 
