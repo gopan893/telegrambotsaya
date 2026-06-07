@@ -342,3 +342,24 @@ long-term memory governance.
 Protected decisions (15 core) cannot be renamed, archived, or silently
 overwritten. Secrets are detected at ingest, redacted, and never stored
 in raw form. Memory is archived, never hard-deleted.
+
+## Phase 44.5 — Universal Telegram Control Layer
+
+Unified command registry, natural language routing, permission guard,
+risk classification, proposal routing, and audit logging for all
+Telegram interactions.
+
+- Modules: `src/telegram-control/` (13 modules + index)
+- Dashboard: tab **Telegram Control** at `/dashboard#telegram-control`
+- API: `/api/dashboard/telegram-control/*` (protected, sanitized, no cache)
+- ~250 commands across 20 categories
+- Natural chat routing with 50+ intent patterns
+- Permission guard (owner/admin/workspace)
+- Risk classifier (read_only → danger)
+- Proposal + Evaluation v2 gate for write/external/danger actions
+- Rate limiting, bot-to-bot loop prevention, secret pattern detection
+- Session context for short follow-ups
+- Full audit logging
+- Docs: `docs/UNIVERSAL_TELEGRAM_CONTROL_LAYER.md`,
+  `TELEGRAM_COMMANDS.md`, `TELEGRAM_NATURAL_CHAT_ROUTING.md`,
+  `TELEGRAM_SECURITY.md`, `TELEGRAM_APPROVAL_FLOW.md`

@@ -306,6 +306,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['memory-graph', 'knowledge-graph', 'project-memory', 'decisions', 'long-memory', 'graph'],
     renderer: 'renderKnowledge'
+  },
+  'telegram-control': {
+    label: 'Telegram Control',
+    title: 'Telegram Control Panel',
+    navIcon: '📡',
+    navVisible: true,
+    aliases: ['telegram', 'commands', 'command-center', 'bot-control', 'telegram-menu'],
+    renderer: 'renderTelegramControl'
   }
 };
 

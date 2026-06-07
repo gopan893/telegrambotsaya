@@ -46,6 +46,7 @@
 | `cost` | ✅ |
 | `operator` | ❌ |
 | `knowledge` | ✅ |
+| `telegram-control` | ✅ |
 
 ## Backend Dashboard Routes
 
@@ -97,6 +98,15 @@
 - `/portfolio/monthly-plan`
 - `/portfolio/proposal`
 - `/portfolio/report`
+- `/telegram-control`
+- `/telegram-control/commands`
+- `/telegram-control/commands/:name`
+- `/telegram-control/categories`
+- `/telegram-control/test-intent`
+- `/telegram-control/audit`
+- `/telegram-control/pending-proposals`
+- `/telegram-control/help`
+- `/telegram-control/validate-registry`
 
 ## Phase 41 Portfolio Modules
 
@@ -1002,3 +1012,33 @@ Runtime integration:
 - Telegram command/natural route integration lives in `src/bot/legacy-runtime.js`.
 - Calendar/Gmail/routine requests become Life OS proposals only.
 - Evaluation v2 has Life OS golden cases and quality gates for privacy, secret redaction, external action safety, and personal context relevance.
+
+## Phase 44.5 Universal Telegram Control Layer
+
+Telegram Control Layer modules:
+
+| File | Role |
+|---|---|
+| `src/telegram-control/telegram-command-registry.js` | Built-in command definitions, registration, lookup, search, validation |
+| `src/telegram-control/telegram-natural-router.js` | Natural message routing to commands, intent-to-command mapping |
+| `src/telegram-control/telegram-intent-classifier.js` | Intent classification from natural language with 50+ patterns |
+| `src/telegram-control/telegram-permission-guard.js` | Owner/admin/workspace permission checks |
+| `src/telegram-control/telegram-risk-classifier.js` | Risk level classification (read_only/danger), evaluation/proposal gating |
+| `src/telegram-control/telegram-response-formatter.js` | Clean response formatting, sanitization, chunking |
+| `src/telegram-control/telegram-help-menu.js` | Main menu, category menu, command help, search |
+| `src/telegram-control/telegram-proposal-router.js` | Proposal creation, duplicate detection, approval linking |
+| `src/telegram-control/telegram-command-audit.js` | Audit logging for all Telegram command activity |
+| `src/telegram-control/telegram-rate-limit.js` | Rate limiting, duplicate suppression, bot-to-bot loop prevention |
+| `src/telegram-control/telegram-session-context.js` | Session context storage for short follow-ups |
+| `src/telegram-control/telegram-utils.js` | Utility functions: secrets sanitization, IDs, text processing |
+
+Dashboard:
+
+- Tab id: `telegram-control`
+- Renderer: `window.renderTelegramControl`
+- Frontend: `public/dashboard/telegram-control.js`
+- Backend route: `src/dashboard/telegram-control-routes.js`
+- API base: `/api/dashboard/telegram-control`
+
+Command coverage: ~250 commands across 20 categories.
+Security: secret pattern detection, permission gating, rate limiting, audit logging, no auto-approve, no auto-run.

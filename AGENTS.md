@@ -61,7 +61,7 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator, portfolio, knowledge.
+deploy, cost, operator, portfolio, knowledge, telegram-control.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -114,6 +114,18 @@ Phase 43 research/docs rule:
 - Documentation Agent may generate drafts/update plans/proposals only.
 - No direct docs file write, commit, push, or external write from runtime.
 - Docs update flow must remain dry-run → Evaluation v2 → executor proposal → approval → run.
+
+Phase 44.5 Telegram Control rule:
+- Universal Telegram Control Layer manages all Telegram command routing, natural language classification, permission checks, risk classification, proposal routing, and response formatting.
+- All Telegram commands must be registered in the command registry before use.
+- Natural language messages are classified into intents and mapped to safe commands only.
+- Secret patterns in messages are detected and blocked before processing.
+- Write/external/danger actions must go through proposal flow only.
+- No direct execution of high-risk or danger commands without approval and evaluation.
+- Bot-to-bot loops are prevented by ignoring bot messages unless explicitly allowed.
+- Rate limiting prevents spam and abuse.
+- Session context supports short follow-ups within 30-minute windows.
+- Dashboard Telegram Control tab provides command registry, audit, and intent testing.
 
 Phase 44 Life OS rule:
 - Life OS may create daily/weekly plans, personal tasks, habits, reminders, focus sessions, mood/energy notes, personal goals, and safe personal memory.

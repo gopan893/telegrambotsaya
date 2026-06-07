@@ -471,3 +471,36 @@ Sapaan sederhana, kalkulator sederhana, unit conversion, dan health-advice ringa
 - `hapus memory yang duplikat` → cleanup plan (no hard delete).
 - `apa yang harus OpenCode baca sebelum lanjut?` → handoff context.
 - `ingat ini sebagai keputusan project: ...` → safety gate + decision record.
+
+## Phase 44.5 Universal Telegram Control Layer
+
+The Telegram Control Layer provides unified routing for all ~250 commands across 20 categories.
+Full documentation: `docs/TELEGRAM_COMMANDS.md` (complete reference), `docs/TELEGRAM_NATURAL_CHAT_ROUTING.md` (natural language patterns).
+
+### Category overview
+
+| Category | Count | Examples |
+|---|---|---|
+| Core | 7 | /start, /help, /menu, /status, /health, /whoami, /settings |
+| Agent | 12 | /agents, /agent, /council, /debate, /multibot, /visibleagents |
+| Executor | 6 | /executions, /pending, /propose, /approve, /reject, /runexec |
+| Backup | 6 | /backup, /backupcreate, /backups, /restore, /integrity |
+| Coding | 7 | /coding, /codereq, /codeplan, /codetasks, /testplan |
+| GitHub Ops | 13 | /githubops, /gitstatus, /changes, /propose_push, /releasegate |
+| Deploy | 9 | /deploy, /deploycheck, /rendercheck, /propose_deploy, /propose_rollback |
+| Observability | 10 | /prodhealth, /incidents, /analyze_incident, /responseplan, /close_incident |
+| Cost | 12 | /usage, /tokens, /cost, /budget, /modelusage, /economymode |
+| Life OS | 17 | /lifeos, /daily, /weekly, /tasks, /habits, /focus, /mood, /energy |
+| Knowledge | 13 | /knowledge, /kg, /decision_memory, /knowledge_search, /contextpack |
+
+### Natural examples
+
+- `cek production health` → /prodhealth
+- `project mana yang harus saya lanjutkan?` → /portfolio_next
+- `buat rencana hari ini` → /daily
+- `push perubahan ini ke GitHub` → /propose_push (proposal only)
+- `deploy ke Render` → /propose_deploy (proposal only)
+- `rollback deploy terakhir` → /propose_rollback (proposal only)
+- `berapa token hari ini?` → /usage
+- `kirim email ini` → blocked / strict proposal only
+- `selesaikan semua otomatis` → refused, offers approval-based plan

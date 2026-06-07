@@ -69,6 +69,13 @@ try {
   costRoutes = { registerCostRoutes: () => {} };
 }
 
+let telegramControlRoutes;
+try {
+  telegramControlRoutes = require('./telegram-control-routes');
+} catch (e) {
+  telegramControlRoutes = { registerTelegramControlRoutes: () => {} };
+}
+
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
   registerCodingWorkspaceRoutes: (...args) => dashboardRoutes.registerCodingWorkspaceRoutes(...args),
@@ -106,6 +113,7 @@ module.exports = {
   githubOpsRoutes,
   deployRoutes,
   costRoutes,
+  telegramControlRoutes,
   utils,
   actions: require('./dashboard-actions')
 };

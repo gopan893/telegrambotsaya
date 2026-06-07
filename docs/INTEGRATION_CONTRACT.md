@@ -164,3 +164,26 @@ Dashboard contract:
 - `#lifeos` is a known dashboard tab and must not fallback to Overview.
 - `/api/dashboard/lifeos/*` routes are protected and sanitized.
 - Service worker may cache `lifeos.js` as static shell only; it must not cache `/api/dashboard/*`.
+
+## Phase 44.5 Universal Telegram Control Layer Contract
+
+Telegram Control Layer:
+
+1. All Telegram commands MUST be registered in `src/telegram-control/telegram-command-registry.js` before use.
+2. Natural language messages are classified via `telegram-intent-classifier.js` with 50+ patterns.
+3. Permission guard checks owner/admin/workspace before allowing command execution.
+4. Risk classifier (read_only/danger) determines if proposal flow or evaluation gate is required.
+5. High-risk and danger commands MUST go through: classification → command lookup → risk classification → proposal → Evaluation v2 → approval → execution.
+6. Read-only commands may run directly if permission permits.
+7. Secret patterns in messages are detected and blocked before processing.
+8. Bot-to-bot loops are prevented by ignoring bot messages unless explicitly allowed.
+9. Rate limiting prevents spam (10/min default, 1/2min for danger).
+10. Audit log records all Telegram command activity.
+11. Session context supports short follow-ups within 30-minute windows.
+
+Dashboard contract:
+
+- `#telegram-control` is a known dashboard tab and must not fallback to Overview.
+- `/api/dashboard/telegram-control/*` routes are protected and sanitized.
+- Service worker may cache `telegram-control.js` as static shell only; it must not cache `/api/dashboard/*`.
+- No secret values are exposed in the dashboard, audit, or API responses.

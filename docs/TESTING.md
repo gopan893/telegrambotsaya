@@ -167,6 +167,30 @@ node scratch/test-dashboard-export-security.js
 node scratch/test-pwa-assets.js
 ```
 
+## Phase 44.5 Telegram Control Layer Tests
+
+```bash
+node --check src/telegram-control/index.js
+node scratch/test-telegram-command-registry.js
+node scratch/test-telegram-natural-router.js
+node scratch/test-telegram-intent-classifier.js
+node scratch/test-telegram-permission-guard.js
+node scratch/test-telegram-risk-classifier.js
+node scratch/test-telegram-response-formatter.js
+node scratch/test-telegram-help-menu.js
+node scratch/test-telegram-proposal-router.js
+node scratch/test-telegram-command-audit.js
+node scratch/test-telegram-control-dashboard-api.js
+node scratch/test-phase44-5-telegram-control-regression.js
+```
+
+Also rerun:
+- `node scratch/test-natural-chat-stable-release.js`
+- `node scratch/test-dashboard-router-registry.js`
+- `node scratch/test-dashboard-all-menu-routes.js`
+- `node scratch/test-executor-boundary-stable-release.js`
+- `node scratch/test-file-analysis-leak.js`
+
 ## Reporting Rules
 
 | Condition | Report |

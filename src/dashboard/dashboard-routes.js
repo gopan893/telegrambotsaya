@@ -455,6 +455,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Knowledge routes skipped:', e.message);
   }
 
+  try {
+    const telegramControlRoutes = require('./telegram-control-routes');
+    telegramControlRoutes.registerTelegramControlRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Telegram Control routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

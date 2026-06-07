@@ -500,3 +500,105 @@ Phase 42 — Project Knowledge Graph + Long-Term Memory Governance.
 
 ### Recommended Next Branch/Commit
 Commit message: `knowledge: add project graph and memory governance`
+
+---
+
+### Last Agent
+OpenCode
+
+### Date
+2026-06-07
+
+### Current Task
+Phase 44.5 — Universal Telegram Control Layer + Natural Command Governance.
+
+### Files Changed
+- `src/telegram-control/` — created 13 modules: command-registry, natural-router, intent-classifier, permission-guard, risk-classifier, response-formatter, help-menu, proposal-router, command-audit, rate-limit, session-context, utils, index.
+- `src/dashboard/telegram-control-routes.js` — created 9 protected API endpoints.
+- `public/dashboard/telegram-control.js` — created Telegram Control dashboard tab.
+- `public/dashboard/state.js` — registered `telegram-control` tab with aliases.
+- `public/dashboard/index.html` — added nav item and script tag (cache-busted).
+- `public/dashboard/service-worker.js` — bumped cache to v39, added telegram-control.js.
+- `src/dashboard/index.js` — added telegramControlRoutes export.
+- `src/dashboard/dashboard-routes.js` — registered telegram-control routes.
+- `docs/UNIVERSAL_TELEGRAM_CONTROL_LAYER.md` — created architecture doc.
+- `docs/TELEGRAM_COMMANDS.md` — created complete command reference (~250 commands).
+- `docs/TELEGRAM_NATURAL_CHAT_ROUTING.md` — created natural language routing doc.
+- `docs/TELEGRAM_SECURITY.md` — created security documentation.
+- `docs/TELEGRAM_APPROVAL_FLOW.md` — created approval flow documentation.
+- `scratch/test-telegram-command-registry.js` — created (unit tests).
+- `scratch/test-telegram-natural-router.js` — created (unit tests).
+- `scratch/test-telegram-intent-classifier.js` — created (unit tests).
+- `scratch/test-telegram-permission-guard.js` — created (unit tests).
+- `scratch/test-telegram-risk-classifier.js` — created (unit tests).
+- `scratch/test-telegram-response-formatter.js` — created (unit tests).
+- `scratch/test-telegram-help-menu.js` — created (unit tests).
+- `scratch/test-telegram-proposal-router.js` — created (unit tests).
+- `scratch/test-telegram-command-audit.js` — created (unit tests).
+- `scratch/test-telegram-control-dashboard-api.js` — created (mock API tests).
+- `scratch/test-phase44-5-telegram-control-regression.js` — created (full flow tests).
+- `AGENTS.md` — added telegram-control to known tabs, added Phase 44.5 rules.
+- `docs/ARCHITECTURE_MAP.md` — added telegram-control tab, routes, modules.
+- `docs/COMMANDS.md` — added Phase 44.5 command coverage section.
+- `docs/INTEGRATION_CONTRACT.md` — added Telegram Control Layer contract.
+- `docs/TESTING.md` — added Telegram Control Layer test section.
+- `README.md` — added Phase 44.5 summary.
+- `docs/AGENT_HANDOFF.md` — updated this handoff.
+
+### What Was Completed
+- Universal Telegram command registry with ~250 built-in commands across 20 categories.
+- Natural language router with 50+ intent patterns, secret detection, greeting/thanks handling.
+- Permission guard with owner/admin/workspace checks, Life OS privacy.
+- Risk classifier with 5 levels (read_only → danger), evaluation gate, proposal gating.
+- Response formatter with short/long/list/error/proposal formats, sanitization, chunking.
+- Help menu system with main menu, category menu, command help, search.
+- Proposal router with create/link/format/duplicate detection/pending list.
+- Command audit logger with filters and sanitization.
+- Rate limiter with per-risk-level limits, duplicate suppression, bot-to-bot loop prevention.
+- Session context with 30-min expiry, follow-up resolution, cleanup.
+- Dashboard Telegram Control tab with command registry view, intent test, audit, proposals, help.
+- 9 protected dashboard API endpoints.
+- 11 test files (unit + regression).
+- 5 documentation files.
+- Updated all governance docs (ARCHITECTURE_MAP, COMMANDS, INTEGRATION_CONTRACT, TESTING, README, AGENTS.md).
+
+### What Is Unfinished
+- Telegram Control Layer modules are not yet wired into `src/bot/legacy-runtime.js` (12k+ line file).
+- Integration with Evaluation Harness v2 for the 14 Phase 44.5 evaluation cases.
+- Postgres-backed persistence for audit log and session context.
+- Live Telegram E2E testing requires Render deploy with TELEGRAM_TOKEN.
+
+### Tests Run
+| Test | Result |
+|---|---|
+| `node --check telebot.js` | PASS |
+| `node --check src/telegram-control/*.js` (13 files) | PASS |
+| `node --check src/dashboard/telegram-control-routes.js` | PASS |
+| `node --check src/dashboard/index.js` | PASS |
+| `node scratch/test-telegram-command-registry.js` | PASS (34/34) |
+| `node scratch/test-telegram-natural-router.js` | PASS (35/35) |
+| `node scratch/test-telegram-intent-classifier.js` | PASS (73/73) |
+| `node scratch/test-telegram-permission-guard.js` | PASS (30/30) |
+| `node scratch/test-telegram-risk-classifier.js` | PASS (39/39) |
+| `node scratch/test-telegram-response-formatter.js` | PASS (46/46) |
+| `node scratch/test-telegram-help-menu.js` | PASS (34/34) |
+| `node scratch/test-telegram-proposal-router.js` | PASS (31/31) |
+| `node scratch/test-telegram-command-audit.js` | PASS (28/28) |
+| `node scratch/test-telegram-control-dashboard-api.js` | PASS (25/25) |
+| `node scratch/test-phase44-5-telegram-control-regression.js` | PASS (63/63) |
+
+### Remaining Risks
+- Wiring into legacy-runtime.js requires careful surgery to avoid breaking existing bot flow.
+- Evaluation Harness v2 integration needs golden cases and quality gates for Telegram control.
+- Postgres migration for audit/session is a future concern.
+
+### Next Safe Task for Codex / OpenCode
+```
+1. Wire Telegram Control Layer into src/bot/legacy-runtime.js command dispatcher.
+2. Add Phase 44.5 evaluation cases to agent-evaluation-harness.
+3. Run full test suite from TESTING.md.
+4. Deploy to Render and verify Telegram commands end-to-end.
+```
+
+### Recommended Next Branch/Commit
+Commit message: `telegram: add universal control layer`
