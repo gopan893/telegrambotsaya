@@ -35,6 +35,7 @@ const toolsSystem = require('../tools');
 const backupSystem = require('../backup');
 const integrationsSystem = require('../integrations');
 const observabilitySystem = require('../observability');
+const portfolioSystem = require('../portfolio');
 const multibotSystem = require('../multibot');
 const smartAgentSystem = require('../agents');
 const {
@@ -3006,6 +3007,253 @@ async function handleNaturalObservabilityRoute(chatId, userId, userText, msg) {
   return { handled: false };
 }
 
+function formatPortfolioPriorityLine(item = {}, index = 0) {
+  return `${index + 1}. ${item.goal?.title || item.goalId || '-'} — score ${item.priorityScore || 0}/100, health ${item.health?.score ?? '-'} (${item.health?.status || '-'})`;
+}
+
+function formatPortfolioNextAction(result = {}) {
+  return [
+    'Portfolio Next Action',
+    '',
+    result.summary || 'Belum ada rekomendasi.',
+    '',
+    result.requiresProposal
+      ? 'Action berisiko harus dibuat sebagai proposal. Tidak ada aksi dijalankan otomatis.'
+      : 'Ini rekomendasi read-only. Action write/external tetap butuh proposal + approval.'
+  ].join('\n');
+}
+
+async function handlePortfolioCommands(chatId, userId, cmd, args, msg) {
+  const commands = new Set([
+    '/portfolio',
+    '/projects',
+    '/projecthealth',
+    '/priorities',
+    '/nextproject',
+    '/portfolio_next',
+    '/weeklyplan',
+    '/monthlyplan',
+    '/staleprojects',
+    '/projectrisks',
+    '/portfolioreport',
+    '/portfolio_proposal'
+  ]);
+  if (!commands.has(cmd)) return false;
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    await sendChunkedMessage(chatId, 'Portfolio Manager hanya untuk admin/owner karena membaca data project lintas workspace.', replyOpt);
+    return true;
+  }
+  const services = getPortfolioServices(userId);
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+
+  if (cmd === '/portfolio' || cmd === '/projects') {
+    const snapshot = await portfolioSystem.portfolioScanner.buildPortfolioSnapshot(workspaceId, services);
+    await sendChunkedMessage(chatId, [
+      'Portfolio Manager',
+      '',
+      `Workspace: ${snapshot.workspaceId}`,
+      `Active projects: ${snapshot.totals.activeGoals}`,
+      `Open tasks: ${snapshot.totals.activeTasks}`,
+      `Blocked tasks: ${snapshot.totals.blockedTasks}`,
+      `Pending approvals: ${snapshot.totals.pendingApprovals}`,
+      `Open incidents: ${snapshot.totals.openIncidents}`,
+      '',
+      'Projects:',
+      ...(snapshot.activeGoals.length ? snapshot.activeGoals.slice(0, 10).map((goal, i) => `${i + 1}. ${goal.title} (${goal.priority || 'medium'}, ${goal.status || 'active'})`) : ['- belum ada active project']),
+      '',
+      `Dashboard: ${WEBHOOK_URL ? `${WEBHOOK_URL.replace(/\/$/, '')}/dashboard#portfolio` : '/dashboard#portfolio'}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/projecthealth') {
+    const goalId = String(args || '').trim();
+    if (goalId) {
+      const summary = await portfolioSystem.projectHealthScorer.buildProjectHealthSummary(goalId, services);
+      await sendChunkedMessage(chatId, summary, replyOpt);
+      return true;
+    }
+    const snapshot = await portfolioSystem.portfolioScanner.buildPortfolioSnapshot(workspaceId, services);
+    const rows = [];
+    for (const goal of snapshot.activeGoals.slice(0, 10)) {
+      const health = await portfolioSystem.projectHealthScorer.scoreProjectHealth(goal.id, services);
+      rows.push(`- ${goal.title}: ${health.score}/100 (${health.status})`);
+    }
+    await sendChunkedMessage(chatId, `Project Health\n\n${rows.join('\n') || '- belum ada project aktif'}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/priorities' || cmd === '/nextproject') {
+    const ranked = await portfolioSystem.projectPriorityEngine.rankProjects(workspaceId, services);
+    await sendChunkedMessage(chatId, [
+      'Portfolio Priorities',
+      '',
+      ranked.length ? ranked.slice(0, 8).map(formatPortfolioPriorityLine).join('\n') : 'Belum ada project aktif.',
+      '',
+      ranked[0] ? `Rekomendasi: ${ranked[0].recommendation}` : ''
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/portfolio_next') {
+    const next = await portfolioSystem.portfolioNextActionEngine.recommendPortfolioNextAction(workspaceId, services);
+    await sendChunkedMessage(chatId, formatPortfolioNextAction(next), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/weeklyplan' || cmd === '/monthlyplan') {
+    const plan = cmd === '/monthlyplan'
+      ? await portfolioSystem.portfolioStrategyPlanner.createMonthlyPortfolioPlan(workspaceId, services)
+      : await portfolioSystem.portfolioStrategyPlanner.createWeeklyPortfolioPlan(workspaceId, services);
+    await sendChunkedMessage(chatId, [
+      plan.title,
+      '',
+      `Type: ${plan.type}`,
+      `Risk: ${plan.riskLevel}`,
+      '',
+      ...(plan.steps || []).map((step, i) => `${i + 1}. ${step}`),
+      '',
+      'Belum ada aksi dijalankan.'
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/staleprojects') {
+    const stale = await portfolioSystem.projectStalenessDetector.detectStaleProjects(workspaceId, services);
+    const body = stale.stale.length
+      ? stale.stale.slice(0, 10).map(item => `- ${item.goal.title}: ${item.suggestedAction}`).join('\n')
+      : 'Tidak ada stale project besar.';
+    await sendChunkedMessage(chatId, `Stale Projects\n\n${body}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/projectrisks') {
+    const risk = await portfolioSystem.portfolioRiskReview.reviewPortfolioRisk(workspaceId, services);
+    await sendChunkedMessage(chatId, [
+      'Portfolio Risk',
+      '',
+      `Risk: ${risk.riskLevel}`,
+      `Warnings: ${risk.warnings.length ? risk.warnings.join('; ') : '-'}`,
+      `Recommendations: ${risk.recommendations.join(' ')}`
+    ].join('\n'), replyOpt);
+    return true;
+  }
+
+  if (cmd === '/portfolioreport') {
+    const report = await portfolioSystem.portfolioReportGenerator.generatePortfolioWeeklyReport(workspaceId, services);
+    await sendChunkedMessage(chatId, report.text, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/portfolio_proposal') {
+    const next = await portfolioSystem.portfolioNextActionEngine.recommendPortfolioNextAction(workspaceId, services);
+    const actionPlan = await portfolioSystem.portfolioProposalBridge.createPortfolioActionPlan({ ...next, userId, workspaceId }, services);
+    if (!actionPlan.ok) {
+      await sendChunkedMessage(chatId, `Proposal belum dibuat: ${actionPlan.reason || actionPlan.error || 'unknown'}`, replyOpt);
+      return true;
+    }
+    const proposal = await portfolioSystem.portfolioProposalBridge.createPortfolioExecutorProposal(actionPlan.actionPlan, services);
+    await sendChunkedMessage(chatId, proposal.ok ? [
+      'Portfolio proposal dibuat, belum dijalankan.',
+      `Action plan: ${actionPlan.actionPlan.id}`,
+      `Proposal: ${proposal.proposal.id}`,
+      `Risk: ${proposal.proposal.riskLevel}`,
+      `Evaluation: ${proposal.evaluation?.passed ? 'passed' : proposal.evaluation?.reason || 'not available'}`,
+      '',
+      `Approve: /approve ${proposal.proposal.id}`,
+      `Run setelah approve: /runexec ${proposal.proposal.id}`
+    ].join('\n') : `Portfolio proposal diblokir: ${proposal.reason || proposal.error || 'Evaluation gate required'}`, replyOpt);
+    return true;
+  }
+
+  return false;
+}
+
+function detectNaturalPortfolioIntent(text = '') {
+  const q = String(text || '').toLowerCase();
+  if (!q || q.startsWith('/')) return { handled: false };
+  if (/project mana.*lanjut|lanjutkan.*project|next project|project.*prioritas/.test(q)) return { handled: true, type: 'next_project' };
+  if (/prioritas minggu ini|weekly plan|rencana minggu ini|apa prioritas/.test(q)) return { handled: true, type: 'weekly_plan' };
+  if (/paling berisiko|project risk|mana yang.*risiko|risiko project/.test(q)) return { handled: true, type: 'risk' };
+  if (/project.*macet|kenapa.*macet|blocked project|stale project/.test(q)) return { handled: true, type: 'stale' };
+  if (/codex atau opencode|opencode atau codex|hermes.*project|agent.*project/.test(q)) return { handled: true, type: 'agent' };
+  if (/rapikan semua project|organisasi.*project|atur semua project/.test(q)) return { handled: true, type: 'weekly_plan' };
+  if (/lanjutkan yang paling penting|lanjut yang penting|kerjakan yang paling penting/.test(q)) return { handled: true, type: 'next_action' };
+  if (/push dan deploy project paling penting|deploy project paling penting|push project paling penting/.test(q)) return { handled: true, type: 'proposal' };
+  return { handled: false };
+}
+
+async function handleNaturalPortfolioRoute(chatId, userId, userText, msg) {
+  const intent = detectNaturalPortfolioIntent(userText);
+  if (!intent.handled) return { handled: false };
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    const answer = 'Portfolio Manager hanya untuk admin/owner karena membaca data project lintas workspace.';
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+  const services = getPortfolioServices(userId);
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+
+  if (intent.type === 'next_project') {
+    const top = await portfolioSystem.projectPriorityEngine.recommendTopProject(workspaceId, services);
+    const answer = top.topProject
+      ? `Project yang sebaiknya dilanjutkan: ${top.topProject.goal.title}\n\n${top.summary}\n\nLangkah aman: cek /portfolio_next untuk task berikutnya.`
+      : 'Belum ada project aktif yang bisa diranking.';
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'weekly_plan') {
+    const plan = await portfolioSystem.portfolioStrategyPlanner.createWeeklyPortfolioPlan(workspaceId, services);
+    const answer = `${plan.title}\n\n${(plan.steps || []).map((step, i) => `${i + 1}. ${step}`).join('\n')}\n\nTidak ada aksi dijalankan otomatis.`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'risk') {
+    const risk = await portfolioSystem.portfolioRiskReview.reviewPortfolioRisk(workspaceId, services);
+    const answer = `Portfolio risk: ${risk.riskLevel}\n\n${risk.warnings.length ? risk.warnings.map(item => `- ${item}`).join('\n') : '- belum ada risiko besar'}\n\n${risk.recommendations.join(' ')}`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'stale') {
+    const stale = await portfolioSystem.projectStalenessDetector.detectStaleProjects(workspaceId, services);
+    const answer = stale.stale.length
+      ? `Project macet/stale:\n${stale.stale.slice(0, 6).map(item => `- ${item.goal.title}: ${item.suggestedAction}`).join('\n')}`
+      : 'Belum ada project stale besar. Kalau terasa macet, pilih satu next action kecil dan update task.';
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'agent') {
+    const next = await portfolioSystem.portfolioNextActionEngine.recommendPortfolioNextAction(workspaceId, services);
+    const answer = `${next.recommendedAgent} paling cocok.\n\n${next.summary}\n\nHermes untuk strategi, Codex untuk implementasi, OpenCode untuk audit/recovery, Ops untuk deploy/monitoring.`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  if (intent.type === 'proposal') {
+    const next = await portfolioSystem.portfolioNextActionEngine.recommendPortfolioNextAction(workspaceId, services);
+    const actionPlan = await portfolioSystem.portfolioProposalBridge.createPortfolioActionPlan({ ...next, userId, workspaceId }, services);
+    const proposal = actionPlan.ok
+      ? await portfolioSystem.portfolioProposalBridge.createPortfolioExecutorProposal(actionPlan.actionPlan, services)
+      : actionPlan;
+    const answer = proposal.ok
+      ? `Saya buat proposal portfolio, belum push/deploy.\nProposal: ${proposal.proposal.id}\nApprove: /approve ${proposal.proposal.id}\nRun setelah approve: /runexec ${proposal.proposal.id}`
+      : `Saya tidak menjalankan push/deploy langsung. Proposal diblokir/menunggu gate: ${proposal.reason || proposal.error || 'Evaluation v2 required'}`;
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, answer, type: intent.type };
+  }
+
+  const next = await portfolioSystem.portfolioNextActionEngine.recommendPortfolioNextAction(workspaceId, services);
+  const answer = formatPortfolioNextAction(next);
+  await sendChunkedMessage(chatId, answer, replyOpt);
+  return { handled: true, answer, type: intent.type };
+}
+
 async function handleOpsCommands(chatId, userId, cmd, args, msg) {
   const opsCommands = new Set([
     '/ops',
@@ -3753,6 +4001,18 @@ function getObservabilityServices(actorId = '') {
     ownerChatId: OWNER_CHAT_ID,
     sendChunkedMessage,
     logger: log
+  };
+}
+
+function getPortfolioServices(actorId = '') {
+  return {
+    ...getObservabilityServices(actorId),
+    actorId: actorId || '',
+    userId: actorId || '',
+    actorType: 'telegram',
+    portfolioSystem,
+    operatorSystem: null,
+    costSystem: opsSystem.costOptimizer || null
   };
 }
 
@@ -8503,6 +8763,17 @@ async function handleHelp(chatId, msg) {
 /propose_incident_repair incidentId - proposal repair, tidak auto-run [admin]
 /propose_incident_rollback incidentId - proposal rollback, tidak auto-run [admin]
 /close_incident incidentId - tutup incident [admin]
+/portfolio - ringkasan multi-project portfolio [admin]
+/projects - daftar project/goal aktif [admin]
+/projecthealth [goalId] - health score project [admin]
+/nextproject - project yang paling perlu dilanjutkan [admin]
+/portfolio_next - next action portfolio aman [admin]
+/weeklyplan - rencana portfolio minggu ini [admin]
+/monthlyplan - rencana portfolio bulanan [admin]
+/staleprojects - project stale/blocked [admin]
+/projectrisks - review risiko portfolio [admin]
+/portfolioreport - report portfolio mingguan [admin]
+/portfolio_proposal - proposal executor dari next action, tidak auto-run [admin]
 /whoami - identitas user dan role workspace
 /workspace - workspace aktif dan permission
 /workspaces - daftar workspace yang bisa diakses
@@ -8797,6 +9068,24 @@ function isUnknownCommand(cmd) {
     '/github_actions',
     '/propose_workflow',
     '/propose_deploy',
+    '/prodhealth',
+    '/analyze_incident',
+    '/incident_timeline',
+    '/responseplan',
+    '/propose_incident_repair',
+    '/propose_incident_rollback',
+    '/close_incident',
+    '/portfolio',
+    '/projects',
+    '/projecthealth',
+    '/nextproject',
+    '/portfolio_next',
+    '/weeklyplan',
+    '/monthlyplan',
+    '/staleprojects',
+    '/projectrisks',
+    '/portfolioreport',
+    '/portfolio_proposal',
     '/whoami',
     '/workspaces',
     '/belajar',
@@ -10109,6 +10398,9 @@ try {
     executorSystem: executorSystem || null,
     monitoringSystem: monitoringSystem || null,
     observabilitySystem,
+    portfolioSystem,
+    operatorSystem: null,
+    costSystem: opsSystem.costOptimizer || null,
     cicdSystem: cicdSystem || null,
     autoHealingSystem: autoHealingSystem || null,
     logger: log
@@ -10367,6 +10659,7 @@ await withUserActionLock(userId, async () => {
   if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleSelfHealingCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleObservabilityCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handlePortfolioCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handlePhase33OpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleAiosCommands(chatId, userId, resolvedCmd, args, msg)) return;
@@ -10547,6 +10840,27 @@ Data endpoint membutuhkan Authorization Bearer token.`;
       timestamp: nowMs()
     });
     await saveConversationPair(userId, userText, observabilityNaturalResult.answer);
+    return;
+  }
+
+  const portfolioNaturalResult = await handleNaturalPortfolioRoute(chatId, userId, userText, msg);
+  if (portfolioNaturalResult?.handled) {
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: portfolioNaturalResult.answer,
+      intent: `natural_portfolio:${portfolioNaturalResult.type}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: portfolioNaturalResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, portfolioNaturalResult.answer);
+    if (u.digest?.enabled) scheduleDigestJob(userId);
     return;
   }
 

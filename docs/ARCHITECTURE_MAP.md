@@ -30,6 +30,7 @@
 | `benchmarks` | ❌ |
 | `incidents` | ✅ |
 | `observability` | ✅ |
+| `portfolio` | ✅ |
 | `audit` | ❌ |
 | `commands` | ❌ |
 | `env` | ❌ |
@@ -82,6 +83,38 @@
 - `/actions/workflow/step/reorder`
 - `/actions/workflow/archive`
 - `/actions/workflow/restore`
+- `/portfolio`
+- `/portfolio/snapshot`
+- `/portfolio/projects`
+- `/portfolio/health`
+- `/portfolio/priorities`
+- `/portfolio/dependencies`
+- `/portfolio/stale`
+- `/portfolio/risk`
+- `/portfolio/cost`
+- `/portfolio/next-action`
+- `/portfolio/weekly-plan`
+- `/portfolio/monthly-plan`
+- `/portfolio/proposal`
+- `/portfolio/report`
+
+## Phase 41 Portfolio Modules
+
+| File | Role |
+|---|---|
+| `src/portfolio/portfolio-scanner.js` | Snapshot active goals/tasks/approvals/incidents/deploy/cost. |
+| `src/portfolio/project-health-scorer.js` | Score project health and blockers. |
+| `src/portfolio/project-priority-engine.js` | Rank active projects. |
+| `src/portfolio/project-dependency-detector.js` | Detect heuristic cross-project dependencies. |
+| `src/portfolio/project-staleness-detector.js` | Detect stale or blocked project work. |
+| `src/portfolio/portfolio-risk-review.js` | Review portfolio-wide risk. |
+| `src/portfolio/portfolio-cost-review.js` | Connect cost/budget signals with safe fallback. |
+| `src/portfolio/portfolio-strategy-planner.js` | Build weekly/monthly/stabilization strategy plans. |
+| `src/portfolio/portfolio-next-action-engine.js` | Recommend next project/task/agent. |
+| `src/portfolio/portfolio-report-generator.js` | Generate daily/weekly/monthly/executive reports. |
+| `src/portfolio/portfolio-proposal-bridge.js` | Create Evaluation v2 gated executor proposals. |
+| `src/dashboard/portfolio-routes.js` | Protected dashboard Portfolio API. |
+| `public/dashboard/portfolio.js` | Vanilla dashboard Portfolio tab renderer. |
 
 ## Telegram Commands
 

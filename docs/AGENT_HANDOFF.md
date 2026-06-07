@@ -13,6 +13,164 @@ It tracks what was done, what is unfinished, and what the next agent should do.
 Codex
 
 ### Date
+2026-06-07
+
+### Current Task
+Phase 41 — Multi-Project Portfolio Manager + Priority Intelligence.
+
+### Files Changed
+- `src/portfolio/*` — added portfolio scanner, health scorer, priority engine, dependency/staleness/risk/cost reviews, strategy planner, next action engine, report generator, proposal bridge, store, utils, and index export.
+- `src/dashboard/portfolio-routes.js` — added protected Portfolio API routes with safe degraded error handling.
+- `public/dashboard/portfolio.js` — added vanilla dashboard Portfolio renderer.
+- `public/dashboard/state.js`, `public/dashboard/index.html`, `public/dashboard/api.js`, `public/dashboard/service-worker.js` — registered Portfolio tab/API helpers and cache-busted assets.
+- `src/bot/legacy-runtime.js` — added Portfolio services, Telegram commands, natural portfolio routing, and dashboard service injection.
+- `src/agents/eval/evaluation-golden-cases.js`, `src/agents/eval/evaluation-quality-gates.js`, `src/agents/eval/evaluation-scorer-v2.js` — added Portfolio safety/priority/dependency evaluation coverage.
+- `docs/MULTI_PROJECT_PORTFOLIO_MANAGER.md`, `docs/PRIORITY_INTELLIGENCE.md`, `docs/PORTFOLIO_SECURITY.md`, `docs/PORTFOLIO_DASHBOARD.md` — added Phase 41 docs.
+- `AGENTS.md`, `docs/ARCHITECTURE_MAP.md`, `docs/INTEGRATION_CONTRACT.md`, `docs/TESTING.md`, `docs/COMMANDS.md`, `README.md` — updated governance, route, command, and test documentation.
+
+### What Was Completed
+- Portfolio snapshot scans active goals, open tasks, pending approvals, incidents, deploy/GitHubOps status, and cost fallback.
+- Project health and priority engines rank projects without executing actions.
+- Stale/dependency/risk/cost modules produce read-only recommendations.
+- Portfolio dashboard tab has metrics, ranking, risk/cost/dependency/stale panels, weekly report, and safe action buttons.
+- Portfolio Telegram commands and natural chat routing are added.
+- Push/deploy/write/external portfolio requests are proposal-only and Evaluation v2 gated.
+
+### What Is Unfinished
+- Project Operator Phase 40 and Cost Guard Phase 38 folders are absent in this repo; Portfolio uses safe fallback integrations.
+- Dependency detection remains heuristic.
+- Live Render/mobile verification still requires deploy.
+
+### Tests Run
+| Test | Result |
+|---|---|
+| `node --check telebot.js` | PASS |
+| `node --check src/bot/legacy-runtime.js` | PASS |
+| `node --check src/dashboard/dashboard-routes.js` | PASS |
+| `node --check src/dashboard/portfolio-routes.js` | PASS |
+| `node --check src/portfolio/*.js` | PASS |
+| `node --check public/dashboard/portfolio.js` | PASS |
+| `node --check public/dashboard/api.js` | PASS |
+| `node --check public/dashboard/service-worker.js` | PASS |
+| `node scratch/test-portfolio-scanner.js` | PASS |
+| `node scratch/test-project-health-scorer.js` | PASS |
+| `node scratch/test-project-priority-engine.js` | PASS |
+| `node scratch/test-project-dependency-detector.js` | PASS |
+| `node scratch/test-project-staleness-detector.js` | PASS |
+| `node scratch/test-portfolio-risk-review.js` | PASS |
+| `node scratch/test-portfolio-cost-review.js` | PASS |
+| `node scratch/test-portfolio-strategy-planner.js` | PASS |
+| `node scratch/test-portfolio-next-action-engine.js` | PASS |
+| `node scratch/test-portfolio-proposal-bridge.js` | PASS |
+| `node scratch/test-portfolio-dashboard-api.js` | PASS |
+| `node scratch/test-phase41-portfolio-regression.js` | PASS |
+| `node scratch/test-agent-quality-gates.js` | PASS |
+| `node scratch/test-agent-evaluation-v2.js` | PASS |
+| `node scratch/test-dashboard-router-registry.js` | PASS |
+| `node scratch/test-dashboard-all-menu-routes.js` | PASS |
+| `node scratch/test-dashboard-stable-routes.js` | PASS |
+| `node scratch/test-dashboard-env-and-static.js` | PASS |
+| `node scratch/test-dashboard-usable-pages.js` | PASS |
+| `node scratch/test-pwa-assets.js` | PASS |
+| `node scratch/test-executor-boundary-stable-release.js` | PASS |
+| `node scratch/test-integration-gate-stable-release.js` | PASS |
+| `node scratch/test-natural-chat-stable-release.js` | PASS |
+| `node scratch/test-file-analysis-leak.js` | PASS |
+| `node scratch/test-visible-multibot-replies.js` | PASS |
+| `node scratch/test-short-followup-context.js` | PASS |
+| `git diff --check` | PASS |
+| `npm start` smoke with dummy env + JSON fallback | PASS |
+
+### Next Safe Task for Codex
+```
+1. Deploy current branch to Render.
+2. Open `/dashboard#portfolio`.
+3. Run `/portfolio`, `/nextproject`, `/portfolio_next`, `/weeklyplan`, and `/portfolio_proposal` from owner/admin Telegram.
+4. Confirm `/portfolio_proposal` creates proposal only, then requires `/approve` and `/runexec`.
+```
+
+### Recommended Next Branch/Commit
+Commit message: `portfolio: add multi project priority intelligence`
+
+---
+
+### Last Agent
+Codex
+
+### Date
+2026-06-07
+
+### Current Task
+Dashboard usability audit and repair after production pages showed blank/error states.
+
+### Files Changed
+- `public/dashboard/ui.js` — replaced remaining placeholder pages with usable API-backed renderers for Workspaces, Users, Permissions, Planner, Executor, Tools, Backup, Audit Log, and Agent Evaluation; added safe dashboard context helpers; added GitHub Ops action bridge; fixed Deploy release-candidate action payload.
+- `public/dashboard/githubops.js` — fixed API base path from absolute `/api/dashboard/githubops` to Api-relative `/githubops`, preventing doubled `/api/dashboard/api/dashboard/...` requests.
+- `public/dashboard/deploy.js` — fixed API base path from absolute `/api/dashboard/deploy` to Api-relative `/deploy`, preventing doubled API paths.
+- `public/dashboard/index.html` — bumped dashboard asset version to `v=20260607-dashboard-usability-fix` so mobile/PWA browsers load the repaired JS.
+- `public/dashboard/service-worker.js` — bumped cache name to `telegram-aios-dashboard-static-v35-dashboard-usability` and pre-cached GitHub Ops/Deploy helper scripts.
+- `scratch/test-dashboard-usable-pages.js` — added regression test for placeholder removal, inline UI action methods, dashboard tab coverage, and API base path correctness.
+- `scratch/test-dashboard-router-registry.js`, `scratch/test-dashboard-stable-routes.js`, `scratch/test-dashboard-env-and-static.js` — updated dashboard cache/version assertions for the new asset version.
+- `docs/AGENT_HANDOFF.md` — updated this handoff.
+
+### What Was Completed
+- Audited dashboard frontend routing, tab renderers, helper scripts, service worker, and protected dashboard APIs.
+- Fixed pages that were visually present in the menu but still rendered non-usable placeholder content.
+- Fixed GitHub Ops and Deploy buttons that were calling broken doubled API paths.
+- Added missing `UI._ghAction(...)` handler so GitHub Ops inline buttons can execute safe dashboard requests.
+- Preserved approval boundaries: deploy/push/write actions still create plans/proposals or return gate results; no direct unsafe action was added.
+- Bumped PWA/static asset cache so stale mobile service worker should stop serving old dashboard JS that can cause `UI is not defined` or blank pages.
+- Verified main dashboard routes, dark form UI, PWA cache safety, and action endpoints against a local server with dummy env.
+
+### What Is Unfinished
+- Browser-level visual click-through was not performed with a real mobile browser session in this run; verification used static tests plus local HTTP/API smoke checks.
+- Some user-data endpoints return expected 403 under dummy local actor/workspace unless a real authorized dashboard actor is used.
+- CI/CD workflow-dispatch proposal returns expected `400 workflowId required` when tested without a workflow id.
+
+### Tests Run
+| Test | Result |
+|---|---|
+| `node --check telebot.js` | PASS |
+| `node --check public/dashboard/service-worker.js` | PASS |
+| `node --check public/dashboard/ui.js` | PASS |
+| `node --check public/dashboard/githubops.js` | PASS |
+| `node --check public/dashboard/deploy.js` | PASS |
+| `node scratch/test-dashboard-usable-pages.js` | PASS |
+| `node scratch/test-dashboard-router-registry.js` | PASS |
+| `node scratch/test-dashboard-all-menu-routes.js` | PASS |
+| `node scratch/test-dashboard-dark-form-ui.js` | PASS |
+| `node scratch/test-dashboard-route-consistency.js` | PASS |
+| `node scratch/test-dashboard-stable-routes.js` | PASS |
+| `node scratch/test-dashboard-env-and-static.js` | PASS |
+| `node scratch/test-pwa-assets.js` | PASS |
+| local `npm start` smoke with dummy env on port 34568 | PASS |
+| protected GET endpoint audit for dashboard tabs | PASS, with expected permission 403 for dummy user-data routes |
+| protected POST action audit for GitHubOps/Deploy/Self-Healing/CI/CD/Observability/Recovery/Integrity | PASS, no 404/500; expected 400 for missing `workflowId` |
+
+### Tests Failed
+- None.
+
+### Remaining Risks
+- Production Render still needs redeploy so new cache/versioned assets are served.
+- On Android/PWA, user may need one reload or `Clear App Cache` if the old service worker remains active until the new worker installs.
+
+### Next Safe Task for Codex
+```
+1. Deploy current branch to Render.
+2. Open /dashboard on mobile.
+3. Tap Reload once or Settings -> Clear App Cache if old UI still appears.
+4. Click each dashboard menu item and verify no page shows "UI is not defined", blank content, or placeholder text.
+```
+
+### Recommended Next Branch/Commit
+Suggested commit message if the user asks to commit: `dashboard: repair usable menu pages and cache bust assets`
+
+---
+
+### Last Agent
+Codex
+
+### Date
 2026-06-06
 
 ### Current Task

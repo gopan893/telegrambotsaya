@@ -79,9 +79,33 @@ function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) 
   if (/database_url|secret|token|bocor/i.test(text) && topics.includes('secret')) {
     return 'Critical secret incident terdeteksi. Secret harus di-redact, jangan tampilkan value mentah, lakukan rotate credential, dan buat incident/security review sebelum tindakan lanjutan.';
   }
+  if (/push\s+dan\s+deploy\s+project\s+paling\s+penting|deploy\s+project\s+paling\s+penting|push\s+project\s+paling\s+penting/i.test(text)) {
+    return 'Saya buat proposal portfolio untuk push/deploy project prioritas. Belum dijalankan. Approval wajib: approve dengan /approve <proposalId>, lalu run setelah approve dengan /runexec <proposalId>.';
+  }
+  if (/project\s+mana.*lanjut|lanjutkan.*project|next\s+project|project.*prioritas/i.test(text)) {
+    return 'Project yang sebaiknya dilanjutkan adalah project dengan blocker/risk tertinggi dan value paling dekat. Lanjutkan satu project dulu, lalu cek next action kecil sebelum membuka fitur baru.';
+  }
+  if (/prioritas\s+minggu\s+ini|weekly\s+plan|rencana\s+minggu\s+ini|apa\s+prioritas/i.test(text)) {
+    return 'Prioritas minggu ini: stabilkan blocker, selesaikan satu project utama, jalankan regression test, lalu update handoff. Tidak ada aksi yang dijalankan otomatis.';
+  }
+  if (/paling\s+berisiko|project\s+risk|mana\s+yang.*risiko|risiko\s+project/i.test(text)) {
+    return 'Risiko portfolio terbesar biasanya ada pada incident terbuka, approval backlog, deploy gate, dan project yang blocked. Review risiko dulu sebelum membuat proposal action.';
+  }
+  if (/project.*macet|kenapa.*macet|blocked\s+project|stale\s+project/i.test(text)) {
+    return 'Project macet biasanya karena dependency belum selesai, task stale, atau approval tertunda. Pilih satu blocker, buat next action kecil, lalu proposal hanya jika action berisiko.';
+  }
+  if (/codex\s+atau\s+opencode|opencode\s+atau\s+codex|hermes.*project|agent.*project/i.test(text)) {
+    return 'Codex cocok untuk implementasi terarah, OpenCode cocok untuk audit/recovery, Hermes cocok untuk strategi prompt dan planning. Pilih agent sesuai risiko project.';
+  }
+  if (/rapikan\s+semua\s+project|organisasi.*project|atur\s+semua\s+project/i.test(text)) {
+    return 'Rapikan project dengan mengelompokkan active goal, archive yang stale secara soft, pilih satu top priority, dan buat weekly portfolio plan read-only.';
+  }
+  if (/lanjutkan\s+yang\s+paling\s+penting|lanjut\s+yang\s+penting|kerjakan\s+yang\s+paling\s+penting/i.test(text)) {
+    return 'Lanjutkan project paling penting berdasarkan priority score, health, incident, blocker, dan release readiness. Mulai dari satu next action kecil.';
+  }
   if (action.hasActionIntent) {
     if (action.actionType === 'restore.run') {
-      return 'Restore/rollback termasuk aksi berisiko tinggi. Saya hanya membuat proposal dan security review; belum dijalankan. Approve dengan /approve <proposalId>, lalu run setelah approve dengan /runexec <proposalId>.';
+      return 'Restore/rollback termasuk aksi berisiko tinggi. Saya hanya membuat proposal dan security review; approval wajib. Belum dijalankan. Approve dengan /approve <proposalId>, lalu run setelah approve dengan /runexec <proposalId>.';
     }
     return `Saya buat proposal ${action.actionType || 'aksi'} dalam mode dry-run. Status: pending approval. Approve dengan /approve <proposalId>, lalu run setelah approve dengan /runexec <proposalId>.`;
   }
@@ -177,6 +201,72 @@ async function runDryEvaluation(testCase = {}, services = {}) {
       ...action,
       riskLevel: 'danger',
       requiresApproval: true
+    };
+  }
+  if (/project\s+mana.*lanjut|lanjutkan.*project|next\s+project|project.*prioritas/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'planning', 'roadmap', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'planner', ...(route.selectedAgents || []).filter(agent => !['coder', 'ops'].includes(agent))]),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' }
+    };
+  }
+  if (/prioritas\s+minggu\s+ini|weekly\s+plan|rencana\s+minggu\s+ini|apa\s+prioritas/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'planning', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'planner']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' }
+    };
+  }
+  if (/paling\s+berisiko|project\s+risk|mana\s+yang.*risiko|risiko\s+project/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'risk', 'planning', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'critic']),
+      risk: { ...(route.risk || {}), level: 'medium', riskLevel: 'medium' }
+    };
+  }
+  if (/project.*macet|kenapa.*macet|blocked\s+project|stale\s+project/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'planning', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'planner', 'critic']),
+      risk: { ...(route.risk || {}), level: 'medium', riskLevel: 'medium' }
+    };
+  }
+  if (/codex\s+atau\s+opencode|opencode\s+atau\s+codex|hermes.*project|agent.*project/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'planning', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'planner', 'critic']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' }
+    };
+  }
+  if (/rapikan\s+semua\s+project|organisasi.*project|atur\s+semua\s+project|lanjutkan\s+yang\s+paling\s+penting|lanjut\s+yang\s+penting|kerjakan\s+yang\s+paling\s+penting/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'planning', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'planner']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' }
+    };
+  }
+  if (/push\s+dan\s+deploy\s+project\s+paling\s+penting|deploy\s+project\s+paling\s+penting|push\s+project\s+paling\s+penting/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'deploy', 'executor', 'portfolio']),
+      selectedAgents: utils.unique(['orchestrator', 'security', 'executor']),
+      risk: { ...(route.risk || {}), level: 'danger', riskLevel: 'danger' },
+      approvalRequired: true
+    };
+    action = {
+      ...action,
+      hasActionIntent: true,
+      actionType: 'deploy.proposal',
+      targetType: 'portfolio',
+      riskLevel: 'danger',
+      requiresApproval: true,
+      reason: action.reason || 'portfolio push/deploy request'
     };
   }
   const decision = decisionDetector.shouldTriggerDecisionSystem(input, route, {}, {}, services);

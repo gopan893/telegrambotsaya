@@ -150,6 +150,24 @@ Tab dashboard `Monitoring` dan `CI/CD` aktif mulai Phase 33. WebSocket monitorin
 
 Natural chat seperti `cek production health`, `ada incident apa?`, `kenapa deploy gagal?`, `buat response plan`, dan `rollback kalau perlu` diarahkan ke Incident Response Center. Repair/rollback tetap wajib Evaluation v2 + executor proposal + `/approve` + `/runexec`.
 
+## Multi-Project Portfolio Manager
+
+| Command | Fungsi |
+| --- | --- |
+| `/portfolio` | Ringkasan portfolio lintas project/goal aktif, admin-only. |
+| `/projects` | Daftar project/goal aktif dan link dashboard Portfolio. |
+| `/projecthealth [goalId]` | Health score project tertentu atau ringkasan top project. |
+| `/nextproject` | Project yang paling perlu dilanjutkan menurut priority engine. |
+| `/portfolio_next` | Next action portfolio aman dan agent yang disarankan. |
+| `/weeklyplan` | Rencana portfolio mingguan read-only. |
+| `/monthlyplan` | Rencana portfolio bulanan read-only. |
+| `/staleprojects` | Project/task yang stale, blocked, atau perlu refresh status. |
+| `/projectrisks` | Review risiko portfolio dan rekomendasi stabilisasi. |
+| `/portfolioreport` | Weekly portfolio report sanitized. |
+| `/portfolio_proposal` | Buat action plan + executor proposal dari next action; tidak menjalankan aksi. |
+
+Natural chat seperti `project mana yang harus saya lanjutkan?`, `apa prioritas minggu ini?`, `mana yang paling berisiko?`, `kenapa project ini macet?`, `Codex atau OpenCode untuk project ini?`, dan `push dan deploy project paling penting` diarahkan ke Portfolio Manager. Push/deploy/write/external tetap proposal-only dan wajib Evaluation v2 + executor approval.
+
 ## Approved External Integrations
 
 | Command | Fungsi |

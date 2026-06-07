@@ -30,6 +30,12 @@ const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
 const devGovernanceRoutes = require('./devgovernance-routes');
 const observabilityRoutes = require('./observability-routes');
+let portfolioRoutes;
+try {
+  portfolioRoutes = require('./portfolio-routes');
+} catch (e) {
+  portfolioRoutes = { registerPortfolioRoutes: () => {} };
+}
 let githubOpsRoutes;
 try {
   githubOpsRoutes = require('./githubops-routes');
@@ -79,6 +85,7 @@ module.exports = {
   selfhealingRoutes,
   monitoringRoutes,
   observabilityRoutes,
+  portfolioRoutes,
   cicdRoutes,
   routineRoutes,
   devGovernanceRoutes,
