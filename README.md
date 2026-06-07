@@ -24,6 +24,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - Multi-bot foundation + natural smart agent router untuk Orchestrator, Planner, Coder, Critic, Ops, Security, Executor, dan Reflection agent
 - **Multi-Agent Coding Workspace** untuk analisis coding request, change planning, risk review, test planning, Codex prompt generation, dan GitHub proposal (Phase 29)
 - **Production Observability + Incident Response Center** untuk production health, incident timeline, root cause hypothesis, response plan, dan repair/rollback proposal yang tetap wajib approval (Phase 37)
+- **Multi-Project Portfolio Manager** untuk meranking project aktif, mendeteksi blocker/stale work, membuat weekly/monthly portfolio plan, dan membuat executor proposal tanpa auto-run (Phase 41)
 
 ## Mulai Cepat
 
@@ -173,6 +174,17 @@ Bot akan mencari potongan yang relevan dari file tersebut saat menjawab.
 /responseplan inc_xxx
 /propose_incident_repair inc_xxx
 /propose_incident_rollback inc_xxx
+/portfolio
+/projects
+/projecthealth
+/nextproject
+/portfolio_next
+/weeklyplan
+/monthlyplan
+/staleprojects
+/projectrisks
+/portfolioreport
+/portfolio_proposal
 /connector_status github
 /connector_quality github
 /github_status
@@ -218,6 +230,14 @@ Phase 28 menambahkan approved external execution:
 - Setelah proposal dibuat, user tetap harus menjalankan `/approve <proposalId>` lalu `/runexec <proposalId>`.
 - Gmail direct send, shell, arbitrary code execution, env/config mutation, dan hard delete tetap tidak didukung.
 - Lihat `docs/APPROVED_EXTERNAL_EXECUTION.md`, `docs/EXTERNAL_INTEGRATIONS.md`, dan `docs/INTEGRATION_SECURITY.md`.
+
+Phase 41 menambahkan Multi-Project Portfolio Manager:
+
+- `/portfolio`, `/projects`, `/nextproject`, `/portfolio_next`, `/weeklyplan`, `/staleprojects`, dan `/projectrisks` membantu memilih project yang paling penting dilanjutkan.
+- Dashboard tab `Portfolio` menampilkan ranking priority, health, risiko, cost, dependency, stale project, dan weekly report.
+- Pertanyaan natural seperti `project mana yang harus saya lanjutkan?` atau `apa prioritas minggu ini?` diarahkan ke portfolio intelligence.
+- Request berisiko seperti `push dan deploy project paling penting` hanya membuat action plan/proposal dan tetap harus melewati Evaluation v2, `/approve`, lalu `/runexec`.
+- Lihat `docs/MULTI_PROJECT_PORTFOLIO_MANAGER.md`, `docs/PRIORITY_INTELLIGENCE.md`, `docs/PORTFOLIO_SECURITY.md`, dan `docs/PORTFOLIO_DASHBOARD.md`.
 
 ## Catatan Penting
 

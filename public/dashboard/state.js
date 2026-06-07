@@ -153,6 +153,14 @@ const DASHBOARD_TABS = {
     aliases: ['incident-center', 'production', 'prod-monitor', 'health-monitor', 'observability-center', 'incidents'],
     renderer: 'renderObservability'
   },
+  portfolio: {
+    label: 'Portfolio',
+    title: 'Portfolio',
+    navIcon: '📚',
+    navVisible: true,
+    aliases: ['projects', 'multi-project', 'priority', 'portfolio-manager', 'roadmap-manager'],
+    renderer: 'renderPortfolio'
+  },
   audit: {
     label: 'Audit Log',
     title: 'Audit Log',

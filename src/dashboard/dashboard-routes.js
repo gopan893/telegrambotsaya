@@ -36,6 +36,12 @@ try {
 } catch (e) {
   costRoutes = { registerCostRoutes: () => {} };
 }
+let portfolioRoutes;
+try {
+  portfolioRoutes = require('./portfolio-routes');
+} catch (_) {
+  portfolioRoutes = { registerPortfolioRoutes: () => {} };
+}
 
 function getDashboardServices(services = {}) {
   return {
@@ -49,6 +55,7 @@ function getDashboardServices(services = {}) {
     executorSystem: services.executorSystem || null,
     monitoringSystem: services.monitoringSystem || null,
     observabilitySystem: services.observabilitySystem || null,
+    portfolioSystem: services.portfolioSystem || null,
     cicdSystem: services.cicdSystem || null,
     autoHealingSystem: services.autoHealingSystem || null,
     routineRegistry: services.routineRegistry || null,
@@ -360,6 +367,12 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Observability routes skipped:', e.message);
+  }
+  try {
+    portfolioRoutes.registerPortfolioRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Portfolio routes skipped:', e.message);
   }
   if (services.selfHealingSystem) {
     selfhealingRoutes.registerSelfHealingRoutes(router, services);

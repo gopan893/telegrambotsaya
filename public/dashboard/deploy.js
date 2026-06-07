@@ -1,7 +1,7 @@
 /* Deploy / Release frontend helper */
 
 const DEPLOY = (() => {
-  const BASE = '/api/dashboard/deploy';
+  const BASE = '/deploy';
 
   async function getSummary() {
     return Api.apiGet(BASE);

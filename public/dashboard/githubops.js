@@ -1,7 +1,7 @@
 /* GitHub Ops frontend helper */
 
 const GITHUBOPS = (() => {
-  const BASE = '/api/dashboard/githubops';
+  const BASE = '/githubops';
 
   async function repoState() {
     return Api.apiGet(`${BASE}/repo-state`);

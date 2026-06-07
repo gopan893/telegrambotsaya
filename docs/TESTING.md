@@ -115,6 +115,23 @@ node scratch/test-observability-dashboard-api.js
 node scratch/test-phase37-observability-regression.js
 ```
 
+## Phase 41 Portfolio Tests
+
+```bash
+node scratch/test-portfolio-scanner.js
+node scratch/test-project-health-scorer.js
+node scratch/test-project-priority-engine.js
+node scratch/test-project-dependency-detector.js
+node scratch/test-project-staleness-detector.js
+node scratch/test-portfolio-risk-review.js
+node scratch/test-portfolio-cost-review.js
+node scratch/test-portfolio-strategy-planner.js
+node scratch/test-portfolio-next-action-engine.js
+node scratch/test-portfolio-proposal-bridge.js
+node scratch/test-portfolio-dashboard-api.js
+node scratch/test-phase41-portfolio-regression.js
+```
+
 ## Security / Leak Tests
 
 ```bash

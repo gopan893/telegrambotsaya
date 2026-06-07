@@ -1710,114 +1710,488 @@ const UI = {
     });
   },
 
-  // --- Placeholder renderers for tabs without full implementation ---
+  _dashboardActorId() {
+    return localStorage.getItem('dashboard_actor_id') || localStorage.getItem('last_user_id') || 'dashboard-admin';
+  },
+
+  _dashboardWorkspaceId() {
+    return localStorage.getItem('dashboard_workspace_id') || 'default';
+  },
+
+  _saveDashboardContext(actorId, workspaceId) {
+    if (actorId) localStorage.setItem('dashboard_actor_id', String(actorId).trim());
+    if (workspaceId) localStorage.setItem('dashboard_workspace_id', String(workspaceId).trim());
+  },
+
+  _apiMessage(res, fallback = 'Request gagal') {
+    return Utils.escapeHtml(res?.data?.error || res?.data?.reason || res?.error || res?.message || fallback);
+  },
+
+  _renderStatusPanel(title, res, emptyMessage = 'Tidak ada data.') {
+    if (!res.ok) {
+      return `<div class="alert alert-warning">${Utils.escapeHtml(title)} belum tersedia: ${UI._apiMessage(res)}</div>`;
+    }
+    const items = res.data?.items || [];
+    if (!items.length) return UI.renderEmptyState('📭', title, emptyMessage);
+    return '';
+  },
 
   async renderWorkspaces(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('🏢 Workspaces');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">🏢</span>
-        <h3>Workspaces</h3>
-        <p>Workspace module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat workspaces...');
+    const actorId = UI._dashboardActorId();
+    const res = await Api.getWorkspaces({ actorId, all: true, includeArchived: true });
+    const items = res.ok ? (res.data.items || []) : [];
+    let html = UI.renderSectionHeader('🏢 Workspaces', `
+      <button class="btn btn-outline" id="btn-refresh-workspaces">🔄 Refresh</button>
+    `);
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">Create Workspace</h3>
+        <div class="grid-2">
+          <div class="filter-group"><label>Actor ID</label><input id="workspace-actor-id" value="${Utils.escapeHtml(actorId)}"></div>
+          <div class="filter-group"><label>Workspace Name</label><input id="workspace-name" placeholder="Contoh: Production AI OS"></div>
+        </div>
+        <div class="filter-group"><label>Description</label><textarea id="workspace-description" rows="2" placeholder="Deskripsi singkat workspace..."></textarea></div>
+        <button class="btn btn-primary" id="btn-create-workspace">Create Workspace</button>
+        <div id="workspace-action-result" style="margin-top:12px;"></div>
       </div>
     `;
+    if (!res.ok) {
+      html += `<div class="alert alert-warning">Gagal memuat workspace: ${UI._apiMessage(res)}</div>`;
+    } else {
+      html += `
+        <div class="panel">
+          <h3 class="panel-title">Workspace List</h3>
+          <div class="table-responsive">
+            <table>
+              <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Owner</th><th>Updated</th></tr></thead>
+              <tbody>
+                ${items.map(w => `
+                  <tr>
+                    <td><code>${Utils.escapeHtml(w.id)}</code></td>
+                    <td>${Utils.escapeHtml(w.name || w.title || '-')}</td>
+                    <td>${UI.renderBadge(w.status || (w.archivedAt ? 'archived' : 'active'))}</td>
+                    <td>${Utils.escapeHtml(w.ownerId || w.createdBy || '-')}</td>
+                    <td>${Utils.formatDate(w.updatedAt || w.createdAt)}</td>
+                  </tr>
+                `).join('') || '<tr><td colspan="5" class="text-center text-muted">Belum ada workspace.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-workspaces')?.addEventListener('click', () => UI.renderWorkspaces(targetEl));
+    document.getElementById('btn-create-workspace')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('workspace-action-result');
+      const nextActorId = document.getElementById('workspace-actor-id')?.value.trim() || actorId;
+      const name = document.getElementById('workspace-name')?.value.trim();
+      const description = document.getElementById('workspace-description')?.value.trim();
+      if (!name) {
+        Utils.showToast('Nama workspace wajib diisi.', 'warning');
+        return;
+      }
+      UI._saveDashboardContext(nextActorId, '');
+      resultEl.innerHTML = UI.renderLoading('Membuat workspace...');
+      const createRes = await Api.createWorkspace({ actorId: nextActorId, name, description });
+      resultEl.innerHTML = createRes.ok
+        ? `<div class="alert alert-success">Workspace dibuat: <code>${Utils.escapeHtml(createRes.data.workspace?.id || '-')}</code></div>`
+        : `<div class="alert alert-warning">Gagal membuat workspace: ${UI._apiMessage(createRes)}</div>`;
+      if (createRes.ok) UI.renderWorkspaces(targetEl);
+    });
   },
 
   async renderUsers(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('👥 Users');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">👥</span>
-        <h3>Users</h3>
-        <p>User management module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat users...');
+    const res = await Api.getUsers();
+    const users = res.ok ? (res.data.items || res.data.users || []) : [];
+    let html = UI.renderSectionHeader('👥 Users', `
+      <button class="btn btn-outline" id="btn-refresh-users">🔄 Refresh</button>
+    `);
+    html += `
+      ${!res.ok ? `<div class="alert alert-warning">Gagal memuat users: ${UI._apiMessage(res)}</div>` : ''}
+      <div class="panel">
+        <h3 class="panel-title">User Directory</h3>
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>User ID</th><th>Name</th><th>Workspaces</th><th>Role</th><th>Last Seen</th></tr></thead>
+            <tbody>
+              ${users.map(u => `
+                <tr>
+                  <td><code>${Utils.escapeHtml(u.id || u.userId)}</code></td>
+                  <td>${Utils.escapeHtml(u.name || u.username || u.displayName || '-')}</td>
+                  <td>${Utils.escapeHtml(String(u.workspaceCount ?? (u.workspaces || []).length ?? 0))}</td>
+                  <td>${UI.renderBadge(u.role || u.defaultRole || 'viewer')}</td>
+                  <td>${Utils.formatDate(u.lastSeenAt || u.updatedAt || u.createdAt)}</td>
+                </tr>
+              `).join('') || '<tr><td colspan="5" class="text-center text-muted">Belum ada user dashboard/workspace.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-users')?.addEventListener('click', () => UI.renderUsers(targetEl));
   },
 
   async renderPermissions(targetEl) {
+    const actorId = UI._dashboardActorId();
+    const workspaceId = UI._dashboardWorkspaceId();
     targetEl.innerHTML = UI.renderSectionHeader('🛡️ Permissions');
     targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">🛡️</span>
-        <h3>Permissions</h3>
-        <p>Permission management module belum tersedia atau belum termuat.</p>
+      <div class="panel">
+        <h3 class="panel-title">Permission Lookup</h3>
+        <div class="grid-2">
+          <div class="filter-group"><label>Actor ID</label><input id="perm-actor-id" value="${Utils.escapeHtml(actorId)}"></div>
+          <div class="filter-group"><label>Workspace ID</label><input id="perm-workspace-id" value="${Utils.escapeHtml(workspaceId)}"></div>
+        </div>
+        <button class="btn btn-primary" id="btn-load-permissions">Load Permissions</button>
+        <div id="permissions-result" style="margin-top:16px;">${UI.renderEmptyState('🛡️', 'Masukkan konteks', 'Klik Load Permissions untuk melihat role dan izin actor.')}</div>
       </div>
     `;
+    document.getElementById('btn-load-permissions')?.addEventListener('click', async () => {
+      const nextActorId = document.getElementById('perm-actor-id')?.value.trim() || actorId;
+      const nextWorkspaceId = document.getElementById('perm-workspace-id')?.value.trim() || workspaceId;
+      UI._saveDashboardContext(nextActorId, nextWorkspaceId);
+      const resultEl = document.getElementById('permissions-result');
+      resultEl.innerHTML = UI.renderLoading('Mengecek permissions...');
+      const res = await Api.getMyPermissions(nextWorkspaceId, nextActorId);
+      if (!res.ok) {
+        resultEl.innerHTML = UI.renderError('Gagal Memuat Permissions', UI._apiMessage(res));
+        return;
+      }
+      const p = res.data.permission || res.data.summary || res.data;
+      const permissions = p.permissions || p.allowedActions || [];
+      resultEl.innerHTML = `
+        <div class="card-grid">
+          <div class="card"><div class="card-title">Role</div><div class="card-value">${UI.renderBadge(p.role || 'unknown')}</div><div class="card-subtitle">Workspace: ${Utils.escapeHtml(nextWorkspaceId)}</div></div>
+          <div class="card"><div class="card-title">Can Write</div><div class="card-value">${p.canWrite || ['owner', 'admin', 'editor'].includes(p.role) ? 'YES' : 'NO'}</div><div class="card-subtitle">Danger requires owner/admin</div></div>
+          <div class="card"><div class="card-title">Permissions</div><div class="card-value">${permissions.length}</div><div class="card-subtitle">Effective rules</div></div>
+        </div>
+        <div class="panel"><h3 class="panel-title">Effective Permission Payload</h3><pre style="white-space:pre-wrap; overflow:auto;">${Utils.escapeHtml(JSON.stringify(p, null, 2))}</pre></div>
+      `;
+    });
   },
 
   async renderPlanner(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('🗺️ Planner');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">🗺️</span>
-        <h3>Planner</h3>
-        <p>Planner module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat planner...');
+    const userId = localStorage.getItem('last_user_id') || '123456789';
+    const workspaceId = UI._dashboardWorkspaceId();
+    const [plansRes, nextRes] = await Promise.all([
+      Api.listPlans({ userId, workspaceId, includeArchived: true, limit: 30 }),
+      Api.getNextActions({ userId, workspaceId })
+    ]);
+    const plans = plansRes.ok ? (plansRes.data.items || []) : [];
+    const actions = nextRes.ok ? (nextRes.data.actions || []) : [];
+    let html = UI.renderSectionHeader('🗺️ Planner', `
+      <button class="btn btn-outline" id="btn-refresh-planner">🔄 Refresh</button>
+    `);
+    html += `
+      <div class="panel">
+        <h3 class="panel-title">Generate / Create Plan</h3>
+        <div class="grid-2">
+          <div class="filter-group"><label>User ID</label><input id="planner-user-id" value="${Utils.escapeHtml(userId)}"></div>
+          <div class="filter-group"><label>Workspace ID</label><input id="planner-workspace-id" value="${Utils.escapeHtml(workspaceId)}"></div>
+        </div>
+        <div class="filter-group"><label>Plan Text</label><textarea id="planner-text" rows="3" placeholder="Contoh: Stabilkan dashboard dan test semua menu"></textarea></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-create-plan-text">Generate Plan From Text</button>
+          <button class="btn btn-outline" id="btn-create-plan-simple">Create Draft Plan</button>
+        </div>
+        <div id="planner-action-result" style="margin-top:12px;"></div>
+      </div>
+      ${!plansRes.ok ? `<div class="alert alert-warning">Gagal memuat plans: ${UI._apiMessage(plansRes)}</div>` : ''}
+      <div class="card-grid">
+        <div class="card"><div class="card-title">Plans</div><div class="card-value">${plans.length}</div><div class="card-subtitle">Current filter</div></div>
+        <div class="card"><div class="card-title">Next Actions</div><div class="card-value">${actions.length}</div><div class="card-subtitle">Suggested by planner</div></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Plans</h3>
+        <div class="table-responsive"><table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Horizon</th><th>Tasks</th></tr></thead><tbody>
+          ${plans.map(p => `<tr><td><code>${Utils.escapeHtml(p.id)}</code></td><td>${Utils.escapeHtml(p.title)}</td><td>${UI.renderBadge(p.status)}</td><td>${Utils.escapeHtml(p.horizon || '-')}</td><td>${(p.taskIds || []).length}</td></tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted">Belum ada plan.</td></tr>'}
+        </tbody></table></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Next Actions</h3>
+        ${(actions || []).map(a => `<div class="card" style="margin-bottom:8px;"><strong>${Utils.escapeHtml(a.title)}</strong><p class="text-muted">${Utils.escapeHtml(a.description || '')}</p>${UI.renderBadge(a.priority || a.status || 'todo')}</div>`).join('') || '<p class="text-muted">Belum ada next action.</p>'}
       </div>
     `;
+    targetEl.innerHTML = html;
+    const runPlanAction = async (mode) => {
+      const resultEl = document.getElementById('planner-action-result');
+      const nextUserId = document.getElementById('planner-user-id')?.value.trim() || userId;
+      const nextWorkspaceId = document.getElementById('planner-workspace-id')?.value.trim() || workspaceId;
+      const text = document.getElementById('planner-text')?.value.trim();
+      UI._saveDashboardContext('', nextWorkspaceId);
+      if (!text) {
+        Utils.showToast('Tulis plan text terlebih dahulu.', 'warning');
+        return;
+      }
+      resultEl.innerHTML = UI.renderLoading('Memproses planner...');
+      const res = mode === 'generate'
+        ? await Api.generatePlanFromText({ text, userId: nextUserId, workspaceId: nextWorkspaceId })
+        : await Api.createPlan({ title: text, description: text, userId: nextUserId, workspaceId: nextWorkspaceId, horizon: 'weekly', status: 'draft' });
+      resultEl.innerHTML = res.ok
+        ? `<div class="alert alert-success">Plan dibuat: <code>${Utils.escapeHtml(res.data.plan?.id || '-')}</code></div>`
+        : `<div class="alert alert-warning">Planner gagal: ${UI._apiMessage(res)}</div>`;
+      if (res.ok) UI.renderPlanner(targetEl);
+    };
+    document.getElementById('btn-refresh-planner')?.addEventListener('click', () => UI.renderPlanner(targetEl));
+    document.getElementById('btn-create-plan-text')?.addEventListener('click', () => runPlanAction('generate'));
+    document.getElementById('btn-create-plan-simple')?.addEventListener('click', () => runPlanAction('create'));
   },
 
   async renderExecutor(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('✅ Executor');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">✅</span>
-        <h3>Executor</h3>
-        <p>Executor module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat executor...');
+    const userId = localStorage.getItem('last_user_id') || '123456789';
+    const workspaceId = UI._dashboardWorkspaceId();
+    const [pendingRes, proposalsRes, runsRes] = await Promise.all([
+      Api.listPendingExecutions({ userId, workspaceId, limit: 20 }),
+      Api.listExecutionProposals({ userId, workspaceId, limit: 30 }),
+      Api.listExecutionRuns({ userId, workspaceId, limit: 20 })
+    ]);
+    const pending = pendingRes.ok ? (pendingRes.data.items || []) : [];
+    const proposals = proposalsRes.ok ? (proposalsRes.data.items || []) : [];
+    const runs = runsRes.ok ? (runsRes.data.items || []) : [];
+    let html = UI.renderSectionHeader('✅ Executor', `
+      <button class="btn btn-outline" id="btn-refresh-executor">🔄 Refresh</button>
+    `);
+    html += `
+      <div class="alert alert-info">Executor tetap human-approved: approve dan run adalah dua langkah terpisah.</div>
+      <div class="card-grid">
+        <div class="card"><div class="card-title">Pending Approval</div><div class="card-value">${pending.length}</div><div class="card-subtitle">Needs human decision</div></div>
+        <div class="card"><div class="card-title">Proposals</div><div class="card-value">${proposals.length}</div><div class="card-subtitle">Recent queue</div></div>
+        <div class="card"><div class="card-title">Runs</div><div class="card-value">${runs.length}</div><div class="card-subtitle">Execution history</div></div>
       </div>
+      <div class="panel">
+        <h3 class="panel-title">Pending Proposals</h3>
+        <div class="table-responsive"><table><thead><tr><th>ID</th><th>Title</th><th>Risk</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          ${pending.map(p => `<tr><td><code>${Utils.escapeHtml(p.id)}</code></td><td>${Utils.escapeHtml(p.title || '-')}</td><td>${UI.renderBadge(p.riskLevel || 'medium')}</td><td>${UI.renderBadge(p.status || 'pending')}</td><td><button class="btn btn-outline btn-sm" data-exec-approve="${Utils.escapeHtml(p.id)}">Approve</button> <button class="btn btn-outline btn-sm" data-exec-run="${Utils.escapeHtml(p.id)}">Run</button></td></tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted">Tidak ada pending proposal.</td></tr>'}
+        </tbody></table></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Recent Proposals</h3>
+        <div class="table-responsive"><table><thead><tr><th>ID</th><th>Source</th><th>Status</th><th>Created</th></tr></thead><tbody>
+          ${proposals.map(p => `<tr><td><code>${Utils.escapeHtml(p.id)}</code></td><td>${Utils.escapeHtml(p.sourceType || '-')}</td><td>${UI.renderBadge(p.status)}</td><td>${Utils.formatDate(p.createdAt)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted">Belum ada proposal.</td></tr>'}
+        </tbody></table></div>
+      </div>
+      <div id="executor-action-result"></div>
     `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-executor')?.addEventListener('click', () => UI.renderExecutor(targetEl));
+    targetEl.querySelectorAll('[data-exec-approve]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-exec-approve');
+      const resultEl = document.getElementById('executor-action-result');
+      resultEl.innerHTML = UI.renderLoading('Approving proposal...');
+      const res = await Api.approveExecution(id, { userId, workspaceId });
+      resultEl.innerHTML = res.ok ? `<div class="alert alert-success">Proposal approved: <code>${Utils.escapeHtml(id)}</code></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+      if (res.ok) UI.renderExecutor(targetEl);
+    }));
+    targetEl.querySelectorAll('[data-exec-run]').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-exec-run');
+      Utils.confirmAction('Run Approved Execution', 'Run hanya berhasil jika proposal sudah approved. Lanjut?', async () => {
+        const resultEl = document.getElementById('executor-action-result');
+        resultEl.innerHTML = UI.renderLoading('Running approved proposal...');
+        const res = await Api.runExecution(id, { userId, workspaceId });
+        resultEl.innerHTML = res.ok ? `<div class="alert alert-success">Run selesai untuk <code>${Utils.escapeHtml(id)}</code></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+        if (res.ok) UI.renderExecutor(targetEl);
+      });
+    }));
   },
 
   async renderTools(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('🧰 Tools');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">🧰</span>
-        <h3>Tools</h3>
-        <p>Tool registry module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat tools...');
+    const res = await Api.listTools({ limit: 100 });
+    const tools = res.ok ? (res.data.items || []) : [];
+    const summary = res.data?.summary || {};
+    let html = UI.renderSectionHeader('🧰 Tool Registry', `
+      <button class="btn btn-outline" id="btn-refresh-tools">🔄 Refresh</button>
+    `);
+    html += `
+      ${!res.ok ? `<div class="alert alert-warning">Gagal memuat tools: ${UI._apiMessage(res)}</div>` : ''}
+      <div class="card-grid">
+        <div class="card"><div class="card-title">Tools</div><div class="card-value">${tools.length}</div><div class="card-subtitle">Registered</div></div>
+        <div class="card"><div class="card-title">Enabled</div><div class="card-value">${tools.filter(t => t.enabled).length}</div><div class="card-subtitle">Available</div></div>
+        <div class="card"><div class="card-title">Approval Required</div><div class="card-value">${tools.filter(t => t.requiresApproval).length}</div><div class="card-subtitle">Write/danger guarded</div></div>
       </div>
+      <div class="panel">
+        <h3 class="panel-title">Registered Tools</h3>
+        <div class="table-responsive"><table><thead><tr><th>Tool</th><th>Category</th><th>Risk</th><th>Status</th><th>Action</th></tr></thead><tbody>
+          ${tools.map(t => `<tr><td><code>${Utils.escapeHtml(t.id)}</code><br><span class="text-muted">${Utils.escapeHtml(t.name || '')}</span></td><td>${Utils.escapeHtml(t.category || '-')}</td><td>${UI.renderBadge(t.riskLevel || 'low')}</td><td>${t.enabled ? UI.renderBadge('enabled') : UI.renderBadge('disabled')}</td><td><button class="btn btn-outline btn-sm" data-tool-preview="${Utils.escapeHtml(t.id)}">Preview</button> <button class="btn btn-outline btn-sm" data-tool-propose="${Utils.escapeHtml(t.id)}">Propose</button></td></tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted">Belum ada tool terdaftar.</td></tr>'}
+        </tbody></table></div>
+      </div>
+      <div id="tool-action-result"></div>
     `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-tools')?.addEventListener('click', () => UI.renderTools(targetEl));
+    targetEl.querySelectorAll('[data-tool-preview]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-tool-preview');
+      const resultEl = document.getElementById('tool-action-result');
+      resultEl.innerHTML = UI.renderLoading('Preview tool...');
+      const preview = await Api.previewTool(id, { input: {}, text: '' });
+      resultEl.innerHTML = preview.ok
+        ? `<div class="panel"><h3 class="panel-title">Preview ${Utils.escapeHtml(id)}</h3><pre>${Utils.escapeHtml(JSON.stringify(preview.data.preview || preview.data, null, 2))}</pre></div>`
+        : `<div class="alert alert-warning">${UI._apiMessage(preview)}</div>`;
+    }));
+    targetEl.querySelectorAll('[data-tool-propose]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-tool-propose');
+      const resultEl = document.getElementById('tool-action-result');
+      resultEl.innerHTML = UI.renderLoading('Creating tool proposal...');
+      const proposal = await Api.proposeTool(id, { input: {}, text: '' });
+      resultEl.innerHTML = proposal.ok
+        ? `<div class="alert alert-success">Proposal dibuat: <code>${Utils.escapeHtml(proposal.data.proposal?.id || '-')}</code></div>`
+        : `<div class="alert alert-warning">${UI._apiMessage(proposal)}</div>`;
+    }));
   },
 
   async renderBackup(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('💾 Backup & Recovery');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">💾</span>
-        <h3>Backup & Recovery</h3>
-        <p>Backup module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat backup & recovery...');
+    const workspaceId = UI._dashboardWorkspaceId();
+    const userId = localStorage.getItem('last_user_id') || '123456789';
+    const [backupsRes, schedulesRes, recoveryRes] = await Promise.all([
+      Api.listBackups({ workspaceId, userId, limit: 30 }),
+      Api.listBackupSchedules({ workspaceId, userId, limit: 20, requestDue: true }),
+      Api.getRecoveryStatus()
+    ]);
+    const backups = backupsRes.ok ? (backupsRes.data.items || []) : [];
+    const schedules = schedulesRes.ok ? (schedulesRes.data.items || []) : [];
+    const recovery = recoveryRes.ok ? (recoveryRes.data.status || {}) : {};
+    let html = UI.renderSectionHeader('💾 Backup & Recovery', `
+      <button class="btn btn-outline" id="btn-refresh-backup">🔄 Refresh</button>
+    `);
+    html += `
+      <div class="card-grid">
+        <div class="card"><div class="card-title">Backups</div><div class="card-value">${backups.length}</div><div class="card-subtitle">Recent safe manifests</div></div>
+        <div class="card"><div class="card-title">Schedules</div><div class="card-value">${schedules.length}</div><div class="card-subtitle">Approved scheduler</div></div>
+        <div class="card"><div class="card-title">Recovery</div><div class="card-value">${UI.renderBadge(recovery.status || recovery.overallStatus || 'unknown')}</div><div class="card-subtitle">No secrets exported</div></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Create Safe Backup</h3>
+        <div class="grid-2">
+          <div class="filter-group"><label>Workspace ID</label><input id="backup-workspace-id" value="${Utils.escapeHtml(workspaceId)}"></div>
+          <div class="filter-group"><label>User ID</label><input id="backup-user-id" value="${Utils.escapeHtml(userId)}"></div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-create-workspace-backup">Create Workspace Backup</button>
+          <button class="btn btn-outline" id="btn-run-recovery-check">Run Recovery Check</button>
+          <button class="btn btn-outline" id="btn-run-integrity-check">Run Integrity Check</button>
+        </div>
+        <div id="backup-action-result" style="margin-top:12px;"></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Recent Backups</h3>
+        <div class="table-responsive"><table><thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Items</th><th>Created</th><th>Action</th></tr></thead><tbody>
+          ${backups.map(b => `<tr><td><code>${Utils.escapeHtml(b.id)}</code></td><td>${Utils.escapeHtml(b.type || '-')}</td><td>${UI.renderBadge(b.status || 'created')}</td><td>${Utils.escapeHtml(JSON.stringify(b.itemCounts || {}))}</td><td>${Utils.formatDate(b.createdAt)}</td><td><button class="btn btn-outline btn-sm" data-backup-validate="${Utils.escapeHtml(b.id)}">Validate</button></td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted">Belum ada backup.</td></tr>'}
+        </tbody></table></div>
       </div>
     `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-backup')?.addEventListener('click', () => UI.renderBackup(targetEl));
+    document.getElementById('btn-create-workspace-backup')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('backup-action-result');
+      const nextWorkspaceId = document.getElementById('backup-workspace-id')?.value.trim() || workspaceId;
+      const nextUserId = document.getElementById('backup-user-id')?.value.trim() || userId;
+      UI._saveDashboardContext('', nextWorkspaceId);
+      resultEl.innerHTML = UI.renderLoading('Membuat backup aman...');
+      const res = await Api.createBackup({ type: 'workspace', workspaceId: nextWorkspaceId, userId: nextUserId });
+      resultEl.innerHTML = res.ok ? `<div class="alert alert-success">Backup dibuat: <code>${Utils.escapeHtml(res.data.manifest?.id || '-')}</code></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+      if (res.ok) UI.renderBackup(targetEl);
+    });
+    document.getElementById('btn-run-recovery-check')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('backup-action-result');
+      resultEl.innerHTML = UI.renderLoading('Running recovery check...');
+      const res = await Api.runRecoveryCheck({ workspaceId });
+      resultEl.innerHTML = res.ok ? `<div class="panel"><pre>${Utils.escapeHtml(JSON.stringify(res.data, null, 2))}</pre></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+    });
+    document.getElementById('btn-run-integrity-check')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('backup-action-result');
+      resultEl.innerHTML = UI.renderLoading('Running integrity check...');
+      const res = await Api.runIntegrityCheck({ workspaceId });
+      resultEl.innerHTML = res.ok ? `<div class="panel"><pre>${Utils.escapeHtml(JSON.stringify(res.data, null, 2))}</pre></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+    });
+    targetEl.querySelectorAll('[data-backup-validate]').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-backup-validate');
+      const resultEl = document.getElementById('backup-action-result');
+      resultEl.innerHTML = UI.renderLoading('Validating backup...');
+      const res = await Api.validateBackup(id);
+      resultEl.innerHTML = res.ok ? `<div class="alert alert-success">Backup valid: <code>${Utils.escapeHtml(id)}</code></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+    }));
   },
 
   async renderAuditLog(targetEl) {
-    targetEl.innerHTML = UI.renderSectionHeader('🧾 Audit Log');
-    targetEl.innerHTML += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">🧾</span>
-        <h3>Audit Log</h3>
-        <p>Audit log module belum tersedia atau belum termuat.</p>
+    targetEl.innerHTML = UI.renderLoading('Memuat audit log...');
+    const res = await Api.getAuditLogs({ limit: 50 });
+    const items = res.ok ? (res.data.items || []) : [];
+    let html = UI.renderSectionHeader('🧾 Audit Log', `
+      <button class="btn btn-outline" id="btn-refresh-audit">🔄 Refresh</button>
+    `);
+    html += `
+      ${!res.ok ? `<div class="alert alert-warning">Gagal memuat audit log: ${UI._apiMessage(res)}</div>` : ''}
+      <div class="panel">
+        <h3 class="panel-title">Recent Audit Events</h3>
+        <div class="table-responsive"><table><thead><tr><th>Time</th><th>Action</th><th>Decision</th><th>Actor</th><th>Target</th></tr></thead><tbody>
+          ${items.map(a => `<tr><td>${Utils.formatDate(a.createdAt || a.timestamp)}</td><td><code>${Utils.escapeHtml(a.action || '-')}</code></td><td>${UI.renderBadge(a.decision || a.status || 'recorded')}</td><td>${Utils.escapeHtml(a.actorId || a.userId || '-')}</td><td>${Utils.escapeHtml(a.targetType || '-')}${a.targetId ? ` / <code>${Utils.escapeHtml(a.targetId)}</code>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted">Audit log masih kosong.</td></tr>'}
+        </tbody></table></div>
       </div>
     `;
+    targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-audit')?.addEventListener('click', () => UI.renderAuditLog(targetEl));
   },
 
   async renderAgentEvaluation(targetEl) {
     targetEl.innerHTML = UI.renderLoading('Memuat evaluasi agen...');
 
-    const healthRes = await Api.getHealth();
-    if (!healthRes.ok) {
+    const [casesRes, latestRes, gatesRes] = await Promise.all([
+      Api.listEvaluationCases({}),
+      Api.getLatestEvaluationRun(),
+      Api.getEvaluationQualityGates()
+    ]);
+    if (!casesRes.ok && !latestRes.ok && !gatesRes.ok) {
       targetEl.innerHTML = UI.renderError('Gagal Memuat Agent Evaluation', 'Server tidak merespons.');
       return;
     }
 
     let html = UI.renderSectionHeader('📊 Agent Evaluation');
+    const cases = casesRes.ok ? (casesRes.data.items || casesRes.data.cases || []) : [];
+    const latest = latestRes.ok ? (latestRes.data.run || latestRes.data.latest || latestRes.data) : null;
+    const gates = gatesRes.ok ? (gatesRes.data.gates || gatesRes.data.qualityGates || gatesRes.data) : {};
     html += `
-      <div class="empty-state">
-        <span class="empty-state-emoji">📊</span>
-        <h3>Agent Evaluation</h3>
-        <p>Agent evaluation module belum tersedia atau belum termuat.</p>
+      <div class="card-grid">
+        <div class="card"><div class="card-title">Cases</div><div class="card-value">${cases.length}</div><div class="card-subtitle">Golden/regression cases</div></div>
+        <div class="card"><div class="card-title">Latest Score</div><div class="card-value">${latest?.averageScore ?? latest?.summary?.averageScore ?? '-'}</div><div class="card-subtitle">${Utils.escapeHtml(latest?.status || latest?.summary?.status || 'no run')}</div></div>
+        <div class="card"><div class="card-title">Quality Gates</div><div class="card-value">${Object.keys(gates).length}</div><div class="card-subtitle">Safety thresholds</div></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Run Evaluation</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-run-eval-suite">Run Full Suite</button>
+          <button class="btn btn-outline" id="btn-refresh-eval">Refresh</button>
+        </div>
+        <div id="eval-action-result" style="margin-top:12px;"></div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Evaluation Cases</h3>
+        <div class="table-responsive"><table><thead><tr><th>ID</th><th>Category</th><th>Weight</th><th>Action</th></tr></thead><tbody>
+          ${cases.map(c => `<tr><td><code>${Utils.escapeHtml(c.id)}</code><br>${Utils.escapeHtml(c.name || '')}</td><td>${Utils.escapeHtml(c.category || '-')}</td><td>${c.weight ?? 1}</td><td><button class="btn btn-outline btn-sm" data-eval-case="${Utils.escapeHtml(c.id)}">Run Case</button></td></tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted">Belum ada evaluation case.</td></tr>'}
+        </tbody></table></div>
       </div>
     `;
     targetEl.innerHTML = html;
+    document.getElementById('btn-refresh-eval')?.addEventListener('click', () => UI.renderAgentEvaluation(targetEl));
+    document.getElementById('btn-run-eval-suite')?.addEventListener('click', async () => {
+      const resultEl = document.getElementById('eval-action-result');
+      resultEl.innerHTML = UI.renderLoading('Running evaluation suite dry-run...');
+      const res = await Api.runEvaluationSuite({});
+      resultEl.innerHTML = res.ok ? `<div class="alert alert-success">Suite selesai. Score: ${Utils.escapeHtml(String(res.data.summary?.averageScore ?? res.data.run?.averageScore ?? '-'))}</div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+    });
+    targetEl.querySelectorAll('[data-eval-case]').forEach(btn => btn.addEventListener('click', async () => {
+      const caseId = btn.getAttribute('data-eval-case');
+      const resultEl = document.getElementById('eval-action-result');
+      resultEl.innerHTML = UI.renderLoading('Running evaluation case...');
+      const res = await Api.runEvaluationCase(caseId, {});
+      resultEl.innerHTML = res.ok ? `<div class="panel"><h3 class="panel-title">${Utils.escapeHtml(caseId)}</h3><pre>${Utils.escapeHtml(JSON.stringify(res.data, null, 2))}</pre></div>` : `<div class="alert alert-warning">${UI._apiMessage(res)}</div>`;
+    }));
   },
 
   async renderSelfHealing(targetEl) {
@@ -2387,6 +2761,44 @@ const UI = {
     targetEl.innerHTML = html;
   },
 
+  _ghAction: async function(key) {
+    const el = document.getElementById('gh-result');
+    if (!el) return;
+    if (!window.GITHUBOPS) {
+      el.innerHTML = UI.renderError('GitHub Ops belum dimuat', 'Reload dashboard untuk memuat helper GitHub Ops.');
+      return;
+    }
+    el.innerHTML = UI.renderLoading('Processing GitHub Ops action...');
+    const actions = {
+      repo: () => GITHUBOPS.repoState(),
+      manifest: () => GITHUBOPS.changeManifest(),
+      scan: () => GITHUBOPS.runSecretScan(),
+      commit: () => GITHUBOPS.createCommitPlan(),
+      pushplan: () => GITHUBOPS.createPushPlan(),
+      proposal: () => GITHUBOPS.createPushProposal(),
+      pipeline: () => GITHUBOPS.runFullPipeline(),
+      workflows: () => GITHUBOPS.listWorkflows(),
+      release: () => GITHUBOPS.getReleaseGate(),
+      pushlist: () => GITHUBOPS.listPushProposals(),
+      wflist: () => GITHUBOPS.listWorkflowRunProposals()
+    };
+    const fn = actions[key];
+    if (!fn) {
+      el.innerHTML = UI.renderError('Unknown action');
+      return;
+    }
+    try {
+      const r = await fn();
+      if (!r.ok) {
+        el.innerHTML = UI.renderError('Error', r.data?.error || r.error || 'Request failed');
+        return;
+      }
+      el.innerHTML = '<pre style="background:var(--bg-secondary); padding:12px; border-radius:6px; overflow-x:auto; max-height:60vh;">' + Utils.escapeHtml(JSON.stringify(r.data || r, null, 2)) + '</pre>';
+    } catch (e) {
+      el.innerHTML = UI.renderError('Exception', e.message);
+    }
+  },
+
   renderDeploy: async function(targetEl) {
     const actions = [
       { key: 'summary', label: '📊 Deploy Summary', action: async () => DEPLOY.getSummary() },
@@ -2418,7 +2830,7 @@ const UI = {
     const actions = {
       summary: DEPLOY.getSummary,
       candidates: DEPLOY.listReleaseCandidates,
-      newrc: DEPLOY.createReleaseCandidate,
+      newrc: () => DEPLOY.createReleaseCandidate({ branch: 'main', commitSha: 'HEAD', commitMessage: 'Manual candidate from dashboard' }),
       gate: DEPLOY.runRenderGate,
       env: DEPLOY.checkEnv,
       startup: DEPLOY.runStartupCheck,

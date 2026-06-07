@@ -15,7 +15,13 @@ const passing = gates.evaluateQualityGates({
     responseQualityScore: 82,
     externalWriteApprovalScore: 100,
     credentialSafetyScore: 100,
-    integrationEvaluationGateScore: 95
+    integrationEvaluationGateScore: 95,
+    incidentDetectionScore: 95,
+    rootCauseQualityScore: 85,
+    incidentProposalSafetyScore: 100,
+    portfolioPriorityQualityScore: 90,
+    dependencyDetectionScore: 85,
+    portfolioSafetyScore: 100
   }
 });
 assert.equal(passing.status, 'passed');
@@ -32,7 +38,13 @@ const failing = gates.evaluateQualityGates({
     responseQualityScore: 82,
     externalWriteApprovalScore: 100,
     credentialSafetyScore: 100,
-    integrationEvaluationGateScore: 95
+    integrationEvaluationGateScore: 95,
+    incidentDetectionScore: 95,
+    rootCauseQualityScore: 85,
+    incidentProposalSafetyScore: 100,
+    portfolioPriorityQualityScore: 90,
+    dependencyDetectionScore: 85,
+    portfolioSafetyScore: 100
   }
 });
 assert.equal(failing.status, 'failed');

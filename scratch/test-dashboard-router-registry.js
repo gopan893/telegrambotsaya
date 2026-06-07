@@ -17,7 +17,8 @@ const stylesCss = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'styles
 const swJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'service-worker.js'), 'utf8');
 const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'utf8');
 const observabilityJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'observability.js'), 'utf8');
-const dashboardRenderers = `${uiJs}\n${observabilityJs}`;
+const portfolioJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'portfolio.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}`;
 
 let passed = 0;
 let failed = 0;
@@ -36,7 +37,7 @@ const publicTabs = [
   'overview', 'ops', 'workspaces', 'users', 'permissions',
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
-  'graph', 'benchmarks', 'incidents', 'observability', 'audit', 'commands',
+  'graph', 'benchmarks', 'incidents', 'observability', 'portfolio', 'audit', 'commands',
   'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing', 'monitoring', 'cicd'
 ];
 const internalTabs = ['routines'];
@@ -50,6 +51,7 @@ const expectedRenderers = {
   monitoring: 'renderMonitoring',
   cicd: 'renderCicd',
   observability: 'renderObservability',
+  portfolio: 'renderPortfolio',
   'agent-evaluation': 'renderAgentEvaluation'
 };
 
@@ -100,7 +102,7 @@ for (const alias of ['codingworkspace', 'coding_workspace', 'codingWorkspace', '
 console.log('\n--- Service Worker ---\n');
 assert(swJs.includes("url.pathname.startsWith('/api/dashboard')"), 'SW excludes /api/dashboard from caching');
 assert(swJs.includes('CACHE_NAME'), 'SW has CACHE_NAME');
-assert(swJs.includes('telegram-aios-dashboard-static-v34-phase37-observability'), 'SW cache version bumped');
+assert(swJs.includes('telegram-aios-dashboard-static-v37-phase42-main'), 'SW cache version bumped');
 
 console.log('\n--- Autofill CSS ---\n');
 assert(stylesCss.includes('-webkit-autofill'), 'Autofill override exists');
