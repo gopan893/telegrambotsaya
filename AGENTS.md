@@ -107,6 +107,14 @@ Phase 41 portfolio rule:
 - Portfolio push/deploy/write/external actions must become Evaluation v2 gated executor proposals.
 - No direct GitHub push, workflow dispatch, Render deploy, rollback, shell, or repo mutation from runtime.
 
+Phase 43 research/docs rule:
+- Research must separate facts, assumptions, unknowns/gaps, and recommendations.
+- Prefer local project docs and Knowledge Graph before optional external search.
+- Do not store raw secrets in research notes, docs drafts, reports, or Knowledge Graph.
+- Documentation Agent may generate drafts/update plans/proposals only.
+- No direct docs file write, commit, push, or external write from runtime.
+- Docs update flow must remain dry-run → Evaluation v2 → executor proposal → approval → run.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js
@@ -119,6 +127,9 @@ Specific test files to run when relevant:
 - scratch/test-file-analysis-leak.js
 - scratch/test-pwa-assets.js
 - scratch/test-phase41-portfolio-regression.js
+- scratch/test-research-task-planner.js
+- scratch/test-research-dashboard-api.js
+- scratch/test-phase43-research-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

@@ -942,3 +942,30 @@ Total known commands: 86 (Phase 42 added 12 knowledge commands: /knowledge, /kg,
 - `test-workspace-dashboard-api.js`
 - `test-workspace-permissions.js`
 - `test-workspace-store.js`
+## Phase 43 Research / Docs Agent
+
+Research/documentation layer:
+
+- `src/research/research-task-planner.js`
+- `src/research/source-collector.js`
+- `src/research/source-credibility-scorer.js`
+- `src/research/evidence-extractor.js`
+- `src/research/research-summarizer.js`
+- `src/research/research-knowledge-linker.js`
+- `src/research/documentation-agent.js`
+- `src/research/documentation-draft-generator.js`
+- `src/research/documentation-update-planner.js`
+- `src/research/research-safety-gate.js`
+
+Dashboard:
+
+- Tab id: `research`
+- Renderer: `window.UI.renderResearch`
+- Frontend: `public/dashboard/research.js`
+- Backend route: `src/dashboard/research-routes.js`
+- API base: `/api/dashboard/research`
+
+Runtime integration:
+
+- Telegram command/natural route integration lives in `src/bot/legacy-runtime.js`.
+- Docs update proposals remain proposal-only and do not mutate repo files directly.

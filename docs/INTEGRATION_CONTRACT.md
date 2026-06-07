@@ -122,3 +122,23 @@ Before creating a new file/module:
 7. Test matrix must be generated for changed areas
 8. Next-agent prompt must be generated at handoff
 9. CI/CD governance gate must pass on push
+## Phase 43 Research / Docs Contract
+
+Research Agent:
+
+- May create research tasks, collect read-only sources, score credibility/freshness, extract evidence, and summarize findings.
+- Must not store raw secret-like input.
+- Must mark missing source data as unknown/gap.
+- Must not fabricate citations.
+
+Documentation Agent:
+
+- May generate draft docs, update plans, and Codex/OpenCode/Hermes prompts.
+- Must not write repository files directly from Telegram/runtime.
+- Must send write/external actions through Evaluation v2 + executor approval.
+
+Dashboard contract:
+
+- `#research` is a known dashboard tab and must not fallback to Overview.
+- `/api/dashboard/research/*` routes are protected and sanitized.
+- Service worker may cache `research.js` as static shell only; it must not cache `/api/dashboard/*`.

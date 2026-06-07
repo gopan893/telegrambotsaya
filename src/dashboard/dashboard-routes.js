@@ -30,6 +30,12 @@ const monitoringRoutes = require('./monitoring-routes');
 const cicdRoutes = require('./cicd-routes');
 const routineRoutes = require('./routine-routes');
 const observabilityRoutes = require('./observability-routes');
+let researchRoutes;
+try {
+  researchRoutes = require('./research-routes');
+} catch (e) {
+  researchRoutes = { registerResearchRoutes: () => {} };
+}
 let costRoutes;
 try {
   costRoutes = require('./cost-routes');
@@ -379,6 +385,12 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Portfolio routes skipped:', e.message);
+  }
+  try {
+    researchRoutes.registerResearchRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Research routes skipped:', e.message);
   }
   if (services.selfHealingSystem) {
     selfhealingRoutes.registerSelfHealingRoutes(router, services);

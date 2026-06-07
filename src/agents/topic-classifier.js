@@ -8,6 +8,7 @@ const TOPIC_KEYWORDS = {
   planning: ['rencana', 'prioritas', 'langkah', 'roadmap', 'task', 'milestone', 'phase', 'tahap', 'lanjut'],
   roadmap: ['roadmap', 'phase', 'tahap', 'jangka panjang', 'strategi'],
   research: ['riset', 'cari', 'search', 'latest', 'terbaru', 'sumber', 'api gratis'],
+  documentation: ['dokumentasi', 'docs', 'documentation', 'readme', 'env docs', 'troubleshooting guide', 'phase summary', 'update readme'],
   search: ['cari', 'search', 'google', 'berita', 'latest', 'terbaru'],
   security: ['aman', 'security', 'permission', 'admin', 'approval', 'izin', 'hak akses'],
   secret: ['token', 'secret', 'api key', 'password', 'database_url', 'redis_url', 'authorization', 'bearer'],

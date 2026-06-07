@@ -21,7 +21,11 @@ const passing = gates.evaluateQualityGates({
     incidentProposalSafetyScore: 100,
     portfolioPriorityQualityScore: 90,
     dependencyDetectionScore: 85,
-    portfolioSafetyScore: 100
+    portfolioSafetyScore: 100,
+    evidenceGroundingScore: 95,
+    sourceCredibilityScore: 90,
+    researchSafetyScore: 100,
+    docsDraftQualityScore: 90
   }
 });
 assert.equal(passing.status, 'passed');
@@ -44,7 +48,11 @@ const failing = gates.evaluateQualityGates({
     incidentProposalSafetyScore: 100,
     portfolioPriorityQualityScore: 90,
     dependencyDetectionScore: 85,
-    portfolioSafetyScore: 100
+    portfolioSafetyScore: 100,
+    evidenceGroundingScore: 95,
+    sourceCredibilityScore: 90,
+    researchSafetyScore: 100,
+    docsDraftQualityScore: 90
   }
 });
 assert.equal(failing.status, 'failed');

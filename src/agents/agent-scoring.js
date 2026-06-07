@@ -10,6 +10,7 @@ const TOPIC_AGENT_MAP = {
   planning: ['planner', 'critic'],
   roadmap: ['planner', 'critic'],
   research: ['research'],
+  documentation: ['research', 'critic'],
   search: ['research'],
   security: ['security'],
   secret: ['security'],

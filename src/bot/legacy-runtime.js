@@ -36,6 +36,7 @@ const backupSystem = require('../backup');
 const integrationsSystem = require('../integrations');
 const observabilitySystem = require('../observability');
 const portfolioSystem = require('../portfolio');
+const researchSystem = require('../research');
 const multibotSystem = require('../multibot');
 const smartAgentSystem = require('../agents');
 const {
@@ -3170,6 +3171,185 @@ async function handlePortfolioCommands(chatId, userId, cmd, args, msg) {
   return false;
 }
 
+function formatResearchBriefForTelegram(summary = {}) {
+  const facts = (summary.facts || []).slice(0, 4).map((item) => `- ${item}`).join('\n') || '- belum ada fakta terverifikasi';
+  const unknowns = (summary.unknowns || []).slice(0, 4).map((item) => `- ${item}`).join('\n') || '- tidak ada gap besar dari sumber lokal';
+  const recommendations = (summary.recommendations || []).slice(0, 4).map((item) => `- ${item}`).join('\n') || '- kumpulkan evidence tambahan';
+  return [
+    `Research: ${summary.topic || '-'}`,
+    '',
+    'Fakta berbasis evidence:',
+    facts,
+    '',
+    'Unknown/gaps:',
+    unknowns,
+    '',
+    'Rekomendasi:',
+    recommendations,
+    '',
+    `Confidence: ${summary.confidence || 0}`,
+    'Catatan: bagian live/current dianggap unknown jika connector tidak tersedia.'
+  ].join('\n');
+}
+
+async function createAnalyzeResearchFromText(userId, text, options = {}) {
+  const services = getResearchServices(userId);
+  const workspaceId = options.workspaceId || await getDefaultWorkspaceIdForUser(userId);
+  const taskResult = await researchSystem.researchTaskPlanner.createResearchTask({
+    topic: options.topic || text,
+    question: text,
+    workspaceId,
+    userId
+  }, services);
+  if (!taskResult.ok) return taskResult;
+  const collected = await researchSystem.sourceCollector.collectSourcesForTask(taskResult.task.id, services);
+  if (!collected.ok) return collected;
+  await researchSystem.evidenceExtractor.buildEvidencePack(collected.task, null, services);
+  const summary = await researchSystem.researchSummarizer.summarizeResearchTask(taskResult.task.id, services);
+  if (!summary.ok) return summary;
+  await researchSystem.researchKnowledgeLinker.linkResearchToKnowledgeGraph(taskResult.task.id, services).catch(() => null);
+  return { ok: true, task: summary.task, summary: summary.summary };
+}
+
+async function handleResearchCommands(chatId, userId, cmd, args, msg) {
+  const commands = new Set([
+    '/research',
+    '/research_task',
+    '/research_sources',
+    '/research_report',
+    '/evidence',
+    '/docs_agent',
+    '/docs_gaps',
+    '/docs_draft',
+    '/docs_plan',
+    '/propose_docs_update',
+    '/source_check'
+  ]);
+  if (!commands.has(cmd)) return false;
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    await sendChunkedMessage(chatId, 'Research/docs command hanya untuk admin/owner agar tidak menyimpan data sensitif tanpa kontrol.', replyOpt);
+    return true;
+  }
+  const services = getResearchServices(userId);
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+
+  if (cmd === '/research') {
+    const summary = await researchSystem.researchReportGenerator.generateResearchActivitySummary({ workspaceId, limit: 10 }, services);
+    const latest = (summary.latest || []).map((item, index) => `${index + 1}. ${item.id} - ${item.topic} [${item.status}/${item.scope}]`).join('\n') || '- belum ada task';
+    await sendChunkedMessage(chatId, `Research / Docs Agent\n\nTasks: ${summary.totalTasks}\n${latest}\n\nBuat task: /research_task topik riset`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/research_task') {
+    if (!args) {
+      await safeSendMessage(chatId, 'Format: /research_task topik atau pertanyaan riset', replyOpt);
+      return true;
+    }
+    const result = await createAnalyzeResearchFromText(userId, args, { workspaceId });
+    await sendChunkedMessage(chatId, result.ok
+      ? `Research task dibuat: ${result.task.id}\n\n${formatResearchBriefForTelegram(result.summary)}`
+      : `Research ditolak/gagal: ${result.reason || result.error || 'unknown'}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/research_sources' || cmd === '/source_check') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, `Format: ${cmd} <researchTaskId>`, replyOpt);
+      return true;
+    }
+    const result = await researchSystem.sourceCollector.collectSourcesForTask(taskId, services);
+    const sources = (result.sources || []).slice(0, 8).map((source, index) => `${index + 1}. ${source.title} [${source.type}, credibility ${source.credibilityScore || 0}, ${source.status}]`).join('\n') || '- tidak ada source';
+    await sendChunkedMessage(chatId, result.ok ? `Sources untuk ${taskId}:\n${sources}` : `Source check gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/research_report' || cmd === '/evidence') {
+    const taskId = String(args || '').trim();
+    if (!taskId) {
+      await safeSendMessage(chatId, `Format: ${cmd} <researchTaskId>`, replyOpt);
+      return true;
+    }
+    const result = await researchSystem.researchSummarizer.createResearchBrief(taskId, services);
+    await sendChunkedMessage(chatId, result.ok ? result.brief.text : `Report gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/docs_agent' || cmd === '/docs_gaps') {
+    const report = await researchSystem.researchReportGenerator.generateDocumentationGapReport(services);
+    const text = (report.items || []).map((item, index) => `${index + 1}. ${item.topic} -> ${item.docType} (${item.needsUpdate ? 'needs review' : 'ok'})`).join('\n') || '- tidak ada gap';
+    await sendChunkedMessage(chatId, `Docs Gap Report:\n${text}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/docs_draft') {
+    const topic = args || 'dokumentasi env project ini';
+    const plan = researchSystem.documentationAgent.createDocumentationPlan({ topic, question: topic, workspaceId, userId }, services);
+    const draft = researchSystem.documentationDraftGenerator.generateDocumentationDraft(plan.plan, services);
+    await sendChunkedMessage(chatId, draft.ok ? `Docs draft (${draft.draft.docType}):\n\n${draft.draft.body}` : `Draft gagal: ${draft.reason}`, replyOpt);
+    return true;
+  }
+
+  if (cmd === '/docs_plan' || cmd === '/propose_docs_update') {
+    const topic = args || 'documentation update';
+    const plan = researchSystem.documentationAgent.createDocumentationPlan({ topic, question: topic, workspaceId, userId }, services);
+    const draft = researchSystem.documentationDraftGenerator.generateDocumentationDraft(plan.plan, services);
+    const updatePlan = await researchSystem.documentationUpdatePlanner.createDocumentationUpdatePlan(draft.draft, services);
+    if (cmd === '/docs_plan') {
+      await sendChunkedMessage(chatId, updatePlan.ok ? `Docs update plan:\n${JSON.stringify(updatePlan.updatePlan, null, 2)}` : `Plan gagal: ${updatePlan.reason}`, replyOpt);
+      return true;
+    }
+    const proposal = updatePlan.ok ? await researchSystem.documentationUpdatePlanner.createDocsUpdateProposal(updatePlan.updatePlan, services) : updatePlan;
+    await sendChunkedMessage(chatId, proposal.ok
+      ? `Docs proposal dibuat: ${proposal.proposal.id}\nBelum menulis file.\n\n${proposal.proposal.nextPrompt}`
+      : `Proposal docs gagal: ${proposal.reason}`, replyOpt);
+    return true;
+  }
+
+  return true;
+}
+
+async function handleNaturalResearchRoute(chatId, userId, userText, msg) {
+  const q = safeLower(userText).trim();
+  const wantsResearch = /^(riset|research|teliti|cari sumber|sumbernya|apa sumbernya)|\b(riset|research|source|evidence|sumber|kredibilitas)\b/.test(q);
+  const wantsDocs = /(buat|update|perbarui|sinkron|cek|cari).*(dokumentasi|docs|readme|env|troubleshooting|phase|command)|docs.*(gap|belum sinkron|draft)/.test(q);
+  if (!wantsResearch && !wantsDocs) return { handled: false };
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    const answer = 'Research/docs automation hanya untuk admin/owner agar tidak menyimpan data sensitif tanpa kontrol.';
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'research_denied', answer };
+  }
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+  const services = getResearchServices(userId);
+  if (/github_token|ghp_|sk-|database_url|redis_url|token saya|secret saya/i.test(userText)) {
+    const safety = researchSystem.researchSafetyGate.runResearchSafetyGate({ question: userText, userId, workspaceId }, services);
+    const answer = `Saya tidak akan menyimpan secret sebagai source.\nStatus: ${safety.reason || 'redacted'}\nGunakan placeholder [REDACTED_SECRET] dan rotate secret jika pernah tertempel.`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'research_secret_blocked', answer };
+  }
+  if (wantsDocs) {
+    const plan = researchSystem.documentationAgent.createDocumentationPlan({ topic: userText, question: userText, workspaceId, userId }, services);
+    const draft = researchSystem.documentationDraftGenerator.generateDocumentationDraft(plan.plan, services);
+    const answer = [
+      `Saya buat draft dokumentasi (${draft.draft.docType}). Belum menulis file.`,
+      '',
+      draft.draft.body,
+      '',
+      'Jika perlu update repo, gunakan /propose_docs_update <topik>. Itu membuat proposal/prompt saja, bukan commit langsung.'
+    ].join('\n');
+    await sendChunkedMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'docs_draft', answer };
+  }
+  const result = await createAnalyzeResearchFromText(userId, userText, { workspaceId });
+  const answer = result.ok
+    ? formatResearchBriefForTelegram(result.summary)
+    : `Research gagal/terblokir: ${result.reason || result.error || 'unknown'}`;
+  await sendChunkedMessage(chatId, answer, replyOpt);
+  return { handled: true, type: 'research', answer };
+}
+
 function detectNaturalPortfolioIntent(text = '') {
   const q = String(text || '').toLowerCase();
   if (!q || q.startsWith('/')) return { handled: false };
@@ -4013,6 +4193,18 @@ function getPortfolioServices(actorId = '') {
     portfolioSystem,
     operatorSystem: null,
     costSystem: opsSystem.costOptimizer || null
+  };
+}
+
+function getResearchServices(actorId = '') {
+  return {
+    ...getPortfolioServices(actorId),
+    actorId: actorId || '',
+    userId: actorId || '',
+    actorType: 'telegram',
+    researchSystem,
+    evaluationSystem: evaluationSystem || smartAgentSystem.agentEvaluationV2 || null,
+    logger: log
   };
 }
 
@@ -8774,6 +8966,17 @@ async function handleHelp(chatId, msg) {
 /projectrisks - review risiko portfolio [admin]
 /portfolioreport - report portfolio mingguan [admin]
 /portfolio_proposal - proposal executor dari next action, tidak auto-run [admin]
+/research - ringkasan Research / Docs Agent [admin]
+/research_task topik - buat task riset evidence-grounded [admin]
+/research_sources taskId - cek source dan credibility [admin]
+/research_report taskId - research brief berbasis evidence [admin]
+/evidence taskId - ringkasan evidence pack [admin]
+/docs_agent - docs gap report [admin]
+/docs_gaps - alias docs gap report [admin]
+/docs_draft topik - buat draft dokumentasi tanpa file write [admin]
+/docs_plan topik - buat docs update plan tanpa file write [admin]
+/propose_docs_update topik - buat proposal/prompt update docs, tidak auto-run [admin]
+/source_check taskId - audit source credibility [admin]
 /whoami - identitas user dan role workspace
 /workspace - workspace aktif dan permission
 /workspaces - daftar workspace yang bisa diakses
@@ -9086,6 +9289,17 @@ function isUnknownCommand(cmd) {
     '/projectrisks',
     '/portfolioreport',
     '/portfolio_proposal',
+    '/research',
+    '/research_task',
+    '/research_sources',
+    '/research_report',
+    '/evidence',
+    '/docs_agent',
+    '/docs_gaps',
+    '/docs_draft',
+    '/docs_plan',
+    '/propose_docs_update',
+    '/source_check',
     '/whoami',
     '/workspaces',
     '/belajar',
@@ -10399,6 +10613,7 @@ try {
     monitoringSystem: monitoringSystem || null,
     observabilitySystem,
     portfolioSystem,
+    researchSystem,
     operatorSystem: null,
     costSystem: opsSystem.costOptimizer || null,
     cicdSystem: cicdSystem || null,
@@ -10659,6 +10874,7 @@ await withUserActionLock(userId, async () => {
   if (await handleCollaborationCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleSelfHealingCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleObservabilityCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleResearchCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handlePortfolioCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handlePhase33OpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
@@ -10840,6 +11056,26 @@ Data endpoint membutuhkan Authorization Bearer token.`;
       timestamp: nowMs()
     });
     await saveConversationPair(userId, userText, observabilityNaturalResult.answer);
+    return;
+  }
+
+  const researchNaturalResult = await handleNaturalResearchRoute(chatId, userId, userText, msg);
+  if (researchNaturalResult?.handled) {
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: researchNaturalResult.answer,
+      intent: `natural_research:${researchNaturalResult.type}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: researchNaturalResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, researchNaturalResult.answer);
     return;
   }
 

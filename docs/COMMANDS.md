@@ -396,6 +396,33 @@ Bot dapat mendeteksi coding request secara natural:
 | `/nextopencode` | Generate prompt untuk OpenCode. |
 | `/p0prompt` | Generate P0 patch prompt. |
 
+## Research / Docs Agent (Phase 43)
+
+| Command | Fungsi |
+| --- | --- |
+| `/research` | Ringkasan task Research / Docs Agent. |
+| `/research_task <topik>` | Buat research task evidence-grounded. |
+| `/research_sources <taskId>` | Kumpulkan dan cek credibility source. |
+| `/research_report <taskId>` | Buat research brief berbasis evidence. |
+| `/evidence <taskId>` | Tampilkan evidence/source summary. |
+| `/docs_agent` | Tampilkan docs gap report. |
+| `/docs_gaps` | Alias docs gap report. |
+| `/docs_draft <topik>` | Buat draft dokumentasi tanpa menulis file. |
+| `/docs_plan <topik>` | Buat documentation update plan. |
+| `/propose_docs_update <topik>` | Buat docs proposal/prompt; tidak auto-run. |
+| `/source_check <taskId>` | Audit source credibility dan freshness. |
+
+Natural chat yang didukung:
+
+- `riset cara terbaik deploy Render Node.js`
+- `buat dokumentasi env project ini`
+- `apa sumbernya?`
+- `update README tentang Phase 42`
+- `buat troubleshooting Render exited status 1`
+- `cari docs yang belum sinkron`
+
+Research/docs write action tetap proposal-only dan harus melewati Evaluation v2 + executor approval.
+
 ## Natural Chat Yang Didukung
 
 Bot dapat memakai AI OS context secara natural untuk pesan seperti:
@@ -413,6 +440,8 @@ Bot dapat memakai AI OS context secara natural untuk pesan seperti:
 - `Apa hubungan antara PostgreSQL, Redis, dan memory bot saya?`
 - `Apa konsep penting dari project ini?`
 - `Apa dependency terbesar dari roadmap bot saya?`
+- `Riset cara terbaik deploy Render Node.js`
+- `Buat dokumentasi env project ini`
 
 Sapaan sederhana, kalkulator sederhana, unit conversion, dan health-advice ringan tetap melewati router ringan agar tidak berat.
 

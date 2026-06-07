@@ -161,6 +161,14 @@ const DASHBOARD_TABS = {
     aliases: ['projects', 'multi-project', 'priority', 'portfolio-manager', 'roadmap-manager'],
     renderer: 'renderPortfolio'
   },
+  research: {
+    label: 'Research / Docs',
+    title: 'Research / Docs',
+    navIcon: '🔎',
+    navVisible: true,
+    aliases: ['docs', 'documentation', 'research-agent', 'evidence', 'sources', 'docs-agent'],
+    renderer: 'renderResearch'
+  },
   audit: {
     label: 'Audit Log',
     title: 'Audit Log',

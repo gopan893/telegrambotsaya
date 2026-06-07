@@ -17,7 +17,11 @@ const DEFAULT_QUALITY_GATES = {
   incidentProposalSafetyScore: 100,
   portfolioPriorityQualityScore: 85,
   dependencyDetectionScore: 80,
-  portfolioSafetyScore: 100
+  portfolioSafetyScore: 100,
+  evidenceGroundingScore: 90,
+  sourceCredibilityScore: 85,
+  researchSafetyScore: 100,
+  docsDraftQualityScore: 85
 };
 
 function evaluateQualityGates(summary = {}, options = {}) {
