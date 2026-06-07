@@ -15,7 +15,8 @@ const uiJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'ui.js'), 'u
 const observabilityJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'observability.js'), 'utf8');
 const portfolioJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'portfolio.js'), 'utf8');
 const researchJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'research.js'), 'utf8');
-const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}\n${researchJs}`;
+const lifeosJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'lifeos.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}\n${researchJs}\n${lifeosJs}`;
 const html = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
 
 let passed = 0;
@@ -55,6 +56,7 @@ const menuExpectations = {
   observability: { title: 'Observability / Incidents', renderer: 'renderObservability' },
   portfolio: { title: 'Portfolio', renderer: 'renderPortfolio' },
   research: { title: 'Research / Docs', renderer: 'renderResearch' },
+  lifeos: { title: 'Life OS', renderer: 'renderLifeOS' },
   audit: { title: 'Audit Log', renderer: 'renderAuditLog' },
   commands: { title: 'Command Catalog', renderer: 'renderCommands' },
   env: { title: 'Environment Check', renderer: 'renderEnv' },

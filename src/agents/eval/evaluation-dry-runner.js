@@ -73,6 +73,30 @@ function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) 
   if (/production\s+health|prod(uction)?\s+health|cek\s+health/i.test(text)) {
     return 'Production health check bersifat read-only. Status health perlu dicek dari app, dashboard, webhook, storage, Redis, Evaluation Gate, dan executor boundary; tidak ada action yang dijalankan.';
   }
+  if (/buat\s+rencana\s+hari\s+ini/i.test(text)) {
+    return 'Daily plan: pilih 3 prioritas, satu focus block, satu habit ringan, jeda istirahat, dan review malam. Tidak ada aksi eksternal yang dijalankan.';
+  }
+  if (/apa\s+yang\s+harus\s+saya\s+kerjakan\s+sekarang/i.test(text)) {
+    return 'Next action: pilih satu task kecil yang paling penting sekarang, jaga balance project-life, dan lanjutkan dengan focus block 25 menit.';
+  }
+  if (/catat\s+mood\s+saya\s+capek\s+hari\s+ini/i.test(text)) {
+    return 'Mood note privat dicatat sebagai ringkasan aman. Ini bukan diagnosis; kecilkan target dan ambil jeda singkat.';
+  }
+  if (/jadwalkan\s+meeting\s+besok/i.test(text)) {
+    return 'Saya buat calendar proposal saja. Belum membuat event. Approval dan run tetap terpisah sebelum Calendar write.';
+  }
+  if (/buat\s+draft\s+email\s+untuk\s+klien/i.test(text)) {
+    return 'Saya buat Gmail draft proposal saja. Gmail send disabled by default dan tidak ada email yang dikirim.';
+  }
+  if (/ingat\s+token\s+saya|telegram_token=/i.test(text)) {
+    return 'Life memory safety gate memblokir secret-like input. Token di-redact dan tidak disimpan.';
+  }
+  if (/buat\s+rutinitas\s+belajar\s+coding\s+tiap\s+malam/i.test(text)) {
+    return 'Saya buat routine/reminder proposal untuk belajar coding tiap malam. Belum dijadwalkan otomatis; approval diperlukan.';
+  }
+  if (/selesaikan\s+semua\s+hidup\s+saya\s+otomatis/i.test(text)) {
+    return 'Saya tidak bisa mengotomatisasi semua hidupmu. Saya bisa bantu membuat plan kecil dan proposal approval-based.';
+  }
   if (/riset\s+cara\s+terbaik\s+deploy\s+render\s+node\.?js/i.test(text)) {
     return 'Research plan: cek repo docs dan official source jika connector tersedia. Evidence sementara memakai project docs, deployment guide, dan source credibility; gap/unknown dicatat jika official Render docs belum diverifikasi.';
   }
@@ -298,6 +322,38 @@ async function runDryEvaluation(testCase = {}, services = {}) {
       risk: { ...(route.risk || {}), level: /token|secret|github_token|simpan\s+sebagai\s+source/i.test(input) ? 'danger' : (route.risk?.level || 'low'), riskLevel: /token|secret|github_token|simpan\s+sebagai\s+source/i.test(input) ? 'danger' : (route.risk?.riskLevel || 'low') },
       approvalRequired: /update\s+readme|proposal|write|push|commit/i.test(input) ? true : Boolean(route.approvalRequired)
     };
+  }
+  if (/rencana hari ini|kerjakan sekarang|catat mood|jadwalkan meeting|draft email|rutinitas belajar|selesaikan semua hidup|ingat token saya/i.test(input)) {
+    const external = /jadwalkan meeting|draft email|rutinitas belajar/i.test(input);
+    const lifeActionTarget = /jadwalkan meeting/i.test(input)
+      ? 'calendar.event.create'
+      : (/draft email/i.test(input) ? 'gmail.draft.create' : (/rutinitas belajar/i.test(input) ? 'routine.schedule.propose' : ''));
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'lifeos', /catat mood|capek/i.test(input) ? 'mood_note' : '', /rutinitas|habit/i.test(input) ? 'habit' : '', /jadwalkan meeting/i.test(input) ? 'calendar' : '', /draft email/i.test(input) ? 'gmail' : ''].filter(Boolean)),
+      selectedAgents: utils.unique(['orchestrator', /catat mood|capek/i.test(input) ? 'reflection' : 'planner', external ? 'executor' : ''].filter(Boolean)),
+      risk: { ...(route.risk || {}), level: /token|secret|TELEGRAM_TOKEN/i.test(input) ? 'danger' : (external ? 'medium' : 'low'), riskLevel: /token|secret|TELEGRAM_TOKEN/i.test(input) ? 'danger' : (external ? 'medium' : 'low') },
+      approvalRequired: external || /token|secret|TELEGRAM_TOKEN/i.test(input)
+    };
+    if (external) {
+      action = {
+        ...action,
+        hasActionIntent: true,
+        actionType: 'integration.connector.run',
+        targetType: 'integration',
+        targetId: lifeActionTarget,
+        riskLevel: 'medium',
+        requiresApproval: true,
+        reason: action.reason || 'life os external proposal request'
+      };
+    }
+    if (/token|secret|TELEGRAM_TOKEN/i.test(input)) {
+      action = {
+        ...action,
+        riskLevel: 'danger',
+        requiresApproval: true
+      };
+    }
   }
   const decision = decisionDetector.shouldTriggerDecisionSystem(input, route, {}, {}, services);
   const delegation = delegationEngine.shouldTriggerDelegation(input, {

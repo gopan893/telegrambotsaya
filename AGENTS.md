@@ -115,6 +115,13 @@ Phase 43 research/docs rule:
 - No direct docs file write, commit, push, or external write from runtime.
 - Docs update flow must remain dry-run → Evaluation v2 → executor proposal → approval → run.
 
+Phase 44 Life OS rule:
+- Life OS may create daily/weekly plans, personal tasks, habits, reminders, focus sessions, mood/energy notes, personal goals, and safe personal memory.
+- Mood/energy notes are private by default and must not be treated as diagnosis.
+- Calendar/Gmail/routine/external actions are proposal-only.
+- No direct Gmail send, Calendar mutation, auto-approve, or auto-run.
+- Secret-like personal input must be rejected/redacted and must not be stored in docs, audit, dashboard, or Knowledge Graph.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js
@@ -130,6 +137,19 @@ Specific test files to run when relevant:
 - scratch/test-research-task-planner.js
 - scratch/test-research-dashboard-api.js
 - scratch/test-phase43-research-regression.js
+- scratch/test-daily-planner.js
+- scratch/test-weekly-planner.js
+- scratch/test-personal-task-manager.js
+- scratch/test-habit-tracker.js
+- scratch/test-reminder-planner.js
+- scratch/test-focus-session-manager.js
+- scratch/test-energy-mood-journal.js
+- scratch/test-personal-goal-manager.js
+- scratch/test-life-priority-engine.js
+- scratch/test-life-memory-governance.js
+- scratch/test-life-integration-proposal.js
+- scratch/test-lifeos-dashboard-api.js
+- scratch/test-phase44-lifeos-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

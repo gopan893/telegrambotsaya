@@ -37,6 +37,7 @@ const integrationsSystem = require('../integrations');
 const observabilitySystem = require('../observability');
 const portfolioSystem = require('../portfolio');
 const researchSystem = require('../research');
+const lifeosSystem = require('../lifeos');
 const multibotSystem = require('../multibot');
 const smartAgentSystem = require('../agents');
 const {
@@ -3350,6 +3351,191 @@ async function handleNaturalResearchRoute(chatId, userId, userText, msg) {
   return { handled: true, type: 'research', answer };
 }
 
+function formatLifeDailyPlan(plan = {}) {
+  const priorities = (plan.data?.topPriorities || []).slice(0, 3).map((item, index) => `${index + 1}. ${item}`).join('\n') || '1. Satu task kecil';
+  return [
+    `Life OS Daily Plan (${plan.data?.date || plan.scheduledAt || 'today'})`,
+    priorities,
+    `Focus: ${plan.data?.focusBlock?.durationMinutes || 25} menit`,
+    `Break: ${plan.data?.breakReminder || 'ambil jeda pendek'}`,
+    `Refleksi: ${plan.data?.reflectionQuestion || 'Apa satu hal kecil yang cukup?'}`
+  ].join('\n');
+}
+
+async function handleLifeOsCommands(chatId, userId, cmd, args, msg) {
+  const commands = new Set([
+    '/lifeos',
+    '/daily',
+    '/weekly',
+    '/today',
+    '/tasks',
+    '/taskdone',
+    '/habits',
+    '/habitcheck',
+    '/reminders',
+    '/focus',
+    '/mood',
+    '/energy',
+    '/lifegoals',
+    '/lifereport',
+    '/eveningreview'
+  ]);
+  if (!commands.has(cmd)) return false;
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    await safeSendMessage(chatId, 'Life OS command hanya untuk admin/owner agar catatan pribadi tidak tersimpan tanpa kontrol.', replyOpt);
+    return true;
+  }
+  const services = getLifeOsServices(userId);
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+
+  if (cmd === '/lifeos' || cmd === '/lifereport') {
+    const summary = await lifeosSystem.lifeReportGenerator.generateLifeOSSummary(userId, { ...services, workspaceId });
+    await sendChunkedMessage(chatId, summary.text, replyOpt);
+    return true;
+  }
+  if (cmd === '/daily' || cmd === '/today') {
+    const result = await lifeosSystem.dailyPlanner.createDailyPlan({ workspaceId, userId }, services);
+    await sendChunkedMessage(chatId, result.ok ? formatLifeDailyPlan(result.plan) : `Daily plan gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+  if (cmd === '/weekly') {
+    const result = await lifeosSystem.weeklyPlanner.createWeeklyPlan({ workspaceId, userId }, services);
+    await sendChunkedMessage(chatId, result.ok ? `Weekly plan:\nMain goal: ${result.plan.data.mainGoal}\nRisk: ${result.plan.data.riskBlocker}` : `Weekly plan gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+  if (cmd === '/tasks') {
+    if (args) {
+      const created = await lifeosSystem.personalTaskManager.createPersonalTask({ title: args, workspaceId, userId }, services);
+      await safeSendMessage(chatId, created.ok ? `Task dibuat: ${created.task.id} — ${created.task.title}` : `Task ditolak: ${created.reason}`, replyOpt);
+      return true;
+    }
+    const tasks = await lifeosSystem.personalTaskManager.listPersonalTasks({ workspaceId, userId, limit: 10 }, services);
+    await sendChunkedMessage(chatId, tasks.length ? tasks.map((task, i) => `${i + 1}. ${task.id} — ${task.title} [${task.status}]`).join('\n') : 'Belum ada personal task.', replyOpt);
+    return true;
+  }
+  if (cmd === '/taskdone') {
+    const taskId = String(args || '').trim();
+    const result = taskId ? await lifeosSystem.personalTaskManager.completePersonalTask(taskId, services) : { ok: false, reason: 'TASK_ID_REQUIRED' };
+    await safeSendMessage(chatId, result.ok ? `Task selesai: ${result.task.title}` : `Gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+  if (cmd === '/habits') {
+    if (args) {
+      const created = await lifeosSystem.habitTracker.createHabit({ title: args, workspaceId, userId }, services);
+      await safeSendMessage(chatId, created.ok ? `Habit dibuat: ${created.habit.id} — ${created.habit.title}` : `Habit ditolak: ${created.reason}`, replyOpt);
+      return true;
+    }
+    const habits = await lifeosSystem.lifeStore.listLifeItems({ workspaceId, userId, type: 'habit', limit: 10 }, services);
+    await sendChunkedMessage(chatId, habits.length ? habits.map((habit, i) => `${i + 1}. ${habit.id} — ${habit.title} streak ${habit.data?.streak || 0}`).join('\n') : 'Belum ada habit.', replyOpt);
+    return true;
+  }
+  if (cmd === '/habitcheck') {
+    const habitId = String(args || '').trim();
+    const result = habitId ? await lifeosSystem.habitTracker.logHabitCheckin(habitId, new Date(), true, services) : { ok: false, reason: 'HABIT_ID_REQUIRED' };
+    await safeSendMessage(chatId, result.ok ? `Check-in habit. Streak: ${result.streak}` : `Gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+  if (cmd === '/reminders') {
+    const result = args
+      ? await lifeosSystem.reminderPlanner.createReminderPlan({ title: args, workspaceId, userId }, services)
+      : { ok: true, items: await lifeosSystem.reminderPlanner.listReminderPlans({ workspaceId, userId, limit: 10 }, services) };
+    await sendChunkedMessage(chatId, result.reminder ? `Reminder plan dibuat: ${result.reminder.title}\nScheduled: ${result.reminder.scheduledAt}\nPlan-only.` : (result.items || []).map((item, i) => `${i + 1}. ${item.title} [${item.scheduledAt || '-'}]`).join('\n') || 'Belum ada reminder.', replyOpt);
+    return true;
+  }
+  if (cmd === '/focus') {
+    const result = await lifeosSystem.focusSessionManager.createFocusSession({ title: args || 'Focus session', workspaceId, userId }, services);
+    await safeSendMessage(chatId, result.ok ? `Focus session dibuat: ${result.session.id} (${result.session.data.durationMinutes} menit)` : `Focus gagal: ${result.reason}`, replyOpt);
+    return true;
+  }
+  if (cmd === '/mood' || cmd === '/energy') {
+    const result = await lifeosSystem.energyMoodJournal.createEnergyMoodNote({ note: args || 'Mood/energy note', type: cmd === '/energy' ? 'energy_note' : 'mood_note', workspaceId, userId }, services);
+    await sendChunkedMessage(chatId, result.ok ? `Catatan privat tersimpan.\n${result.supportiveMessage}` : `Catatan ditolak: ${result.reason}`, replyOpt);
+    return true;
+  }
+  if (cmd === '/lifegoals') {
+    if (args) {
+      const result = await lifeosSystem.personalGoalManager.createPersonalGoal({ title: args, workspaceId, userId }, services);
+      await safeSendMessage(chatId, result.ok ? `Personal goal dibuat: ${result.goal.id} — ${result.goal.title}` : `Goal ditolak: ${result.reason}`, replyOpt);
+      return true;
+    }
+    const goals = await lifeosSystem.personalGoalManager.listPersonalGoals({ workspaceId, userId, limit: 10 }, services);
+    await sendChunkedMessage(chatId, goals.length ? goals.map((goal, i) => `${i + 1}. ${goal.title} (${goal.data?.category || 'personal_growth'})`).join('\n') : 'Belum ada personal goal.', replyOpt);
+    return true;
+  }
+  if (cmd === '/eveningreview') {
+    const review = await lifeosSystem.lifeReportGenerator.generateEveningReview(userId, { ...services, workspaceId });
+    await safeSendMessage(chatId, review.text, replyOpt);
+    return true;
+  }
+  return true;
+}
+
+async function handleNaturalLifeOsRoute(chatId, userId, userText, msg) {
+  const q = safeLower(userText).trim();
+  if (!q || q.startsWith('/')) return { handled: false };
+  const isLifePrompt = /(rencana hari ini|kerjakan sekarang|rutinitas belajar|catat mood|catat energy|catat energi|jadwalkan meeting|draft email|ringkasan minggu|ingat saya ingin|fokus belajar|selesaikan semua hidup)/i.test(userText);
+  if (!isLifePrompt) return { handled: false };
+  const replyOpt = { reply_to_message_id: msg.message_id };
+  if (!isAdmin(userId)) {
+    const answer = 'Life OS hanya aktif untuk admin/owner agar data pribadi tidak tersimpan tanpa kontrol.';
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'lifeos_denied', answer };
+  }
+  const workspaceId = await getDefaultWorkspaceIdForUser(userId);
+  const services = getLifeOsServices(userId);
+  if (/token|secret|database_url|redis_url|telegram_token|github_token/i.test(userText)) {
+    const gate = lifeosSystem.lifeMemoryGovernance.runLifeMemorySafetyGate({ text: userText, workspaceId, userId }, services);
+    const answer = `Saya tidak akan menyimpan secret sebagai Life OS memory.\nStatus: ${gate.reason || 'blocked/redacted'}`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_secret_blocked', answer };
+  }
+  if (/selesaikan semua hidup/i.test(userText)) {
+    const answer = 'Saya tidak bisa mengotomatisasi semua hidupmu. Saya bisa bantu buat plan kecil dan proposal untuk aksi eksternal, tapi semua write/external action tetap butuh approval.';
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_unsafe_automation_refused', answer };
+  }
+  if (/jadwalkan meeting/i.test(userText)) {
+    const result = await lifeosSystem.lifeIntegrationProposal.createCalendarEventProposal({ title: userText, workspaceId, userId }, services);
+    const answer = result.ok ? `Saya buat calendar proposal: ${result.proposal.id}\nBelum dijadwalkan. Approval dan run tetap terpisah.` : `Proposal gagal: ${result.reason}`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_calendar_proposal', answer };
+  }
+  if (/draft email|buat draft email/i.test(userText)) {
+    const result = await lifeosSystem.lifeIntegrationProposal.createGmailDraftProposal({ title: userText, workspaceId, userId }, services);
+    const answer = result.ok ? `Saya buat Gmail draft proposal: ${result.proposal.id}\nBelum dibuat/dikirim. Gmail send disabled by default.` : `Proposal gagal: ${result.reason}`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_gmail_proposal', answer };
+  }
+  if (/catat mood|catat energy|catat energi|capek/i.test(userText)) {
+    const result = await lifeosSystem.energyMoodJournal.createEnergyMoodNote({ note: userText, workspaceId, userId }, services);
+    const answer = result.ok ? `Dicatat privat.\n${result.supportiveMessage}` : `Catatan ditolak: ${result.reason}`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_mood_note', answer };
+  }
+  if (/rutinitas belajar/i.test(userText)) {
+    const result = await lifeosSystem.lifeIntegrationProposal.createRoutineProposalFromLifePlan({ title: userText, workspaceId, userId }, services);
+    const answer = result.ok ? `Saya buat routine proposal: ${result.proposal.id}\nBelum dijadwalkan otomatis. Approval wajib sebelum scheduler aktif.` : `Proposal gagal: ${result.reason}`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_routine_proposal', answer };
+  }
+  if (/ingat saya ingin/i.test(userText)) {
+    const result = await lifeosSystem.lifeMemoryGovernance.storeSafeLifeMemory({ text: userText, workspaceId, userId }, services);
+    const answer = result.ok && result.stored ? 'Saya simpan sebagai Life OS memory yang aman dan scoped privat bila sensitif.' : `Tidak disimpan: ${result.reason || 'tidak ada intent memory yang cukup jelas'}`;
+    await safeSendMessage(chatId, answer, replyOpt);
+    return { handled: true, type: 'life_memory', answer };
+  }
+  if (/ringkasan minggu/i.test(userText)) {
+    const report = await lifeosSystem.lifeReportGenerator.generateWeeklyLifeReport(userId, { ...services, workspaceId });
+    await sendChunkedMessage(chatId, report.text || 'Weekly report belum tersedia.', replyOpt);
+    return { handled: true, type: 'life_weekly_report', answer: report.text || '' };
+  }
+  const plan = await lifeosSystem.dailyPlanner.createDailyPlan({ workspaceId, userId }, services);
+  const answer = plan.ok ? formatLifeDailyPlan(plan.plan) : `Life OS gagal: ${plan.reason}`;
+  await sendChunkedMessage(chatId, answer, replyOpt);
+  return { handled: true, type: 'life_daily_plan', answer };
+}
+
 function detectNaturalPortfolioIntent(text = '') {
   const q = String(text || '').toLowerCase();
   if (!q || q.startsWith('/')) return { handled: false };
@@ -4204,6 +4390,20 @@ function getResearchServices(actorId = '') {
     actorType: 'telegram',
     researchSystem,
     evaluationSystem: evaluationSystem || smartAgentSystem.agentEvaluationV2 || null,
+    logger: log
+  };
+}
+
+function getLifeOsServices(actorId = '') {
+  return {
+    ...getResearchServices(actorId),
+    actorId: actorId || '',
+    userId: actorId || '',
+    actorType: 'telegram',
+    lifeosSystem,
+    routineRegistry: routineRegistry || null,
+    routineRunner: routineRunner || null,
+    routineScheduler: routineScheduler || null,
     logger: log
   };
 }
@@ -8977,6 +9177,20 @@ async function handleHelp(chatId, msg) {
 /docs_plan topik - buat docs update plan tanpa file write [admin]
 /propose_docs_update topik - buat proposal/prompt update docs, tidak auto-run [admin]
 /source_check taskId - audit source credibility [admin]
+/lifeos - ringkasan Life OS [admin]
+/daily atau /today - buat rencana hari ini [admin]
+/weekly - buat rencana minggu ini [admin]
+/tasks [judul] - list/tambah personal task [admin]
+/taskdone taskId - tandai task selesai [admin]
+/habits [judul] - list/tambah habit [admin]
+/habitcheck habitId - check-in habit [admin]
+/reminders [judul] - list/tambah reminder plan [admin]
+/focus [judul] - buat focus session [admin]
+/mood teks - catat mood privat [admin]
+/energy teks - catat energi privat [admin]
+/lifegoals [judul] - list/tambah personal goal [admin]
+/lifereport - laporan Life OS [admin]
+/eveningreview - review malam [admin]
 /whoami - identitas user dan role workspace
 /workspace - workspace aktif dan permission
 /workspaces - daftar workspace yang bisa diakses
@@ -9300,6 +9514,21 @@ function isUnknownCommand(cmd) {
     '/docs_plan',
     '/propose_docs_update',
     '/source_check',
+    '/lifeos',
+    '/daily',
+    '/weekly',
+    '/today',
+    '/tasks',
+    '/taskdone',
+    '/habits',
+    '/habitcheck',
+    '/reminders',
+    '/focus',
+    '/mood',
+    '/energy',
+    '/lifegoals',
+    '/lifereport',
+    '/eveningreview',
     '/whoami',
     '/workspaces',
     '/belajar',
@@ -10614,6 +10843,7 @@ try {
     observabilitySystem,
     portfolioSystem,
     researchSystem,
+    lifeosSystem,
     operatorSystem: null,
     costSystem: opsSystem.costOptimizer || null,
     cicdSystem: cicdSystem || null,
@@ -10875,6 +11105,7 @@ await withUserActionLock(userId, async () => {
   if (await handleSelfHealingCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleObservabilityCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleResearchCommands(chatId, userId, resolvedCmd, args, msg)) return;
+  if (await handleLifeOsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handlePortfolioCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handlePhase33OpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
   if (await handleOpsCommands(chatId, userId, resolvedCmd, args, msg)) return;
@@ -11056,6 +11287,26 @@ Data endpoint membutuhkan Authorization Bearer token.`;
       timestamp: nowMs()
     });
     await saveConversationPair(userId, userText, observabilityNaturalResult.answer);
+    return;
+  }
+
+  const lifeOsNaturalResult = await handleNaturalLifeOsRoute(chatId, userId, userText, msg);
+  if (lifeOsNaturalResult?.handled) {
+    recordConversationReplySafe({
+      userId,
+      chatId,
+      userText,
+      botText: lifeOsNaturalResult.answer,
+      intent: `natural_lifeos:${lifeOsNaturalResult.type}`
+    });
+    pushChatHistory({
+      userId,
+      chatId,
+      role: 'assistant',
+      text: lifeOsNaturalResult.answer,
+      timestamp: nowMs()
+    });
+    await saveConversationPair(userId, userText, lifeOsNaturalResult.answer);
     return;
   }
 

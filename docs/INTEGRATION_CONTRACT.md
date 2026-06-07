@@ -142,3 +142,25 @@ Dashboard contract:
 - `#research` is a known dashboard tab and must not fallback to Overview.
 - `/api/dashboard/research/*` routes are protected and sanitized.
 - Service worker may cache `research.js` as static shell only; it must not cache `/api/dashboard/*`.
+
+## Phase 44 Life OS Contract
+
+Life OS may:
+
+- create daily/weekly plans, personal tasks, habits, reminders, focus sessions, mood/energy notes, personal goals, and safe life memory.
+- recommend project-life balance and small next actions.
+- create Calendar/Gmail/routine proposals.
+
+Life OS must not:
+
+- send Gmail directly.
+- create/update Calendar events directly.
+- run external/write/danger actions without Evaluation v2 and executor approval.
+- store raw secret-like personal data.
+- expose private mood/energy context in shared dashboard/API/Telegram output.
+
+Dashboard contract:
+
+- `#lifeos` is a known dashboard tab and must not fallback to Overview.
+- `/api/dashboard/lifeos/*` routes are protected and sanitized.
+- Service worker may cache `lifeos.js` as static shell only; it must not cache `/api/dashboard/*`.

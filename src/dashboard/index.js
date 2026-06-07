@@ -36,6 +36,12 @@ try {
 } catch (e) {
   researchRoutes = { registerResearchRoutes: () => {} };
 }
+let lifeOsRoutes;
+try {
+  lifeOsRoutes = require('./lifeos-routes');
+} catch (e) {
+  lifeOsRoutes = { registerLifeOsRoutes: () => {} };
+}
 let portfolioRoutes;
 try {
   portfolioRoutes = require('./portfolio-routes');
@@ -92,6 +98,7 @@ module.exports = {
   monitoringRoutes,
   observabilityRoutes,
   researchRoutes,
+  lifeOsRoutes,
   portfolioRoutes,
   cicdRoutes,
   routineRoutes,

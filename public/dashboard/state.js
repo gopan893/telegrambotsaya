@@ -169,6 +169,14 @@ const DASHBOARD_TABS = {
     aliases: ['docs', 'documentation', 'research-agent', 'evidence', 'sources', 'docs-agent'],
     renderer: 'renderResearch'
   },
+  lifeos: {
+    label: 'Life OS',
+    title: 'Life OS',
+    navIcon: '🌱',
+    navVisible: true,
+    aliases: ['life', 'personal', 'productivity', 'daily', 'habits', 'focus', 'reminders'],
+    renderer: 'renderLifeOS'
+  },
   audit: {
     label: 'Audit Log',
     title: 'Audit Log',

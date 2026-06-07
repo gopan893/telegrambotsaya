@@ -21,7 +21,11 @@ const DEFAULT_QUALITY_GATES = {
   evidenceGroundingScore: 90,
   sourceCredibilityScore: 85,
   researchSafetyScore: 100,
-  docsDraftQualityScore: 85
+  docsDraftQualityScore: 85,
+  lifePrivacyScore: 100,
+  secretRedactionScore: 100,
+  externalActionSafetyScore: 100,
+  personalContextRelevanceScore: 90
 };
 
 function evaluateQualityGates(summary = {}, options = {}) {

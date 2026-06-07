@@ -36,6 +36,12 @@ try {
 } catch (e) {
   researchRoutes = { registerResearchRoutes: () => {} };
 }
+let lifeOsRoutes;
+try {
+  lifeOsRoutes = require('./lifeos-routes');
+} catch (e) {
+  lifeOsRoutes = { registerLifeOsRoutes: () => {} };
+}
 let costRoutes;
 try {
   costRoutes = require('./cost-routes');
@@ -59,6 +65,7 @@ function getDashboardServices(services = {}) {
   return {
     env: services.env || services.config || process.env,
     storageManager: services.storageManager || null,
+    __lifeosStore: services.__lifeosStore || {},
     aiOS: services.aiOS || {},
     opsSystem: services.opsSystem || null,
     integrationsSystem: services.integrationsSystem || null,
@@ -391,6 +398,12 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Research routes skipped:', e.message);
+  }
+  try {
+    lifeOsRoutes.registerLifeOsRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] LifeOS routes skipped:', e.message);
   }
   if (services.selfHealingSystem) {
     selfhealingRoutes.registerSelfHealingRoutes(router, services);

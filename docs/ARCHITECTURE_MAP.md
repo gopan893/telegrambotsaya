@@ -969,3 +969,36 @@ Runtime integration:
 
 - Telegram command/natural route integration lives in `src/bot/legacy-runtime.js`.
 - Docs update proposals remain proposal-only and do not mutate repo files directly.
+
+## Phase 44 Personal Life OS
+
+Life OS layer:
+
+- `src/lifeos/lifeos-store.js`
+- `src/lifeos/daily-planner.js`
+- `src/lifeos/weekly-planner.js`
+- `src/lifeos/personal-task-manager.js`
+- `src/lifeos/habit-tracker.js`
+- `src/lifeos/reminder-planner.js`
+- `src/lifeos/focus-session-manager.js`
+- `src/lifeos/energy-mood-journal.js`
+- `src/lifeos/personal-goal-manager.js`
+- `src/lifeos/life-priority-engine.js`
+- `src/lifeos/life-memory-governance.js`
+- `src/lifeos/life-integration-proposal.js`
+- `src/lifeos/life-report-generator.js`
+- `src/lifeos/lifeos-utils.js`
+
+Dashboard:
+
+- Tab id: `lifeos`
+- Renderer: `window.UI.renderLifeOS`
+- Frontend: `public/dashboard/lifeos.js`
+- Backend route: `src/dashboard/lifeos-routes.js`
+- API base: `/api/dashboard/lifeos`
+
+Runtime integration:
+
+- Telegram command/natural route integration lives in `src/bot/legacy-runtime.js`.
+- Calendar/Gmail/routine requests become Life OS proposals only.
+- Evaluation v2 has Life OS golden cases and quality gates for privacy, secret redaction, external action safety, and personal context relevance.
