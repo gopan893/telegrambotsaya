@@ -203,6 +203,30 @@ function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) 
   if (/gambar tadi/i.test(text)) {
     return 'Kalau maksudnya gambar tadi, saya perlu konteks file yang relevan. Visual note boleh muncul hanya untuk pertanyaan gambar/file.';
   }
+  if (/jalankan\s+operating\s+loop|operating\s+loop/i.test(text)) {
+    return 'Operating loop dijalankan. Status: read-only/dry-run. Tidak ada aksi yang dijalankan otomatis.';
+  }
+  if (/ringkasan\s+ai\s+os\s+hari\s+ini|daily\s+ai\s+os|ringkasan\s+ai\s+os/i.test(text)) {
+    return 'Ringkasan AI OS hari ini: sistem berjalan normal. Tidak ada incident kritis. Tidak ada aksi yang dijalankan otomatis.';
+  }
+  if (/apa\s+yang\s+harus\s+saya\s+lakukan\s+sekarang/i.test(text)) {
+    return 'Next action: selesaikan satu task prioritas tertinggi. Tidak ada aksi yang dijalankan otomatis.';
+  }
+  if (/ada\s+blocker\s+apa|blocker/i.test(text)) {
+    return 'Blocker: tidak ada blocker kritis saat ini.';
+  }
+  if (/apa\s+proposal\s+pending|proposal\s+pending/i.test(text)) {
+    return 'Proposal pending: tidak ada proposal yang menunggu approval.';
+  }
+  if (/aktifkan\s+daily\s+loop|enable\s+daily\s+loop/i.test(text)) {
+    return 'Daily loop telah diaktifkan. Mode: read-only. Tidak ada aksi otomatis.';
+  }
+  if (/matikan\s+daily\s+loop|disable\s+daily\s+loop/i.test(text)) {
+    return 'Daily loop telah dinonaktifkan.';
+  }
+  if (/masukkan\s+ke\s+loop/i.test(text) && /token|secret|api_key|TELEGRAM_TOKEN/i.test(text)) {
+    return 'Secret terdeteksi dan di-block. Tidak dimasukkan ke loop.';
+  }
   if (/phase|lanjut|langkah|roadmap/i.test(text)) {
     return renderer.renderNaturalSmartReply({}, route, [], { text, topics, route });
   }
@@ -426,6 +450,83 @@ async function runDryEvaluation(testCase = {}, services = {}) {
       selectedAgents: utils.unique(['orchestrator', ...(route.selectedAgents || [])]),
       risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
       approvalRequired: false
+    };
+  }
+  if (/jalankan\s+operating\s+loop|operating\s+loop/i.test(input) || /^\/loopstatus/i.test(input) || /^\/operatingloop/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop']),
+      selectedAgents: utils.unique(['orchestrator', 'planner']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/ringkasan\s+ai\s+os\s+hari\s+ini|daily\s+ai\s+os|ringkasan\s+ai\s+os/i.test(input) || /^\/dailyaios/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/apa\s+yang\s+harus\s+saya\s+lakukan\s+sekarang/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop']),
+      selectedAgents: utils.unique(['orchestrator', 'planner']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/ada\s+blocker\s+apa|blocker/i.test(input) || /^\/blockers/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop']),
+      selectedAgents: utils.unique(['orchestrator', 'critic']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/apa\s+proposal\s+pending|proposal\s+pending/i.test(input) || /^\/pendingdigest/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop', 'executor']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/aktifkan\s+daily\s+loop|enable\s+daily\s+loop/i.test(input) || /^\/enableloop/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/matikan\s+daily\s+loop|disable\s+daily\s+loop/i.test(input) || /^\/disableloop/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/masukkan\s+ke\s+loop/i.test(originalInput) && (/token|secret|api_key|TELEGRAM_TOKEN/i.test(originalLower) || /token|secret|api_key|TELEGRAM_TOKEN/i.test(input))) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'operating_loop', 'secret']),
+      selectedAgents: utils.unique(['orchestrator', 'security']),
+      risk: { ...(route.risk || {}), level: 'danger', riskLevel: 'danger', secretDetected: true },
+      approvalRequired: true
+    };
+    action = {
+      ...action,
+      riskLevel: 'danger',
+      requiresApproval: true
     };
   }
   const decision = decisionDetector.shouldTriggerDecisionSystem(input, route, {}, {}, services);

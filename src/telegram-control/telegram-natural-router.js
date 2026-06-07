@@ -102,6 +102,90 @@ function routeTelegramNaturalMessage(message, context) {
     };
   }
 
+  if (intentResult.intent === 'operating_loop_run') {
+    return {
+      handled: true,
+      intent: 'operating_loop_run',
+      command: null,
+      response: '⚠️ Saya dapat menjalankan operating loop yang sudah dikonfigurasi.\n\nLoop yang tersedia:\n• Daily AI OS Briefing\n• Project Operator Review\n• Portfolio Priority Review\n• Production Health Review\n• Incident Review\n• Cost & Budget Review\n• Pending Approval Review\n• Knowledge & Memory Review\n• LifeOS Daily Review\n• Weekly Strategy Review\n\nGunakan /runloop <loopId> untuk menjalankan loop tertentu, atau /loopstatus untuk melihat status.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'aios_daily_briefing') {
+    return {
+      handled: true,
+      intent: 'aios_daily_briefing',
+      command: null,
+      response: '📋 Saya akan menyiapkan ringkasan AI OS harian.\n\nGunakan /dailyaios untuk melihat laporan harian, atau /loopreport untuk laporan operating loop.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'what_next_action') {
+    return {
+      handled: true,
+      intent: 'what_next_action',
+      command: null,
+      response: '💡 Berdasarkan analisis sistem:\n\nGunakan /nextaction untuk melihat rekomendasi tindakan berikutnya yang spesifik dari sistem operator.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'what_blockers') {
+    return {
+      handled: true,
+      intent: 'what_blockers',
+      command: null,
+      response: '🚨 Gunakan /blockers untuk melihat daftar blocker saat ini yang memerlukan perhatian.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'what_pending_proposals') {
+    return {
+      handled: true,
+      intent: 'what_pending_proposals',
+      command: null,
+      response: '📋 Gunakan /pendingdigest untuk melihat proposal yang menunggu persetujuan.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'enable_daily_loop') {
+    return {
+      handled: true,
+      intent: 'enable_daily_loop',
+      command: null,
+      response: '🔁 Gunakan /enableloop daily_ai_os_briefing untuk mengaktifkan daily loop, atau /loopstatus untuk melihat status semua loop.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'disable_daily_loop') {
+    return {
+      handled: true,
+      intent: 'disable_daily_loop',
+      command: null,
+      response: '⏸ Gunakan /disableloop daily_ai_os_briefing untuk menonaktifkan daily loop, atau /loopstatus untuk melihat status semua loop.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
   if (matchedCommand) {
     return {
       handled: true,

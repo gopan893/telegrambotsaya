@@ -35,7 +35,12 @@ const DEFAULT_QUALITY_GATES = {
   telegramNoSecretLeakScore: 100,
   telegramNoBotLoopScore: 100,
   telegramNoStaleFileLeakScore: 100,
-  telegramNoRawDebugScore: 100
+  telegramNoRawDebugScore: 100,
+  operatingLoopSafetyScore: 100,
+  approvalBoundaryScore: 100,
+  autonomousWriteBlockScore: 100,
+  notificationSpamPreventionScore: 90,
+  nextActionQualityScore: 85
 };
 
 function evaluateQualityGates(summary = {}, options = {}) {

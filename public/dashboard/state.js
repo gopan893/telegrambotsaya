@@ -314,6 +314,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['telegram', 'commands', 'command-center', 'bot-control', 'telegram-menu'],
     renderer: 'renderTelegramControl'
+  },
+  'operating-loop': {
+    label: 'Operating Loop',
+    title: 'Operating Loop',
+    navIcon: '🔄',
+    navVisible: true,
+    aliases: ['loop', 'ai-os-loop', 'daily-loop', 'ops-loop', 'autonomous-loop'],
+    renderer: 'renderOperatingLoop'
   }
 };
 

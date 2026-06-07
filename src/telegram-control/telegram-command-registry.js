@@ -25,7 +25,8 @@ const COMMAND_CATEGORIES = {
   memory: 'Memory',
   goals: 'Goals',
   workflows: 'Workflows',
-  devgovernance: 'Dev Governance'
+  devgovernance: 'Dev Governance',
+  operating_loop: 'Operating Loop'
 };
 
 const RISK_LEVELS = { read_only: 0, low: 1, medium: 2, high: 3, danger: 4 };
@@ -190,7 +191,18 @@ const BUILTIN_COMMANDS = [
   { name: 'energy', aliases: ['energi'], module: 'lifeos', category: 'lifeos', description: 'Log your energy level', examples: ['/energy <level>'], riskLevel: 'low', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
   { name: 'lifegoals', aliases: ['tujuanhidup'], module: 'lifeos', category: 'lifeos', description: 'Show life goals', examples: ['/lifegoals'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
   { name: 'lifereport', aliases: ['laporanhidup'], module: 'lifeos', category: 'lifeos', description: 'Generate life report', examples: ['/lifereport'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
-  { name: 'eveningreview', aliases: ['reviewmalam'], module: 'lifeos', category: 'lifeos', description: 'Run evening review', examples: ['/eveningreview'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true }
+  { name: 'eveningreview', aliases: ['reviewmalam'], module: 'lifeos', category: 'lifeos', description: 'Run evening review', examples: ['/eveningreview'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'loopstatus', aliases: ['loopstats', 'loop_state'], module: 'operating-loop', category: 'operating_loop', description: 'Show operating loop status', examples: ['/loopstatus'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'operatingloop', aliases: ['oploop', 'opsloop'], module: 'operating-loop', category: 'operating_loop', description: 'Show operating loop overview', examples: ['/operatingloop'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'dailyloop', aliases: ['loopharian', 'dailyops'], module: 'operating-loop', category: 'operating_loop', description: 'Show daily loop status', examples: ['/dailyloop'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'runloop', aliases: ['jalankanloop', 'executeloop'], module: 'operating-loop', category: 'operating_loop', description: 'Run a specific operating loop', examples: ['/runloop <loopId>'], riskLevel: 'low', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'loopreport', aliases: ['laporanloop', 'loopdigest'], module: 'operating-loop', category: 'operating_loop', description: 'Generate operating loop report', examples: ['/loopreport'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'dailyaios', aliases: ['dailyaiosreport', 'aiosharian'], module: 'operating-loop', category: 'operating_loop', description: 'Show daily AI OS report', examples: ['/dailyaios'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'weeklyaios', aliases: ['weeklyaiosreport', 'aiosmingguan'], module: 'operating-loop', category: 'operating_loop', description: 'Show weekly AI OS report', examples: ['/weeklyaios'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'blockers', aliases: ['daftarbloker', 'currentblockers'], module: 'operating-loop', category: 'operating_loop', description: 'Show current blockers', examples: ['/blockers'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'pendingdigest', aliases: ['digestpending', 'pendingreview'], module: 'operating-loop', category: 'operating_loop', description: 'Show pending proposals digest', examples: ['/pendingdigest'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'enableloop', aliases: ['aktifkanloop', 'loopenable'], module: 'operating-loop', category: 'operating_loop', description: 'Enable an operating loop', examples: ['/enableloop <loopId>'], riskLevel: 'medium', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'disableloop', aliases: ['matikanloop', 'loopdisable'], module: 'operating-loop', category: 'operating_loop', description: 'Disable an operating loop', examples: ['/disableloop <loopId>'], riskLevel: 'medium', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true }
 ];
 
 let registry = [...BUILTIN_COMMANDS];

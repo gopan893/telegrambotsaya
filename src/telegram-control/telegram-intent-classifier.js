@@ -46,7 +46,14 @@ const INTENT_PATTERNS = [
   { pattern: /(backup|cadangan)\s+(status|buat|create)/i, intent: 'backup', command: 'backup' },
   { pattern: /(briefing|ringkasan|daily brief)/i, intent: 'briefing', command: 'briefing' },
   { pattern: /(laporan|report)\s+(portfolio|portofolio|project)/i, intent: 'portfolioreport', command: 'portfolioreport' },
-  { pattern: /(laporan|report)\s+(life|hidup)/i, intent: 'lifereport', command: 'lifereport' }
+  { pattern: /(laporan|report)\s+(life|hidup)/i, intent: 'lifereport', command: 'lifereport' },
+  { pattern: /jalankan\s+operating\s+loop/i, intent: 'operating_loop_run' },
+  { pattern: /ringkasan\s+ai\s*os\s+(hari ini|today|harian)/i, intent: 'aios_daily_briefing' },
+  { pattern: /(apa|what)\s+(yang\s+)?harus\s+(saya\s+)?lakukan\s+(sekarang|now)/i, intent: 'what_next_action' },
+  { pattern: /(ada|list|apa\s+saja)\s+blocker/i, intent: 'what_blockers' },
+  { pattern: /(ada|list|apa\s+saja)\s+proposal\s+pending/i, intent: 'what_pending_proposals' },
+  { pattern: /(aktifkan|enable|hidupkan)\s+daily\s+loop/i, intent: 'enable_daily_loop' },
+  { pattern: /(matikan|disable|nonaktifkan)\s+daily\s+loop/i, intent: 'disable_daily_loop' }
 ];
 
 const BLOCKED_PATTERNS = [
