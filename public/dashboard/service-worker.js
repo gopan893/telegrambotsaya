@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'telegram-aios-dashboard-static-v39-phase44-5-telegram-control';
+const CACHE_NAME = 'telegram-aios-dashboard-static-v39-phase44-5-dashboard-fix';
 const STATIC_ASSETS = [
   '/dashboard',
   '/dashboard/styles.css',
@@ -26,7 +26,9 @@ const STATIC_ASSETS = [
   '/dashboard/observability.js',
   '/dashboard/cost.js',
   '/dashboard/portfolio.js',
-  '/dashboard/telegram-control.js'
+  '/dashboard/telegram-control.js',
+  '/dashboard/research.js',
+  '/dashboard/lifeos.js'
 ];
 
 function isSensitiveRequest(request) {

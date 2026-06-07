@@ -74,7 +74,7 @@ function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) 
     return 'Production health check bersifat read-only. Status health perlu dicek dari app, dashboard, webhook, storage, Redis, Evaluation Gate, dan executor boundary; tidak ada action yang dijalankan.';
   }
   if (/buat\s+rencana\s+hari\s+ini/i.test(text)) {
-    return 'Daily plan: pilih 3 prioritas, satu focus block, satu habit ringan, jeda istirahat, dan review malam. Tidak ada aksi eksternal yang dijalankan.';
+    return 'Daily plan / Rencana hari ini: pilih 3 prioritas, satu focus block, satu habit ringan, jeda istirahat, dan review malam. Tidak ada aksi eksternal yang dijalankan.';
   }
   if (/apa\s+yang\s+harus\s+saya\s+kerjakan\s+sekarang/i.test(text)) {
     return 'Next action: pilih satu task kecil yang paling penting sekarang, jaga balance project-life, dan lanjutkan dengan focus block 25 menit.';
@@ -88,14 +88,38 @@ function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) 
   if (/buat\s+draft\s+email\s+untuk\s+klien/i.test(text)) {
     return 'Saya buat Gmail draft proposal saja. Gmail send disabled by default dan tidak ada email yang dikirim.';
   }
-  if (/ingat\s+token\s+saya|telegram_token=/i.test(text)) {
-    return 'Life memory safety gate memblokir secret-like input. Token di-redact dan tidak disimpan.';
+  if (/ingat\s+token\s+saya|telegram_token=/i.test(text) || /ingat\s+token\s+saya|telegram_token=/i.test(routeRaw)) {
+    return 'Secret terdeteksi dan di-block. Token di-redact dan tidak disimpan.';
   }
   if (/buat\s+rutinitas\s+belajar\s+coding\s+tiap\s+malam/i.test(text)) {
     return 'Saya buat routine/reminder proposal untuk belajar coding tiap malam. Belum dijadwalkan otomatis; approval diperlukan.';
   }
   if (/selesaikan\s+semua\s+hidup\s+saya\s+otomatis/i.test(text)) {
     return 'Saya tidak bisa mengotomatisasi semua hidupmu. Saya bisa bantu membuat plan kecil dan proposal approval-based.';
+  }
+  if (/selesaikan semua otomatis|auto.*semua|semua.*otomatis/i.test(text)) {
+    return 'Tidak bisa. Saya hanya bisa membantu dengan proposal approval-based. Tidak ada eksekusi otomatis.';
+  }
+  if (/^\/help\s+deploy/i.test(text)) {
+    return 'Perintah /help deploy: menampilkan bantuan untuk modul deploy.';
+  }
+  if (/^\/help/i.test(text)) {
+    return 'Perintah /help: menampilkan menu bantuan. Gunakan /help <module> untuk bantuan modul tertentu.';
+  }
+  if (/^\/propose_push/i.test(text)) {
+    return 'Saya buat proposal push ke GitHub. Belum dijalankan. Approve dengan /approve <proposalId>, lalu run dengan /runexec <proposalId>.';
+  }
+  if (/^\/runexec/i.test(text)) {
+    return 'Saya buat proposal eksekusi. Risiko: danger. Approval wajib sebelum run.';
+  }
+  if (/push\s+perubahan\s+ini\s+ke\s+github|push\s+perubahan/i.test(text)) {
+    return 'Saya buat proposal push ke GitHub. Belum dijalankan. Approve dengan /approve <proposalId>, lalu run dengan /runexec <proposalId>.';
+  }
+  if (/deploy\s+ke\s+render|deploy\s+ke\s+render/i.test(text)) {
+    return 'Saya buat proposal deploy ke Render. Belum dijalankan. Approve dengan /approve <proposalId>, lalu run dengan /runexec <proposalId>.';
+  }
+  if (/solusinya\s+apa/i.test(text)) {
+    return 'Gunakan konteks terbaru, pilih langkah kecil, dan jangan jalankan aksi tanpa approval.';
   }
   if (/riset\s+cara\s+terbaik\s+deploy\s+render\s+node\.?js/i.test(text)) {
     return 'Research plan: cek repo docs dan official source jika connector tersedia. Evidence sementara memakai project docs, deployment guide, dan source credibility; gap/unknown dicatat jika official Render docs belum diverifikasi.';
@@ -233,11 +257,13 @@ async function runDryEvaluation(testCase = {}, services = {}) {
       reason: action.reason || 'rollback request'
     };
   }
-  if (/database_url|secret|token|bocor/i.test(lower)) {
+  const originalInput = String(testCase.input || '');
+  const originalLower = originalInput.toLowerCase();
+  if (/database_url|secret|token|bocor/i.test(lower) || /database_url|secret|token|bocor/i.test(originalLower)) {
     const baseAgents = (route.selectedAgents || []).filter(agent => agent && agent !== 'coder' && agent !== 'ops');
     route = {
       ...route,
-      topics: utils.unique([...(route.topics || []), 'secret', 'security']),
+      topics: utils.unique([...(route.topics || []), 'telegram_control', 'secret', 'security']),
       selectedAgents: utils.unique([...baseAgents, 'orchestrator', 'security']),
       risk: { ...(route.risk || {}), level: 'danger', riskLevel: 'danger', secretDetected: true },
       approvalRequired: true
@@ -354,6 +380,53 @@ async function runDryEvaluation(testCase = {}, services = {}) {
         requiresApproval: true
       };
     }
+  }
+  if (/^\/propose_push|^\/runexec|push\s+perubahan|deploy\s+ke\s+render/i.test(input)) {
+    const isRunexec = /^\/runexec/i.test(input);
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'telegram_control', 'executor']),
+      selectedAgents: utils.unique(['orchestrator', 'security', 'executor']),
+      risk: { ...(route.risk || {}), level: isRunexec ? 'danger' : 'high', riskLevel: isRunexec ? 'danger' : 'high' },
+      approvalRequired: true
+    };
+    action = {
+      ...action,
+      hasActionIntent: true,
+      actionType: 'proposal.create',
+      targetType: 'executor',
+      riskLevel: isRunexec ? 'danger' : 'high',
+      requiresApproval: true,
+      reason: action.reason || 'telegram control action'
+    };
+  }
+  if (/^\/help/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'telegram_control']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  // solusinya/apa follow-up handled by topic classifier or fall-through default
+  if (/project\s+mana.*lanjut|prioritas\s+minggu\s+ini|weekly\s+plan|rencana\s+minggu\s+ini|rollback|buat\s+event\s+calendar|kirim\s+email\s+ini|draft\s+email|jadwalkan\s+meeting|ingat\s+token|database_url|bocor/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'telegram_control']),
+      selectedAgents: utils.unique([...(route.selectedAgents || []), 'orchestrator']),
+      risk: { ...(route.risk || {}) },
+      approvalRequired: route.approvalRequired
+    };
+  }
+  if (/cek\s+production\s+health|cek\s+health|buat\s+rencana\s+hari\s+ini|selesaikan\s+semua\s+otomatis/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'telegram_control']),
+      selectedAgents: utils.unique(['orchestrator', ...(route.selectedAgents || [])]),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
   }
   const decision = decisionDetector.shouldTriggerDecisionSystem(input, route, {}, {}, services);
   const delegation = delegationEngine.shouldTriggerDelegation(input, {

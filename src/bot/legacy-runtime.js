@@ -38,6 +38,7 @@ const observabilitySystem = require('../observability');
 const portfolioSystem = require('../portfolio');
 const researchSystem = require('../research');
 const lifeosSystem = require('../lifeos');
+const telegramControl = require('../telegram-control');
 const multibotSystem = require('../multibot');
 const smartAgentSystem = require('../agents');
 const {
@@ -9444,6 +9445,118 @@ Bahasa alami:
   );
 }
 
+async function handleTelegramControlCommands(chatId, userId, resolvedCmd, args, msg) {
+  try {
+    if (!resolvedCmd) return false;
+    const cmdName = resolvedCmd.replace(/^\//, '');
+    const cmd = telegramControl.commandRegistry.getTelegramCommand(cmdName);
+    if (!cmd) return false;
+
+    const user = { id: userId };
+    const chat = { id: chatId };
+    const perm = telegramControl.permissionGuard.checkTelegramCommandPermission(cmd, user, chat);
+    if (!perm.allowed) {
+      await safeSendMessage(chatId, telegramControl.permissionGuard.buildPermissionDeniedResponse(perm.reason), { reply_to_message_id: msg?.message_id });
+      return true;
+    }
+
+    const risk = telegramControl.riskClassifier.classifyTelegramCommandRisk(cmd);
+    
+    telegramControl.commandAudit.recordTelegramCommandAudit({
+      command: cmd.name, userId, chatId, module: cmd.module,
+      riskLevel: cmd.riskLevel, allowed: true, resultStatus: 'routed'
+    });
+
+    if (risk.requiresApproval || risk.requiresEvaluation) {
+      const actionPlan = telegramControl.naturalRouter.buildNaturalActionPlan({
+        intent: 'slash_command',
+        commandName: cmd.name,
+        risk,
+        command: cmd,
+        chatId,
+        userId
+      });
+      if (actionPlan) {
+        const propResult = telegramControl.proposalRouter.routeTelegramActionToProposal(actionPlan);
+        if (propResult.created) {
+          await safeSendMessage(chatId, telegramControl.proposalRouter.formatProposalForTelegram(propResult.proposal), { reply_to_message_id: msg?.message_id });
+          return true;
+        }
+        if (propResult.duplicate) {
+          await safeSendMessage(chatId, propResult.message + '\n\n' + telegramControl.proposalRouter.formatProposalForTelegram(propResult.proposal), { reply_to_message_id: msg?.message_id });
+          return true;
+        }
+      }
+      await safeSendMessage(chatId, '\u26a0\ufe0f Tidak dapat membuat proposal untuk perintah ini.', { reply_to_message_id: msg?.message_id });
+      return true;
+    }
+
+    const moduleMap = {
+      core: () => safeSendMessage(chatId, `Perintah /${cmdName} diterima. Gunakan /menu untuk menu utama.`, { reply_to_message_id: msg?.message_id }),
+      help: () => safeSendMessage(chatId, telegramControl.helpMenu.buildTelegramCommandHelp(cmdName), { reply_to_message_id: msg?.message_id }),
+      menu: () => safeSendMessage(chatId, telegramControl.helpMenu.buildTelegramMainMenu(), { reply_to_message_id: msg?.message_id })
+    };
+
+    const handler = moduleMap[cmdName] || moduleMap[cmd.module];
+    if (handler) {
+      await handler();
+    } else {
+      const msg_text = `Perintah /${cmdName} diterima. Modul: ${cmd.module}, Risiko: ${cmd.riskLevel}`;
+      await safeSendMessage(chatId, msg_text, { reply_to_message_id: msg?.message_id });
+    }
+    return true;
+  } catch (err) {
+    console.error('[telegram-control] Command handler error:', err.message);
+    await safeSendMessage(chatId, '\u26a0\ufe0f Terjadi kesalahan saat memproses perintah.', { reply_to_message_id: msg?.message_id });
+    return true;
+  }
+}
+
+async function handleNaturalTelegramControlRoute(chatId, userId, text, msg) {
+  try {
+    if (!text || text.startsWith('/')) return { handled: false };
+    const fakeUpdate = { message: { text, from: { id: userId }, chat: { id: chatId }, message_id: msg?.message_id } };
+    const route = telegramControl.naturalRouter.routeTelegramNaturalMessage(fakeUpdate, {});
+    if (!route.handled) return { handled: false };
+    if (route.blocked) {
+      await safeSendMessage(chatId, route.response || '\u26a0\ufe0f Pesan mengandung pola rahasia.', { reply_to_message_id: msg?.message_id });
+      return { handled: true };
+    }
+    if (route.response) {
+      await safeSendMessage(chatId, route.response, { reply_to_message_id: msg?.message_id });
+      return { handled: true };
+    }
+    if (route.command) {
+      const cmd = route.command;
+      const user = { id: userId };
+      const chat = { id: chatId };
+      const perm = telegramControl.permissionGuard.checkTelegramCommandPermission(cmd, user, chat);
+      if (!perm.allowed) {
+        await safeSendMessage(chatId, telegramControl.permissionGuard.buildPermissionDeniedResponse(perm.reason), { reply_to_message_id: msg?.message_id });
+        return { handled: true };
+      }
+      const risk = route.risk || telegramControl.riskClassifier.classifyTelegramCommandRisk(cmd);
+      if (risk.requiresApproval || risk.requiresEvaluation) {
+        const actionPlan = telegramControl.naturalRouter.buildNaturalActionPlan(route);
+        if (actionPlan) {
+          const propResult = telegramControl.proposalRouter.routeTelegramActionToProposal(actionPlan);
+          if (propResult.created) {
+            await safeSendMessage(chatId, telegramControl.proposalRouter.formatProposalForTelegram(propResult.proposal), { reply_to_message_id: msg?.message_id });
+            return { handled: true };
+          }
+        }
+      }
+      const msg_text = `Perintah /${cmd.name} diterima. Risiko: ${cmd.riskLevel}`;
+      await safeSendMessage(chatId, msg_text, { reply_to_message_id: msg?.message_id });
+      return { handled: true };
+    }
+    return { handled: false };
+  } catch (err) {
+    console.error('[telegram-control] Natural route error:', err.message);
+    return { handled: false };
+  }
+}
+
 function isUnknownCommand(cmd) {
   const known = new Set([
     '/start',
@@ -11219,6 +11332,8 @@ Data endpoint membutuhkan Authorization Bearer token.`;
 
   if (await handlePluginCommand(chatId, userId, resolvedCmd, args, msg, text)) return;
 
+  if (await handleTelegramControlCommands(chatId, userId, resolvedCmd, args, msg)) return;
+
   if (isUnknownCommand(resolvedCmd)) {
     await safeSendMessage(chatId, 'Perintah tidak dikenal. Ketik /help untuk daftar perintah.', { reply_to_message_id: msg.message_id });
     return;
@@ -11404,6 +11519,11 @@ Data endpoint membutuhkan Authorization Bearer token.`;
     });
     await saveConversationPair(userId, userText, naturalToolResult.answer);
     if (u.digest?.enabled) scheduleDigestJob(userId);
+    return;
+  }
+
+  const telegramControlNaturalResult = await handleNaturalTelegramControlRoute(chatId, userId, userText, msg);
+  if (telegramControlNaturalResult?.handled) {
     return;
   }
 
