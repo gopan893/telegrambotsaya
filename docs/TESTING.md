@@ -213,3 +213,29 @@ Defined in `.github/workflows/ci.yml`:
 - `node --check telebot.js`
 - `node --check src/dashboard/dashboard-routes.js` (warning on fail)
 - Module load test for autohealing, monitoring, cicd
+
+## Phase 46 Continuous Improvement Tests
+
+```bash
+node scratch/test-feedback-collector.js
+node scratch/test-outcome-collector.js
+node scratch/test-quality-signal-classifier.js
+node scratch/test-weakness-detector.js
+node scratch/test-pattern-analyzer.js
+node scratch/test-lesson-manager.js
+node scratch/test-regression-case-generator.js
+node scratch/test-improvement-plan-generator.js
+node scratch/test-next-agent-improvement-prompt.js
+node scratch/test-improvement-evaluation-gate.js
+node scratch/test-improvement-proposal-bridge.js
+node scratch/test-improvement-dashboard-api.js
+node scratch/test-phase46-improvement-regression.js
+```
+
+Also verify:
+```bash
+node --check src/improvement/index.js
+node --check src/dashboard/improvement-routes.js
+node --check src/dashboard/dashboard-routes.js
+node --check public/dashboard/improvement.js
+```

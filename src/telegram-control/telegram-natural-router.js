@@ -186,6 +186,114 @@ function routeTelegramNaturalMessage(message, context) {
     };
   }
 
+  // Phase 46 - Continuous Improvement
+  if (intentResult.intent === 'feedback_negative_answer' || intentResult.intent === 'feedback_wrong_routing' || intentResult.intent === 'feedback_dashboard_bug' || intentResult.intent === 'feedback_cost_too_high' || intentResult.intent === 'feedback_general') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '📝 Feedback diterima. Saya akan kategorikan dan simpan sebagai bahan evaluasi. Terima kasih atas masukannya.\n\n' +
+        'Untuk info lebih detail: /feedback',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'create_lesson' || intentResult.intent === 'save_as_lesson') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '📚 Lesson akan dibuat dari masukan ini. Silakan cek di dashboard Improvement atau /lessons untuk hasilnya.\n\n' +
+        'Pembelajaran tidak mengubah kode secara otomatis.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'create_regression_case') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '🧪 Regression case suggestion akan dibuat. Silakan cek di dashboard Improvement atau /regression_suggestions.\n\n' +
+        'Pengujian memerlukan pembuatan manual atau dev-agent mode.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'create_improvement_prompt') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '📋 Improvement prompt akan di-generate. Bisa digunakan oleh Codex/OpenCode/Hermes untuk perbaikan.\n\n' +
+        'Prompt tersedia di dashboard Improvement.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'refuse_auto_fix') {
+    return {
+      handled: true,
+      intent: 'refuse_auto_fix',
+      command: null,
+      response: '⚠️ Saya tidak bisa memperbaiki kode secara otomatis tanpa approval.\n\n' +
+        'Yang bisa saya lakukan:\n' +
+        '• Buat lesson dari masalah ini\n' +
+        '• Buat regression test suggestion\n' +
+        '• Buat improvement plan\n' +
+        '• Generate improvement prompt untuk Codex/OpenCode\n' +
+        '• Buat proposal perbaikan untuk di-approve\n\n' +
+        'Gunakan perintah: /improve',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'list_weaknesses') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '🔍 Weakness list tersedia di dashboard Improvement atau /weaknesses.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'list_lessons') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '📚 Lessons learned tersedia di dashboard Improvement atau /lessons.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
+  if (intentResult.intent === 'quality_report') {
+    return {
+      handled: true,
+      intent: intentResult.intent,
+      command: null,
+      response: '📊 Quality report tersedia di dashboard Improvement atau /quality_report.',
+      risk,
+      rawText: text,
+      chatId
+    };
+  }
+
   if (matchedCommand) {
     return {
       handled: true,

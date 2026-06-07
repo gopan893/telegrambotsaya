@@ -26,7 +26,8 @@ const COMMAND_CATEGORIES = {
   goals: 'Goals',
   workflows: 'Workflows',
   devgovernance: 'Dev Governance',
-  operating_loop: 'Operating Loop'
+  operating_loop: 'Operating Loop',
+  improvement: 'Continuous Improvement'
 };
 
 const RISK_LEVELS = { read_only: 0, low: 1, medium: 2, high: 3, danger: 4 };
@@ -205,7 +206,17 @@ const BUILTIN_COMMANDS = [
   { name: 'blockers', aliases: ['daftarbloker', 'currentblockers'], module: 'operating-loop', category: 'operating_loop', description: 'Show current blockers', examples: ['/blockers'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
   { name: 'pendingdigest', aliases: ['digestpending', 'pendingreview'], module: 'operating-loop', category: 'operating_loop', description: 'Show pending proposals digest', examples: ['/pendingdigest'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
   { name: 'enableloop', aliases: ['aktifkanloop', 'loopenable'], module: 'operating-loop', category: 'operating_loop', description: 'Enable an operating loop', examples: ['/enableloop <loopId>'], riskLevel: 'medium', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
-  { name: 'disableloop', aliases: ['matikanloop', 'loopdisable'], module: 'operating-loop', category: 'operating_loop', description: 'Disable an operating loop', examples: ['/disableloop <loopId>'], riskLevel: 'medium', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true }
+  { name: 'disableloop', aliases: ['matikanloop', 'loopdisable'], module: 'operating-loop', category: 'operating_loop', description: 'Disable an operating loop', examples: ['/disableloop <loopId>'], riskLevel: 'medium', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'feedback', aliases: ['masukan', 'kritik', 'saran'], module: 'improvement', category: 'improvement', description: 'Kirim feedback atau laporan masalah', examples: ['/feedback jawaban tadi salah', '/feedback dashboard error'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'improve', aliases: ['perbaiki'], module: 'improvement', category: 'improvement', description: 'Saran perbaikan sistem', examples: ['/improve'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'lessons', aliases: ['pembelajaran', 'lesson'], module: 'improvement', category: 'improvement', description: 'Lihat lessons learned yang sudah dibuat', examples: ['/lessons', '/lessons cari cache'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'weaknesses', aliases: ['kelemahan', 'weakness'], module: 'improvement', category: 'improvement', description: 'Lihat kelemahan sistem yang terdeteksi', examples: ['/weaknesses'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'patterns', aliases: ['pola'], module: 'improvement', category: 'improvement', description: 'Lihat pola masalah yang teridentifikasi', examples: ['/patterns'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'regression_suggestions', aliases: ['saranregresi', 'regression'], module: 'improvement', category: 'improvement', description: 'Lihat saran regression test', examples: ['/regression_suggestions'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'improvement_plan', aliases: ['rencanaperbaikan', 'planperbaikan'], module: 'improvement', category: 'improvement', description: 'Lihat rencana perbaikan yang tersedia', examples: ['/improvement_plan'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'improvement_prompt', aliases: ['promptperbaikan', 'generateprompt'], module: 'improvement', category: 'improvement', description: 'Generate prompt perbaikan untuk agent', examples: ['/improvement_prompt <planId>'], riskLevel: 'read_only', requiresOwner: true, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'quality_report', aliases: ['laporankualitas', 'quality'], module: 'improvement', category: 'improvement', description: 'Tampilkan laporan kualitas sistem', examples: ['/quality_report'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true },
+  { name: 'learning_report', aliases: ['laporanpembelajaran', 'learning'], module: 'improvement', category: 'improvement', description: 'Tampilkan laporan pembelajaran', examples: ['/learning_report'], riskLevel: 'read_only', requiresOwner: false, requiresAdmin: false, requiresApproval: false, requiresEvaluation: false, enabled: true }
 ];
 
 let registry = [...BUILTIN_COMMANDS];

@@ -187,3 +187,20 @@ Dashboard contract:
 - `/api/dashboard/telegram-control/*` routes are protected and sanitized.
 - Service worker may cache `telegram-control.js` as static shell only; it must not cache `/api/dashboard/*`.
 - No secret values are exposed in the dashboard, audit, or API responses.
+
+## Improvement / Feedback Contract (Phase 46)
+
+Feedback/improvement flow MUST follow:
+1. collect feedback / outcome
+2. classify quality signal
+3. detect weakness
+4. analyze patterns
+5. create lesson or improvement plan
+6. improvement evaluation gate (no auto-run, no auto-approve, no direct external write)
+7. if code change needed → executor proposal → approval → run
+8. no self-modification from runtime
+9. no secret storage in feedback/outcome/lessons
+10. no auto-create test files from runtime
+
+Improvement actions are read-only by default.
+Code changes require the full dry-run → Evaluation v2 → executor proposal → approval → run pipeline.

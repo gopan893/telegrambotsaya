@@ -60,6 +60,12 @@ try {
 } catch (_) {
   portfolioRoutes = { registerPortfolioRoutes: () => {} };
 }
+let improvementRoutes;
+try {
+  improvementRoutes = require('./improvement-routes');
+} catch (e) {
+  improvementRoutes = { registerImprovementRoutes: () => {} };
+}
 
 function getDashboardServices(services = {}) {
   return {
@@ -461,6 +467,13 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Telegram Control routes skipped:', e.message);
+  }
+
+  try {
+    improvementRoutes.registerImprovementRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Improvement routes skipped:', e.message);
   }
 
   router.get('/summary', async (req, res) => {

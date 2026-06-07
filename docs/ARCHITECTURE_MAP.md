@@ -47,6 +47,7 @@
 | `operator` | ❌ |
 | `knowledge` | ✅ |
 | `telegram-control` | ✅ |
+| `improvement` | ✅ |
 
 ## Backend Dashboard Routes
 
@@ -107,6 +108,15 @@
 - `/telegram-control/pending-proposals`
 - `/telegram-control/help`
 - `/telegram-control/validate-registry`
+- `/improvement`
+- `/improvement/feedback`
+- `/improvement/outcomes`
+- `/improvement/weaknesses`
+- `/improvement/patterns`
+- `/improvement/lessons`
+- `/improvement/regression-cases`
+- `/improvement/plans`
+- `/improvement/report`
 
 ## Phase 41 Portfolio Modules
 
@@ -697,6 +707,21 @@ Total known commands: 86 (Phase 42 added 12 knowledge commands: /knowledge, /kg,
 - `workspace-permissions.js`
 - `workspace-store.js`
 - `workspace-utils.js`
+
+### improvement/ (Phase 46)
+
+- `index.js`
+- `feedback-collector.js`
+- `outcome-collector.js`
+- `quality-signal-classifier.js`
+- `weakness-detector.js`
+- `pattern-analyzer.js`
+- `lesson-manager.js`
+- `regression-case-generator.js`
+- `improvement-plan-generator.js`
+- `next-agent-improvement-prompt.js`
+- `improvement-evaluation-gate.js`
+- `improvement-proposal-bridge.js`
 
 ## Documentation Files
 

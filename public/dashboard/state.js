@@ -322,6 +322,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['loop', 'ai-os-loop', 'daily-loop', 'ops-loop', 'autonomous-loop'],
     renderer: 'renderOperatingLoop'
+  },
+  'improvement': {
+    label: 'Improvement',
+    title: 'Continuous Improvement & Learning',
+    navIcon: '📈',
+    navVisible: true,
+    aliases: ['feedback', 'learning', 'continuous-improvement', 'lessons', 'quality-loop', 'regressions', 'ci'],
+    renderer: 'renderImprovement'
   }
 };
 

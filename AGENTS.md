@@ -61,7 +61,7 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator, portfolio, knowledge, telegram-control.
+deploy, cost, operator, portfolio, knowledge, telegram-control, improvement.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -134,6 +134,13 @@ Phase 44 Life OS rule:
 - No direct Gmail send, Calendar mutation, auto-approve, or auto-run.
 - Secret-like personal input must be rejected/redacted and must not be stored in docs, audit, dashboard, or Knowledge Graph.
 
+Phase 46 Continuous Improvement rule:
+- Continuous improvement only creates lessons, reports, test suggestions, improvement plans, and proposals.
+- No self-modify code from runtime.
+- Feedback/outcome/weakness/lesson storage must sanitize secrets.
+- Regression case generation does NOT auto-create test files.
+- Improvement plans requiring code changes must go through Evaluation v2 + executor proposal + approval.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js
@@ -162,6 +169,19 @@ Specific test files to run when relevant:
 - scratch/test-life-integration-proposal.js
 - scratch/test-lifeos-dashboard-api.js
 - scratch/test-phase44-lifeos-regression.js
+- scratch/test-feedback-collector.js
+- scratch/test-outcome-collector.js
+- scratch/test-quality-signal-classifier.js
+- scratch/test-weakness-detector.js
+- scratch/test-pattern-analyzer.js
+- scratch/test-lesson-manager.js
+- scratch/test-regression-case-generator.js
+- scratch/test-improvement-plan-generator.js
+- scratch/test-next-agent-improvement-prompt.js
+- scratch/test-improvement-evaluation-gate.js
+- scratch/test-improvement-proposal-bridge.js
+- scratch/test-improvement-dashboard-api.js
+- scratch/test-phase46-improvement-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

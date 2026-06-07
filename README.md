@@ -25,6 +25,7 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - **Multi-Agent Coding Workspace** untuk analisis coding request, change planning, risk review, test planning, Codex prompt generation, dan GitHub proposal (Phase 29)
 - **Production Observability + Incident Response Center** untuk production health, incident timeline, root cause hypothesis, response plan, dan repair/rollback proposal yang tetap wajib approval (Phase 37)
 - **Multi-Project Portfolio Manager** untuk meranking project aktif, mendeteksi blocker/stale work, membuat weekly/monthly portfolio plan, dan membuat executor proposal tanpa auto-run (Phase 41)
+- **Phase 46 — Continuous Improvement Engine + Feedback Learning Loop**: collect user feedback, capture workflow outcomes, detect weaknesses, analyze patterns, create lessons, generate regression case suggestions, create improvement plans, generate next-agent prompts, and evaluate all improvement proposals for safety — all without auto-execution or self-modification.
 
 ## Mulai Cepat
 

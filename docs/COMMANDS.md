@@ -504,3 +504,18 @@ Full documentation: `docs/TELEGRAM_COMMANDS.md` (complete reference), `docs/TELE
 - `berapa token hari ini?` → /usage
 - `kirim email ini` → blocked / strict proposal only
 - `selesaikan semua otomatis` → refused, offers approval-based plan
+
+## Phase 46 — Continuous Improvement / Feedback
+
+| Command | Fungsi |
+| --- | --- |
+| `/feedback` | Kirim feedback atau laporan masalah |
+| `/improve` | Saran perbaikan sistem |
+| `/lessons` | Lihat lessons learned |
+| `/weaknesses` | Lihat kelemahan sistem |
+| `/patterns` | Lihat pola masalah |
+| `/regression_suggestions` | Saran regression test |
+| `/improvement_plan` | Rencana perbaikan |
+| `/improvement_prompt` | Generate prompt perbaikan |
+| `/quality_report` | Laporan kualitas |
+| `/learning_report` | Laporan pembelajaran |

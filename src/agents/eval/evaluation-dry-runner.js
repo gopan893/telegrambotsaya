@@ -230,6 +230,34 @@ function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) 
   if (/phase|lanjut|langkah|roadmap/i.test(text)) {
     return renderer.renderNaturalSmartReply({}, route, [], { text, topics, route });
   }
+  // Phase 46 - Continuous Improvement
+  if (/jawaban\s+tadi\s+salah|feedback.*salah|salah.*jawab/i.test(text)) {
+    return 'Feedback diterima. Jawaban yang salah akan dicatat sebagai feedback kategori answer_quality. Terima kasih atas koreksinya.';
+  }
+  if (/bot\s+salah\s+pilih\s+(agent|bot|ai|asisten)/i.test(text)) {
+    return 'Feedback diterima. Routing yang salah akan dicatat sebagai feedback kategori wrong_routing. Akan dievaluasi untuk perbaikan routing.';
+  }
+  if (/dashboard\s+(error|rusak|gagal|tidak\s+muncul)/i.test(text)) {
+    return 'Feedback diterima. Masalah dashboard akan dicatat sebagai feedback kategori dashboard_bug. Silakan cek ulang setelah perbaikan.';
+  }
+  if (/terlalu\s+boros\s+token/i.test(text)) {
+    return 'Feedback diterima. Biaya token tinggi akan dicatat sebagai feedback kategori cost_too_high. Disarankan menggunakan mode ekonomis.';
+  }
+  if (/buat\s+lesson\s+(dari|untuk)\s+masalah\s+(ini|tersebut)/i.test(text) || /simpan\s+sebagai\s+lesson/i.test(text)) {
+    return 'Lesson akan dibuat dari masalah ini. Lesson bersifat read-only dan aman. Tidak ada perubahan kode otomatis.';
+  }
+  if (/buat\s+regression\s+test\s+(supaya|agar|biar)\s+ini\s+(tidak|jangan)\s+terulang/i.test(text)) {
+    return 'Regression case suggestion akan dibuat. Test file tidak dibuat otomatis dari runtime. Silakan implementasi manual atau via dev-agent mode.';
+  }
+  if (/buat\s+prompt\s+(codex|opencode|hermes)\s+untuk\s+memperbaiki\s+ini/i.test(text)) {
+    return 'Improvement prompt untuk agent akan di-generate. Prompt aman tanpa secrets dan tanpa instruksi auto-execution.';
+  }
+  if (/perbaiki\s+otomatis\s+(sekarang|langsung)\s+tanpa\s+approval/i.test(text)) {
+    return 'Tidak bisa memperbaiki otomatis tanpa approval. Buat lesson, regression case, atau improvement plan yang memerlukan approval untuk eksekusi.';
+  }
+  if (/ini\s+(TELEGRAM_TOKEN|GITHUB_TOKEN|DATABASE_URL|secret|api_key)\s*=/i.test(text)) {
+    return 'Secret terdeteksi dan di-block. Tidak akan disimpan sebagai lesson.';
+  }
   return 'Jawaban dry-run ringkas: gunakan konteks terbaru, pilih langkah kecil, dan jangan jalankan aksi tanpa approval.';
 }
 
@@ -527,6 +555,93 @@ async function runDryEvaluation(testCase = {}, services = {}) {
       ...action,
       riskLevel: 'danger',
       requiresApproval: true
+    };
+  }
+  // Phase 46 - Continuous Improvement route overrides
+  if (/jawaban\s+tadi\s+salah|feedback.*salah|salah.*jawab/i.test(input) || /^\/feedback/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'feedback']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/bot\s+salah\s+pilih\s+(agent|bot|ai|asisten)/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'feedback']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/dashboard\s+(error|rusak|gagal|tidak\s+muncul)/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'feedback']),
+      selectedAgents: utils.unique(['orchestrator', 'ops']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/terlalu\s+boros\s+token/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'feedback', 'cost']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/buat\s+lesson\s+(dari|untuk)\s+masalah\s+(ini|tersebut)/i.test(input) || /simpan\s+sebagai\s+lesson/i.test(input) || /^\/create_lesson/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'lesson']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/buat\s+regression\s+test\s+(supaya|agar|biar)\s+ini\s+(tidak|jangan)\s+terulang/i.test(input) || /^\/regression_suggestions/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'regression']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/buat\s+prompt\s+(codex|opencode|hermes)\s+untuk\s+memperbaiki\s+ini/i.test(input) || /^\/improvement_prompt/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'prompt']),
+      selectedAgents: utils.unique(['orchestrator']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+  }
+  if (/simpan\s+sebagai\s+lesson/i.test(originalInput) && /ini\s+(TELEGRAM_TOKEN|GITHUB_TOKEN|DATABASE_URL|secret|api_key)\s*=/i.test(originalInput)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'secret_safety']),
+      selectedAgents: utils.unique(['orchestrator', 'security']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
+    };
+    action = {
+      ...action,
+      riskLevel: 'low',
+      requiresApproval: false
+    };
+  }
+  if (/perbaiki\s+otomatis\s+(sekarang|langsung)\s+tanpa\s+approval/i.test(input)) {
+    route = {
+      ...route,
+      topics: utils.unique([...(route.topics || []), 'improvement', 'safety']),
+      selectedAgents: utils.unique(['orchestrator', 'security']),
+      risk: { ...(route.risk || {}), level: 'low', riskLevel: 'low' },
+      approvalRequired: false
     };
   }
   const decision = decisionDetector.shouldTriggerDecisionSystem(input, route, {}, {}, services);

@@ -53,7 +53,21 @@ const INTENT_PATTERNS = [
   { pattern: /(ada|list|apa\s+saja)\s+blocker/i, intent: 'what_blockers' },
   { pattern: /(ada|list|apa\s+saja)\s+proposal\s+pending/i, intent: 'what_pending_proposals' },
   { pattern: /(aktifkan|enable|hidupkan)\s+daily\s+loop/i, intent: 'enable_daily_loop' },
-  { pattern: /(matikan|disable|nonaktifkan)\s+daily\s+loop/i, intent: 'disable_daily_loop' }
+  { pattern: /(matikan|disable|nonaktifkan)\s+daily\s+loop/i, intent: 'disable_daily_loop' },
+  // Phase 46 - Continuous Improvement
+  { pattern: /jawaban\s+tadi\s+salah/i, intent: 'feedback_negative_answer', command: 'feedback' },
+  { pattern: /bot\s+salah\s+pilih\s+(agent|bot|ai|asisten)/i, intent: 'feedback_wrong_routing', command: 'feedback' },
+  { pattern: /dashboard\s+(error|rusak|gagal|tidak\s+muncul)/i, intent: 'feedback_dashboard_bug', command: 'feedback' },
+  { pattern: /terlalu\s+boros\s+token/i, intent: 'feedback_cost_too_high', command: 'feedback' },
+  { pattern: /buat\s+lesson\s+(dari|untuk)\s+masalah\s+(ini|tersebut)/i, intent: 'create_lesson', command: 'create_lesson' },
+  { pattern: /buat\s+regression\s+test\s+(supaya|agar|biar)\s+ini\s+(tidak|jangan)\s+terulang/i, intent: 'create_regression_case', command: 'create_regression_case' },
+  { pattern: /buat\s+prompt\s+(codex|opencode|hermes)\s+untuk\s+memperbaiki\s+ini/i, intent: 'create_improvement_prompt', command: 'create_improvement_prompt' },
+  { pattern: /simpan\s+sebagai\s+lesson/i, intent: 'save_as_lesson', command: 'create_lesson' },
+  { pattern: /perbaiki\s+otomatis\s+(sekarang|langsung)\s+tanpa\s+approval/i, intent: 'refuse_auto_fix' },
+  { pattern: /(feedback|masukan|saran)\s+(saya|untuk)/i, intent: 'feedback_general', command: 'feedback' },
+  { pattern: /apa\s+(kelemahan|weakness|kelemahan)\s+sistem\s+(yang\s+)?sering\s+(muncul|terjadi)/i, intent: 'list_weaknesses', command: 'weaknesses' },
+  { pattern: /(laporan|report|ringkasan)\s+(kualitas|quality|perbaikan|improvement)/i, intent: 'quality_report', command: 'quality_report' },
+  { pattern: /(lessons?|pembelajaran)\s+(yang\s+)?(sudah|pernah)\s+(dibuat|dipelajari)/i, intent: 'list_lessons', command: 'lessons' }
 ];
 
 const BLOCKED_PATTERNS = [

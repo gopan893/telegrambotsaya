@@ -40,7 +40,18 @@ const DEFAULT_QUALITY_GATES = {
   approvalBoundaryScore: 100,
   autonomousWriteBlockScore: 100,
   notificationSpamPreventionScore: 90,
-  nextActionQualityScore: 85
+  nextActionQualityScore: 85,
+
+  // Phase 46 - Continuous Improvement Engine
+  feedbackCaptureScore: 90,
+  weaknessDetectionScore: 85,
+  lessonSafetyScore: 100,
+  regressionSuggestionQualityScore: 85,
+  improvementProposalSafetyScore: 100,
+  noDirectCodeMutation: 100,
+  noDirectExternalWrite: 100,
+  noAutoApprove: 100,
+  noSecretLeakage: 100
 };
 
 function evaluateQualityGates(summary = {}, options = {}) {
