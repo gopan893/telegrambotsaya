@@ -6,6 +6,18 @@ const scoring = require('./agent-scoring');
 const responsePolicy = require('./response-policy');
 const { maskSecret, sanitizeSummary } = require('./agent-utils');
 
+let knowledgeDetector = null;
+try { knowledgeDetector = require('./agent-knowledge-detector'); } catch (_) { knowledgeDetector = null; }
+
+function detectKnowledgeSignal(text, services = {}) {
+  if (!knowledgeDetector || !text) return { hasKnowledgeIntent: false, knowledgeType: '' };
+  try {
+    return knowledgeDetector.detectKnowledgeIntent(text, { source: 'agent_router' });
+  } catch (_) {
+    return { hasKnowledgeIntent: false, knowledgeType: '' };
+  }
+}
+
 function routeMessage(message, context = {}, services = {}) {
   const text = typeof message === 'string' ? message : String(message?.text || '');
   const topics = classifier.classifyMessageTopic(text, context, services);
@@ -14,7 +26,10 @@ function routeMessage(message, context = {}, services = {}) {
   const language = classifier.detectLanguage(text);
   const intentSignals = classifier.extractIntentSignals(text);
   const risk = riskDetector.detectMessageRisk(text, topics, context, services);
-  const scoreContext = { ...context, topics, mentionedAgents, commandMode };
+  const knowledgeSignal = context.knowledgeIntent && typeof context.knowledgeIntent === 'object'
+    ? context.knowledgeIntent
+    : detectKnowledgeSignal(text, services);
+  const scoreContext = { ...context, topics, mentionedAgents, commandMode, knowledgeIntent: knowledgeSignal };
   const scores = scoring.scoreAgentsForMessage(text, topics, risk, scoreContext, services);
   const policy = responsePolicy.decideResponsePolicy(text, {
     ...scoreContext,

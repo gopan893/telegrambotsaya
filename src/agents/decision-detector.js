@@ -1,7 +1,7 @@
 'use strict';
 
 const SIMPLE_GREETING = /^(halo|hai|hi|hello|pagi|siang|malam|makasih|terima kasih|ok|oke)$/i;
-const DECISION_PATTERN = /\b(lebih\s+baik|pilih\s+yang\s+mana|pilih\s+mana|harus\s+pilih|sebaiknya|apakah\s+sebaiknya|mana\s+yang|paling\s+bagus|langkah\s+terbaik|tolong\s+nilai|nilai\s+keputusan|aman\s+tidak|lanjut\s+phase|phase\s+berapa|lanjut\s+atau|atau\s+langsung|vs|versus)\b/i;
+const DECISION_PATTERN = /\b(lebih\s+baik|pilih\s+yang\s+mana|pilih\s+mana|harus\s+pilih|sebaiknya|apakah\s+sebaiknya|mana\s+yang|paling\s+bagus|langkah\s+terbaik|tolong\s+nilai|nilai\s+keputusan|aman\s+tidak|lanjut\s+phase|phase\s+berapa|lanjut\s+atau|atau\s+langsung|vs|versus|kenapa\s+(?:kita\s+)?(?:tidak\s+)?(?:pakai|memakai|pilih)|kenapa\s+keputusan)\b/i;
 const COMPARISON_PATTERN = /\b(.+)\s+(?:atau|vs|versus)\s+(.+)\b/i;
 const RISK_DECISION_PATTERN = /\b(restore|import|overwrite|hapus|delete|drop|token|secret|permission|admin|backup|migrasi|external|shell|webhook)\b/i;
 const ACTION_DECISION_PATTERN = /\b(jalankan|eksekusi|run|approve|restore|import|deploy|ubah|update|kirim|hapus)\b/i;
@@ -35,15 +35,20 @@ function detectDecisionIntent(message = '', topics = [], context = {}) {
   const uncertainty = detectUncertaintySignal(text);
   const roadmap = /\b(phase|roadmap|lanjut|prioritas|langkah terbaik)\b/i.test(text);
   const explicit = DECISION_PATTERN.test(text);
+  const knowledgeRemember = /ingat\s+ini\s+sebagai\s+keputusan\s+project/i.test(text);
+  const knowledgeAsk = /(?:kenapa|apa)\s+(?:kita\s+)?(?:tidak\s+)?(?:pakai|memakai|keputusan)/i.test(text);
+  const knowledgeCleanup = /hapus\s+memory\s+yang\s+duplikat|cleanup\s+memory|deduplicat/i.test(text);
+  const knowledgeRead = /apa\s+yang\s+harus\s+opencode\s+baca|opencode\s+baca|apa\s+yang\s+harus\s+(?:aku|saya)\s+baca/i.test(text);
   const decisionTopic = topics.some(topic => ['decision', 'roadmap', 'planning', 'security', 'restore', 'executor'].includes(topic));
+  const suppressedByKnowledge = knowledgeCleanup || knowledgeRead;
   return {
-    decision: Boolean(explicit || comparison || risk || action || (uncertainty && (roadmap || decisionTopic))),
+    decision: !suppressedByKnowledge && Boolean(explicit || comparison || risk || action || knowledgeRemember || knowledgeAsk || (uncertainty && (roadmap || decisionTopic))),
     comparison,
     risk,
     action,
     uncertainty,
     roadmap,
-    reason: explicit ? 'explicit_decision_language' : (risk ? 'risk_decision' : (comparison ? 'comparison' : (uncertainty ? 'uncertainty_signal' : 'none')))
+    reason: suppressedByKnowledge ? 'knowledge_lookup_not_decision' : (knowledgeRemember ? 'knowledge_remember' : (knowledgeAsk ? 'knowledge_ask_decision' : (explicit ? 'explicit_decision_language' : (risk ? 'risk_decision' : (comparison ? 'comparison' : (uncertainty ? 'uncertainty_signal' : 'none'))))))
   };
 }
 

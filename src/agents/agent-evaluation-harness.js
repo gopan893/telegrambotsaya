@@ -6,6 +6,7 @@ const actionDetector = require('./agent-action-detector');
 const bridge = require('./agent-executor-bridge');
 const decisionDetector = require('./decision-detector');
 const delegationEngine = require('./delegation-engine');
+const dryRunner = require('./eval/evaluation-dry-runner');
 const utils = require('./delegation-utils');
 
 const AGENT_EVALUATION_CASES_KEY = 'agent_evaluation_cases';
@@ -15,7 +16,7 @@ async function listEvaluationCases(filters = {}, services = {}) {
   const custom = await utils.safeRead(AGENT_EVALUATION_CASES_KEY, [], services);
   return cases.listDefaultEvaluationCases(filters).concat(Array.isArray(custom) ? custom : [])
     .filter(item => !filters.category || item.category === filters.category)
-    .filter(item => !filters.id || item.id === filters.id);
+    .filter(item => !filters.id || item.id === item.id);
 }
 
 async function getEvaluationCase(caseId, services = {}) {
@@ -26,6 +27,27 @@ async function getEvaluationCase(caseId, services = {}) {
 async function runEvaluationCase(caseIdOrCase, services = {}) {
   const testCase = typeof caseIdOrCase === 'string' ? await getEvaluationCase(caseIdOrCase, services) : caseIdOrCase;
   if (!testCase) return { ok: false, reason: 'EVALUATION_CASE_NOT_FOUND' };
+  if (testCase.knowledgeCategory) {
+    const dry = await dryRunner.runDryEvaluation(testCase, services);
+    const result = {
+      ok: true,
+      id: utils.createId('eval_result'),
+      case: testCase,
+      input: dry.input || utils.sanitizeDelegationText(testCase.input || '', { max: 900 }),
+      route: dry.route,
+      selectedAgents: dry.selectedAgents || [],
+      riskLevel: dry.riskLevel || 'low',
+      approvalRequired: Boolean(dry.approvalRequired),
+      actionType: dry.actionType || '',
+      decisionTriggered: Boolean(dry.decisionTriggered),
+      delegationTriggered: Boolean(dry.delegationTriggered),
+      outputText: dry.outputText || '',
+      knowledgeSafety: { memoryBlocked: dry.outputText ? !/postgresql|pass@host|sk-|ghp_/i.test(dry.outputText) : true },
+      createdAt: utils.nowIso()
+    };
+    result.score = scorer.scoreEvaluationResult(result, testCase.scoringRubric || {});
+    return result;
+  }
   const input = utils.sanitizeDelegationText(testCase.input || '', { max: 900 });
   const route = require('./agent-router').routeMessage(input, {
     forceMode: 'natural_smart',
@@ -33,7 +55,7 @@ async function runEvaluationCase(caseIdOrCase, services = {}) {
   }, services);
   const action = actionDetector.detectActionIntent(input, { source: 'evaluation', workspaceId: 'default', userId: 'eval-user' }, services);
   const decision = decisionDetector.shouldTriggerDecisionSystem(input, route, {}, {}, services);
-  const delegation = delegationEngine.shouldTriggerDelegation(input, { workspaceId: 'default', userId: 'eval-user' }, route, {}, services);
+  const delegation = delegationEngine.shouldTriggerDelegation(input, { workspaceId: 'default', userId: 'eval-user' }, route, {}, {}, services);
   let proposalDryRun = null;
   if (action.hasActionIntent && testCase.dryRun !== false) {
     proposalDryRun = await bridge.createActionPlanFromText(input, {

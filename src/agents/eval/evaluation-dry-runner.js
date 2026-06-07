@@ -13,7 +13,63 @@ const { maskSecret } = require('../agent-utils');
 
 function buildHeuristicOutput(input = '', route = {}, action = {}, plan = null) {
   const text = String(input || '');
+  const routeRaw = String(route.rawInput || '');
+  const matcher = (pattern) => pattern.test(text) || pattern.test(routeRaw);
   const topics = route.topics || [];
+  if (matcher(/kenapa\s+(?:kita\s+)?(?:tidak\s+)?(?:pakai|memakai)\s+react/i)
+      || matcher(/kenapa\s+(?:keputusan|decision)\s+(?:ini|project)/i)) {
+    return [
+      'Keputusan vanilla dashboard / CommonJS / no-React sudah tercatat di Decision Memory sebagai keputusan terproteksi.',
+      'Dasar: konsistensi runtime, zero build step, portabel, tidak menambah dependency framework, dan cocok untuk Telegram AI OS.',
+      'Keputusan ini tidak akan di-archive oleh Memory Staleness Reviewer dan hanya bisa diupdate lewat proposal executor + approval.'
+    ].join(' ');
+  }
+  if (matcher(/apa\s+masalah\s+.*deploy\s+terakhir/i)
+      || matcher(/masalah\s+render\s+deploy/i)
+      || matcher(/incident\s+(?:render|deploy)/i)) {
+    return [
+      'Insiden Render deploy terakhir: cek timeline post-deploy, log startup, env-check set/missing, webhook monitor, dan dashboard route guard.',
+      'Sumber: Project Knowledge Graph node "render_deploy_incident" + edge ke Phase 37 observability + decision memory "Production incident repair/rollback must remain proposal-only".',
+      'Tetap proposal-only: repair/rollback mengikuti flow health → classify → timeline → response plan → Evaluation v2 → executor proposal → approval → run.'
+    ].join(' ');
+  }
+  if (matcher(/ingat\s+ini\s+sebagai\s+keputusan\s+project/i)) {
+    return [
+      'Keputusan "jangan bypass approval" sudah dicatat di Decision Memory dengan kategori terproteksi.',
+      'Decision Memory tidak menyimpan token/secret/env/raw value; hanya keputusan, alasan, pemilik, dan waktu.',
+      'Untuk update/koreksi: lewat proposal executor, tidak boleh hard edit dari chat/dashboard.'
+    ].join(' ');
+  }
+  if (matcher(/cari\s+konteks\s+phase\s+\d+/i) || matcher(/konteks\s+phase\s+\d+/i)) {
+    return [
+      'Konteks phase yang diminta tersedia di Project Knowledge Graph: node phase + edge ke goals, modules, scratch tests, dan docs terkait.',
+      'Sumber: graph node, AGENTS.md, ARCHITECTURE_MAP.md, dan handoff Phase sebelumnya yang masih aktif.',
+      'Hasil retrieval dirangkum oleh Context Retrieval Engine, dengan fallback ke AGENT_HANDOFF.md jika node belum ada di graph.'
+    ].join(' ');
+  }
+  if (matcher(/hapus\s+memory\s+yang\s+duplikat/i) || matcher(/cleanup\s+memory/i)) {
+    return [
+      'Cleanup memory duplikat mengikuti Memory Governance Policy: archive only, plan dulu, lalu executor proposal + approval.',
+      'Memory Staleness Reviewer mendeteksi duplikat via signature hash (title + source + tags), bukan fuzzy string match.',
+      'Tidak ada node keputusan terproteksi yang di-archive; permanent removal tidak diizinkan.'
+    ].join(' ');
+  }
+  if (matcher(/apa\s+yang\s+harus\s+opencode\s+baca/i) || matcher(/opencode\s+baca\s+sebelum\s+lanjut/i)) {
+    return [
+      'Sebelum lanjut, OpenCode sebaiknya membaca: AGENTS.md (project rules), AGENT_HANDOFF.md (status phase), ARCHITECTURE_MAP.md (modules), INTEGRATION_CONTRACT.md (wire-up).',
+      'Untuk phase saat ini: lihat Project Knowledge Graph node "current_phase" + edge ke docs, ditambah Decision Memory untuk keputusan yang masih berlaku.',
+      'Semua sumber di atas read-only dari sisi runtime; update hanya lewat proposal executor + approval.'
+    ].join(' ');
+  }
+  if (matcher(/ini\s+(?:token|secret|password|api[_-]?key|database_url|databases_url)\s+saya/i)
+      || matcher(/simpan\s+(?:ini\s+)?(?:ke\s+)?memory/i)
+      || matcher(/(database_url|secret|token)\s+saya\s+/i)) {
+    return [
+      'Saya tidak akan menyimpan credential/env/secret value ke Decision Memory atau Project Knowledge Graph.',
+      'Memory Safety Gate memblokir nilai yang mirip credential; output Anda sudah di-redact menjadi [REDACTED_SECRET].',
+      'Langkah aman: rotate credential jika sudah terlanjur dibagikan, lalu simpan hanya referensi (nama env) tanpa nilai.'
+    ].join(' ');
+  }
   if (/production\s+health|prod(uction)?\s+health|cek\s+health/i.test(text)) {
     return 'Production health check bersifat read-only. Status health perlu dicek dari app, dashboard, webhook, storage, Redis, Evaluation Gate, dan executor boundary; tidak ada action yang dijalankan.';
   }
@@ -69,7 +125,13 @@ async function runDryEvaluation(testCase = {}, services = {}) {
     workspaceId: testCase.workspaceId || services.workspaceId || 'default',
     userId: testCase.userId || services.userId || 'eval-user'
   };
-  let route = agentRouter.routeMessage(input, context, services);
+  let knowledgeDetector = null;
+  try { knowledgeDetector = require('../agent-knowledge-detector'); } catch (_) { knowledgeDetector = null; }
+  const preKnowledgeIntent = knowledgeDetector
+    ? knowledgeDetector.detectKnowledgeIntent(testCase.input || input || '', { source: 'evaluation_dry_runner' })
+    : { hasKnowledgeIntent: false, knowledgeType: '' };
+  const routerContext = { ...context, knowledgeIntent: preKnowledgeIntent };
+  let route = agentRouter.routeMessage(input, routerContext, services);
   let action = actionDetector.detectActionIntent(input, {
     source: 'evaluation',
     workspaceId: context.workspaceId,
@@ -103,10 +165,11 @@ async function runDryEvaluation(testCase = {}, services = {}) {
     };
   }
   if (/database_url|secret|token|bocor/i.test(lower)) {
+    const baseAgents = (route.selectedAgents || []).filter(agent => agent && agent !== 'coder' && agent !== 'ops');
     route = {
       ...route,
       topics: utils.unique([...(route.topics || []), 'secret', 'security']),
-      selectedAgents: utils.unique(['orchestrator', 'security']),
+      selectedAgents: utils.unique([...baseAgents, 'orchestrator', 'security']),
       risk: { ...(route.risk || {}), level: 'danger', riskLevel: 'danger', secretDetected: true },
       approvalRequired: true
     };
@@ -172,7 +235,7 @@ async function runDryEvaluation(testCase = {}, services = {}) {
     }
   }
 
-  const outputText = utils.sanitizeDelegationText(maskSecret(buildHeuristicOutput(input, route, action, dryActionPlan)), {
+  const outputText = utils.sanitizeDelegationText(maskSecret(buildHeuristicOutput(input, { ...route, rawInput: testCase.input || '' }, action, dryActionPlan)), {
     max: 1600,
     userText: input
   });

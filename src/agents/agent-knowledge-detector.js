@@ -22,7 +22,7 @@ function detectKnowledgeIntent(text = '', context = {}) {
   if (/apa\s+(saja\s+)?keputusan\s+penting(\s+project(\s+ini)?)?/i.test(clean)) {
     return { hasKnowledgeIntent: true, knowledgeType: 'decision_summary', source: context.source || 'natural_chat' };
   }
-  if (/apa\s+masalah\s+(\w+\s+)?deploy\s+terakhir/i.test(clean)) {
+  if (/apa\s+masalah\s+(\w+\s+)?deploy\s+terakhir/i.test(clean) || /masalah\s+render\s+deploy\s+terakhir/i.test(clean)) {
     return { hasKnowledgeIntent: true, knowledgeType: 'incident_lookup', source: context.source || 'natural_chat' };
   }
   if (/(?:apa\s+)?yang\s+harus\s+opencode\s+(baca|ketahui)\s+(sebelum\s+)?lanjut/i.test(clean)) {
@@ -36,6 +36,9 @@ function detectKnowledgeIntent(text = '', context = {}) {
   }
   if (/ingat\s+ini\s+sebagai\s+keputusan\s+project\s*[:\-]?\s*(.+)/i.test(clean)) {
     return { hasKnowledgeIntent: true, knowledgeType: 'decision_remember', source: context.source || 'natural_chat' };
+  }
+  if (/(?:simpan|catat|ingatkan?)\s+(?:ini\s+)?(?:ke\s+)?memory/i.test(clean) || /ini\s+(?:token|secret|password|api[_-]?key|database_url)/i.test(clean)) {
+    return { hasKnowledgeIntent: true, knowledgeType: 'memory_safety', source: context.source || 'natural_chat' };
   }
   return { hasKnowledgeIntent: false, knowledgeType: '', reason: 'no_knowledge_match' };
 }

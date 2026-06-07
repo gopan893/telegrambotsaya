@@ -15,8 +15,23 @@ function decideResponsePolicy(message, context = {}, scores = [], risk = {}, ser
   let approvalRequired = Boolean(risk.writeOrExternalIntent || risk.dangerIntent || risk.secretDetected);
 
   const personalDomain = classifier.isPersonalDomainMessage(message, topics);
+  const knowledgeIntent = context.knowledgeIntent || null;
 
-  if (topics.includes('casual')) {
+  if (knowledgeIntent && knowledgeIntent.hasKnowledgeIntent) {
+    mode = 'knowledge_lookup';
+    const knowledgeType = knowledgeIntent.knowledgeType || '';
+    const knowledgeAgents = ['orchestrator', 'memory', 'reflection'];
+    if (['safety', 'memory_safety', 'decision_explain', 'decision_remember', 'memory_cleanup', 'cleanup'].includes(knowledgeType)) {
+      knowledgeAgents.push('security');
+    }
+    if (['phase_context', 'incident_lookup', 'handoff_context'].includes(knowledgeType)) {
+      knowledgeAgents.push('planner');
+    }
+    selectedAgents = unique(knowledgeAgents);
+    if (selectedAgents.length > maxVisibleReplies) maxVisibleReplies = Math.max(maxVisibleReplies, selectedAgents.length);
+    requireOrchestratorSummary = true;
+    if (['memory_cleanup', 'cleanup'].includes(knowledgeType)) approvalRequired = true;
+  } else if (topics.includes('casual')) {
     mode = 'normal';
     selectedAgents = ['orchestrator'];
   } else if (personalDomain || topics.includes('emotional')) {
@@ -99,6 +114,7 @@ function buildPolicyReason(mode, topics = [], risk = {}) {
   if (mode === 'risk_review') return 'high risk message requires security review';
   if (mode === 'quiet') return 'group is in quiet mode';
   if (mode === 'council' || mode === 'debate' || mode === 'allagents') return `${mode} override requested`;
+  if (mode === 'knowledge_lookup') return 'project knowledge graph / memory lookup (Phase 42)';
   return `natural smart routing for topics: ${topics.join(', ') || 'unknown'}`;
 }
 
