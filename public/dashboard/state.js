@@ -339,7 +339,6 @@ const DASHBOARD_TABS = {
     aliases: ['policy', 'policies', 'safety', 'capability', 'capability-center', 'control-policy', 'kebijakan', 'tata-kelola'],
     renderer: 'renderGovernance'
   }
-  }
 };
 
 const DashboardState = (() => {
