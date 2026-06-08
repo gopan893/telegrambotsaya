@@ -61,7 +61,7 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance.
+deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -141,6 +141,18 @@ Phase 46 Continuous Improvement rule:
 - Regression case generation does NOT auto-create test files.
 - Improvement plans requiring code changes must go through Evaluation v2 + executor proposal + approval.
 
+Phase 48 Security Hardening rule:
+- Security audit modules scan for secret leakage, env drift, permission issues, capability risks, and approval bypass paths.
+- Secret surface scanner must never display raw secret values — only redacted samples.
+- Credential rotation planner creates manual checklists only — no automatic rotation.
+- Red-team simulator evaluates prompt injection, approval bypass, secret exfiltration, and other attack vectors.
+- Prompt injection tester detects 16+ injection patterns and returns defense responses.
+- Security scorecard calculates 6 sub-scores (secret, env, permission, capability, approval safety, red-team).
+- Security reports and findings must never contain raw env/secret values.
+- All security proposals require Evaluation v2 + executor approval before any write/external/danger action.
+- Security audit runs are in-memory (acceptable for Phase 48; Postgres persistence deferred).
+- Security dashboard tab must not fallback to System Overview.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js
@@ -194,6 +206,19 @@ Specific test files to run when relevant:
 - scratch/test-governance-decision-engine.js
 - scratch/test-governance-dashboard-api.js
 - scratch/test-phase47-governance-regression.js
+- scratch/test-secret-surface-scanner.js
+- scratch/test-secret-finding-classifier.js
+- scratch/test-credential-rotation-planner.js
+- scratch/test-env-drift-detector.js
+- scratch/test-permission-auditor.js
+- scratch/test-capability-risk-auditor.js
+- scratch/test-approval-bypass-auditor.js
+- scratch/test-redteam-simulator.js
+- scratch/test-prompt-injection-tester.js
+- scratch/test-security-scorecard.js
+- scratch/test-security-proposal-bridge.js
+- scratch/test-security-dashboard-api.js
+- scratch/test-phase48-security-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

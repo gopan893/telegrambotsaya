@@ -26,6 +26,8 @@ Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian
 - **Production Observability + Incident Response Center** untuk production health, incident timeline, root cause hypothesis, response plan, dan repair/rollback proposal yang tetap wajib approval (Phase 37)
 - **Multi-Project Portfolio Manager** untuk meranking project aktif, mendeteksi blocker/stale work, membuat weekly/monthly portfolio plan, dan membuat executor proposal tanpa auto-run (Phase 41)
 - **Phase 46 — Continuous Improvement Engine + Feedback Learning Loop**: collect user feedback, capture workflow outcomes, detect weaknesses, analyze patterns, create lessons, generate regression case suggestions, create improvement plans, generate next-agent prompts, and evaluate all improvement proposals for safety — all without auto-execution or self-modification.
+- **Phase 47 — Unified Governance Policy Engine + Capability Control Center**: central safety rules, capability registry with 54 capabilities across 27 modules, capability contracts, unified permission/risk/secret/approval/evaluation/cost engine, action policy simulator, governance decision engine, and governance audit — all without auto-execution.
+- **Phase 48 — Security Hardening + Secrets Rotation + Red-Team Safety Audit**: secret surface scanner, secret finding classifier, credential rotation planner (manual only), env drift detector, permission auditor, capability risk auditor, approval bypass auditor, red-team simulator, prompt injection tester, security scorecard, security reports, and security proposal bridge — all without auto-rotation or auto-execution.
 
 ## Mulai Cepat
 

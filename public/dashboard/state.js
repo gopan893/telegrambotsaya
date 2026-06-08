@@ -338,6 +338,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['policy', 'policies', 'safety', 'capability', 'capability-center', 'control-policy', 'kebijakan', 'tata-kelola'],
     renderer: 'renderGovernance'
+  },
+  security: {
+    label: 'Security',
+    title: 'Security Hardening & Red-Team Audit',
+    navIcon: '🔐',
+    navVisible: true,
+    aliases: ['security-center', 'secrets', 'redteam', 'security-audit', 'hardening', 'keamanan'],
+    renderer: 'renderSecurity'
   }
 };
 

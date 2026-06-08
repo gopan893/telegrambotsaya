@@ -1067,3 +1067,38 @@ Dashboard:
 
 Command coverage: ~250 commands across 20 categories.
 Security: secret pattern detection, permission gating, rate limiting, audit logging, no auto-approve, no auto-run.
+
+## Phase 48 Security Hardening & Red-Team Audit
+
+Security modules (`src/security/`):
+
+| File | Role |
+|---|---|
+| `security-audit-store.js` | Audit run model and storage (8 types) |
+| `secret-surface-scanner.js` | Scan 10+ surfaces for 28 secret patterns |
+| `secret-finding-classifier.js` | Classify findings, estimate risk, redact |
+| `credential-rotation-planner.js` | Rotation plans for 7 credential types (manual only) |
+| `env-drift-detector.js` | Check 50+ expected env vars, detect dangerous flags, 10 common typos |
+| `permission-auditor.js` | Audit owner/admin/workspace/dashboard/executor/LifeOS permissions |
+| `capability-risk-auditor.js` | Audit dangerous/external write/disabled capabilities |
+| `approval-bypass-auditor.js` | Audit 9 approval bypass paths |
+| `redteam-simulator.js` | 13 red-team test cases across 10 categories |
+| `prompt-injection-tester.js` | 16 injection patterns, defense responses |
+| `security-scorecard.js` | Scorecard with 6 sub-scores (secret, env, permission, capability, approval safety, red-team) |
+| `security-report-generator.js` | Generate 7 report types |
+| `security-proposal-bridge.js` | Create repair plans and executor proposals |
+| `security-utils.js` | Redaction, sanitization, formatting |
+
+Dashboard:
+- Tab id: `security`
+- Renderer: `window.renderSecurity`
+- Frontend: `public/dashboard/security.js`
+- Backend route: `src/dashboard/security-routes.js`
+- API base: `/api/dashboard/security`
+
+Security rules:
+- No raw secrets displayed in any output.
+- Credential rotation is manual checklist only — no automatic rotation.
+- All security proposals require Evaluation v2 + executor approval.
+- Red-team cases are simulated, no direct actions executed.
+- Scorecard drives overall security posture visibility.

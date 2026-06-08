@@ -230,3 +230,134 @@ Phase 47 — Unified Governance Policy Engine + Capability Control Center
 
 ### Recommended Next Branch/Commit
 Commit message: `governance: add unified policy and capability control center`
+
+---
+
+### Agent
+OpenCode / Hermes
+
+### Date
+2026-06-09
+
+### Current Task
+Phase 48 — Security Hardening + Secrets Rotation + Red-Team Safety Audit
+
+### Files Changed
+**New Files (src/security/):**
+- `security-audit-store.js` — audit run model and storage
+- `secret-surface-scanner.js` — scan 10+ surfaces for secret leakage
+- `secret-finding-classifier.js` — classify, estimate risk, redact findings
+- `credential-rotation-planner.js` — rotation plans for 7 credential types (manual only)
+- `env-drift-detector.js` — check 50+ expected env vars, detect dangerous flags, typos
+- `permission-auditor.js` — audit owner/admin/workspace/dashboard/executor/LifeOS permissions
+- `capability-risk-auditor.js` — audit dangerous/external write/disabled capabilities
+- `approval-bypass-auditor.js` — audit 9 approval bypass paths
+- `redteam-simulator.js` — 13 red-team test cases, suite runner
+- `prompt-injection-tester.js` — 16 injection patterns, defense responses
+- `security-scorecard.js` — calculate scorecard with 6 sub-scores
+- `security-report-generator.js` — generate 7 report types
+- `security-proposal-bridge.js` — create repair plans and executor proposals
+- `security-utils.js` — redaction, sanitization, formatting helpers
+- `index.js` — exports all modules
+
+**New Files (src/dashboard/):**
+- `security-routes.js` — 14 protected API endpoints for security center
+
+**New File (public/dashboard/):**
+- `security.js` — Security Center tab with scorecard, findings, drills, reports
+
+**New Docs:**
+- `docs/SECURITY_HARDENING.md`
+- `docs/SECRETS_ROTATION_PLANNER.md`
+- `docs/RED_TEAM_SAFETY_AUDIT.md`
+- `docs/APPROVAL_BYPASS_AUDIT.md`
+- `docs/ENV_DRIFT_DETECTION.md`
+- `docs/SECURITY_DASHBOARD.md`
+
+**New Test Files:**
+- `scratch/test-secret-surface-scanner.js` — 19 PASS
+- `scratch/test-secret-finding-classifier.js` — 19 PASS
+- `scratch/test-credential-rotation-planner.js` — 21 PASS
+- `scratch/test-env-drift-detector.js` — 15 PASS
+- `scratch/test-permission-auditor.js` — 17 PASS
+- `scratch/test-capability-risk-auditor.js` — 14 PASS
+- `scratch/test-approval-bypass-auditor.js` — 15 PASS
+- `scratch/test-redteam-simulator.js` — 78 PASS
+- `scratch/test-prompt-injection-tester.js` — 16 PASS
+- `scratch/test-security-scorecard.js` — 20 PASS
+- `scratch/test-security-proposal-bridge.js` — 16 PASS
+- `scratch/test-security-dashboard-api.js` — 20 PASS
+- `scratch/test-phase48-security-regression.js` — 33 PASS
+
+**Modified Files:**
+- `src/dashboard/index.js` — added securityRoutes export
+- `src/dashboard/dashboard-routes.js` — registers security routes
+- `public/dashboard/index.html` — added security nav item + script
+- `public/dashboard/state.js` — added security tab with aliases
+- `AGENTS.md` — added security to known tabs, added Phase 48 rules
+- `docs/ARCHITECTURE_MAP.md` — added security tab, routes, modules
+- `docs/COMMANDS.md` — added Phase 48 command coverage
+- `docs/INTEGRATION_CONTRACT.md` — added Security Center contract
+- `docs/TESTING.md` — added Security Center test section
+- `README.md` — added Phase 48 summary
+- `docs/AGENT_HANDOFF.md` — updated this handoff
+
+### What Was Completed
+- Security audit store with 8 audit types (full, secret scan, env drift, permission, capability, bypass, red-team, rotation planning)
+- Secret surface scanner scanning 10+ surfaces with 28 patterns (critical/high severity)
+- Secret finding classifier with severity classification, risk estimation, redacted display
+- Credential rotation planner for 7 credential types (Telegram, GitHub, DB, Render, Google, Cloudflare, generic)
+- Env drift detector checking 50+ expected env vars, dangerous flags (AUTO_APPROVE, AUTO_RUN, SHELL_EXECUTOR), and 10 common typos
+- Permission auditor checking owner/admin/workspace/dashboard/executor/LifeOS permissions
+- Capability risk auditor checking 17 dangerous and 9 external write capabilities against governance registry
+- Approval bypass auditor checking 9 risky paths (all expected blocked/proposal-only)
+- Red-team simulator with 13 default test cases across 10 categories
+- Prompt injection tester with 16 injection patterns and defense responses
+- Security scorecard with 6 sub-scores and overall rating
+- Security report generator for 6 report types
+- Security proposal bridge for repair plans and executor proposals
+- Dashboard Security Center with full audit, secret scan, env drift, permission audit, capability audit, bypass audit, red-team, scorecard, reports
+- 13 test files with 303 total assertions (all PASS)
+- Quality gates: secretProtectionScore=100, approvalBypassDefenseScore=100, promptInjectionDefenseScore=100, redTeamSafetyScore=100, no secret leakage, no direct external write, no auto-approve, no shell executor
+
+### What Is Unfinished
+- Wire security findings into operating loop daily score
+- Wire security scorecard into continuous improvement engine
+- Add security evaluation cases to Evaluation Harness v2
+- Postgres persistence for audit runs, findings, and plans
+- Real integration testing with Telegram API on Render
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `node --check telebot.js` | PASS |
+| `test-secret-surface-scanner.js` | 19 PASS |
+| `test-secret-finding-classifier.js` | 19 PASS |
+| `test-credential-rotation-planner.js` | 21 PASS |
+| `test-env-drift-detector.js` | 15 PASS |
+| `test-permission-auditor.js` | 17 PASS |
+| `test-capability-risk-auditor.js` | 14 PASS |
+| `test-approval-bypass-auditor.js` | 15 PASS |
+| `test-redteam-simulator.js` | 78 PASS |
+| `test-prompt-injection-tester.js` | 16 PASS |
+| `test-security-scorecard.js` | 20 PASS |
+| `test-security-proposal-bridge.js` | 16 PASS |
+| `test-security-dashboard-api.js` | 20 PASS |
+| `test-phase48-security-regression.js` | 33 PASS |
+
+### Remaining Risks
+- Security modules are standalone; runtime wiring pending
+- In-memory audit store resets on restart
+- Secret scanner only checks governance audit logs; real surfaces need runtime access
+- Credential rotation is manual-checklist only; no automatic rotation
+
+### Next Safe Task
+```
+1. Wire security scorecard into operating loop daily health check
+2. Wire red-team/prompt injection findings into improvement engine
+3. Add security evaluation cases to Evaluation Harness v2
+4. Deploy to Render and run manual test sequence
+```
+
+### Recommended Next Branch/Commit
+Commit message: `security: add hardening audit and rotation planner`

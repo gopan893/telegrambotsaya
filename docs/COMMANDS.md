@@ -519,3 +519,36 @@ Full documentation: `docs/TELEGRAM_COMMANDS.md` (complete reference), `docs/TELE
 | `/improvement_prompt` | Generate prompt perbaikan |
 | `/quality_report` | Laporan kualitas |
 | `/learning_report` | Laporan pembelajaran |
+
+## Phase 48 — Security Hardening & Red-Team Audit
+
+Implementation: Phase 48.
+
+Security command registration (planned):
+| Command | Fungsi |
+| --- | --- |
+| `/security` | Security center menu. |
+| `/securitycheck` | Ringkasan keamanan umum. |
+| `/secretscan` | Scan secret leakage di permukaan aman. |
+| `/envdrift` | Cek environment drift (nama env saja). |
+| `/permissionaudit` | Audit permission owner/admin. |
+| `/capabilityaudit` | Audit capability berbahaya. |
+| `/bypassaudit` | Audit approval bypass paths. |
+| `/redteam` | Jalankan simulasi red-team. |
+| `/injectiontest` | Tes prompt injection detection. |
+| `/rotationplan` | Buat rotation plan manual. |
+| `/securityscore` | Tampilkan security scorecard. |
+| `/securityreport` | Generate laporan keamanan. |
+| `/securityproposal` | Buat proposal perbaikan keamanan. |
+
+Natural chat phrases:
+- "cek apakah ada secret bocor" → secret scan summary
+- "audit permission bot" → permission audit summary
+- "apakah env saya sudah benar?" → env drift summary
+- "simulasikan prompt injection" → red-team summary
+- "cek apakah deploy bisa bypass approval" → bypass audit summary
+- "buat rotation plan untuk GitHub token" → rotation plan checklist
+- "apa security score sekarang?" → security scorecard
+- "tampilkan DATABASE_URL" → refused/redacted
+
+All security findings are redacted. No secrets displayed. Credential rotation is manual checklist only.

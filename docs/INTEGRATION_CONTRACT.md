@@ -204,3 +204,24 @@ Feedback/improvement flow MUST follow:
 
 Improvement actions are read-only by default.
 Code changes require the full dry-run → Evaluation v2 → executor proposal → approval → run pipeline.
+
+## Security / Hardening Contract (Phase 48)
+
+Security audit flow MUST follow:
+1. Audit triggered (manual, scheduled, or on-demand).
+2. Secret scanner checks surfaces (audit logs, memory, proposals, docs, etc.).
+3. Findings classified and redacted — no raw secrets in any output.
+4. Env drift detector checks expected env names vs current status (names only, never values).
+5. Permission auditor checks owner/admin/workspace roles.
+6. Capability risk auditor checks dangerous capabilities against governance registry.
+7. Approval bypass auditor validates all external/write/danger paths are blocked.
+8. Red-team simulator runs attack cases (prompt injection, secret exfiltration, etc.).
+9. Security scorecard calculated from all audit results.
+10. Rotation plans are manual checklists only — no automatic credential rotation.
+11. Repair proposals require Evaluation v2 + executor approval before execution.
+
+Dashboard contract:
+- `#security` is a known dashboard tab and must not fallback to Overview.
+- `/api/dashboard/security/*` routes are protected and sanitized.
+- No secret values are exposed in security dashboard, findings, reports, or scorecard.
+- Credential rotation plans display system names and manual steps only — no secret values.

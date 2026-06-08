@@ -83,6 +83,13 @@ try {
   governanceRoutes = { registerGovernanceRoutes: () => {} };
 }
 
+let securityRoutes;
+try {
+  securityRoutes = require('./security-routes');
+} catch (e) {
+  securityRoutes = { registerSecurityRoutes: () => {} };
+}
+
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
   registerCodingWorkspaceRoutes: (...args) => dashboardRoutes.registerCodingWorkspaceRoutes(...args),

@@ -239,3 +239,29 @@ node --check src/dashboard/improvement-routes.js
 node --check src/dashboard/dashboard-routes.js
 node --check public/dashboard/improvement.js
 ```
+
+## Phase 48 Security Hardening Tests
+
+```bash
+node scratch/test-secret-surface-scanner.js
+node scratch/test-secret-finding-classifier.js
+node scratch/test-credential-rotation-planner.js
+node scratch/test-env-drift-detector.js
+node scratch/test-permission-auditor.js
+node scratch/test-capability-risk-auditor.js
+node scratch/test-approval-bypass-auditor.js
+node scratch/test-redteam-simulator.js
+node scratch/test-prompt-injection-tester.js
+node scratch/test-security-scorecard.js
+node scratch/test-security-proposal-bridge.js
+node scratch/test-security-dashboard-api.js
+node scratch/test-phase48-security-regression.js
+```
+
+Also verify:
+```bash
+node --check src/security/index.js
+node --check src/dashboard/security-routes.js
+node --check src/dashboard/dashboard-routes.js
+node --check public/dashboard/security.js
+```
