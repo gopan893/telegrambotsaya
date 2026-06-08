@@ -61,7 +61,7 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator, portfolio, knowledge, telegram-control, improvement.
+deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -182,6 +182,18 @@ Specific test files to run when relevant:
 - scratch/test-improvement-proposal-bridge.js
 - scratch/test-improvement-dashboard-api.js
 - scratch/test-phase46-improvement-regression.js
+- scratch/test-capability-registry.js
+- scratch/test-capability-contracts.js
+- scratch/test-unified-permission-engine.js
+- scratch/test-unified-risk-engine.js
+- scratch/test-unified-secret-guard.js
+- scratch/test-unified-approval-policy.js
+- scratch/test-unified-evaluation-policy.js
+- scratch/test-unified-cost-policy.js
+- scratch/test-action-policy-simulator.js
+- scratch/test-governance-decision-engine.js
+- scratch/test-governance-dashboard-api.js
+- scratch/test-phase47-governance-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

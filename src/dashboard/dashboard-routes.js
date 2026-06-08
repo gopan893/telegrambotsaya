@@ -476,6 +476,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Improvement routes skipped:', e.message);
   }
 
+  try {
+    const governanceRoutes = require('./governance-routes');
+    governanceRoutes.registerGovernanceRoutes(app, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Governance routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

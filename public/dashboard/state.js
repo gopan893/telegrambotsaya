@@ -330,6 +330,15 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['feedback', 'learning', 'continuous-improvement', 'lessons', 'quality-loop', 'regressions', 'ci'],
     renderer: 'renderImprovement'
+  },
+  governance: {
+    label: 'Governance',
+    title: 'Unified Governance Policy & Capability Control',
+    navIcon: '🛡️',
+    navVisible: true,
+    aliases: ['policy', 'policies', 'safety', 'capability', 'capability-center', 'control-policy', 'kebijakan', 'tata-kelola'],
+    renderer: 'renderGovernance'
+  }
   }
 };
 
