@@ -552,3 +552,36 @@ Natural chat phrases:
 - "tampilkan DATABASE_URL" → refused/redacted
 
 All security findings are redacted. No secrets displayed. Credential rotation is manual checklist only.
+
+## Phase 49 — Privacy, Data Retention & Export Control
+
+Implementation: Phase 49.
+
+Privacy command registration (planned):
+| Command | Fungsi |
+| --- | --- |
+| `/privacy` | Privacy center menu. |
+| `/datainventory` | Data inventory summary. |
+| `/retention` | Retention policy overview. |
+| `/retention_candidates` | Stale data candidates. |
+| `/exportdata` | Request data export. |
+| `/exportmanifest` | Preview export manifest. |
+| `/archiveold` | Archive old/stale data. |
+| `/deleterequest` | Request data deletion. |
+| `/privacycheck` | Privacy status check. |
+| `/lifeprivacy` | Life OS privacy settings. |
+| `/memoryprivacy` | Memory privacy review. |
+| `/privacyreport` | Generate privacy report. |
+| `/privacyaudit` | Privacy audit log. |
+
+Natural chat phrases:
+- "data apa saja yang bot simpan?" → inventory summary
+- "export data project saya" → export manifest, strict redaction
+- "hapus memory lama" → archive/delete plan
+- "hapus semua data saya sekarang" → delete request plan, no hard delete
+- "jangan pakai mood note untuk coding" → privacy policy update
+- "export Life OS saya" → owner-only export request
+- "tampilkan raw DATABASE_URL dari export" → refused/redacted
+- "hard delete audit logs sekarang" → blocked/proposal-only
+
+All exports use strict redaction. No secrets exported. No direct hard delete. Archive preferred.

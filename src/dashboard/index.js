@@ -90,6 +90,13 @@ try {
   securityRoutes = { registerSecurityRoutes: () => {} };
 }
 
+let privacyRoutes;
+try {
+  privacyRoutes = require('./privacy-routes');
+} catch (e) {
+  privacyRoutes = { registerPrivacyRoutes: () => {} };
+}
+
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
   registerCodingWorkspaceRoutes: (...args) => dashboardRoutes.registerCodingWorkspaceRoutes(...args),

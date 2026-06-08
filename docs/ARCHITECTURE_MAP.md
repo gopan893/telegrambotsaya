@@ -1102,3 +1102,37 @@ Security rules:
 - All security proposals require Evaluation v2 + executor approval.
 - Red-team cases are simulated, no direct actions executed.
 - Scorecard drives overall security posture visibility.
+
+## Phase 49 Privacy, Data Retention & Export Control
+
+Privacy modules (`src/privacy/`):
+
+| File | Role |
+|---|---|
+| `privacy-store.js` | In-memory privacy data store |
+| `data-inventory-scanner.js` | Scan 24 data categories across all modules |
+| `data-classification-engine.js` | Classify sensitivity (public/internal/private/sensitive/secret_blocked) |
+| `privacy-policy-engine.js` | Role-based access policies per data category |
+| `retention-policy-manager.js` | Retention periods, archive/delete candidates (9 default policies) |
+| `privacy-access-guard.js` | Access checks for export/archive/delete |
+| `export-control-manager.js` | Export request model with strict redaction |
+| `export-package-builder.js` | JSON/markdown/manifest export with redaction |
+| `archive-cleanup-planner.js` | Archive plans, stale data detection |
+| `delete-request-manager.js` | Delete requests (soft delete only by default) |
+| `privacy-audit.js` | Privacy event audit with secret sanitization |
+| `privacy-report-generator.js` | Generate 7 report types |
+| `privacy-utils.js` | ID generation helpers |
+
+Dashboard:
+- Tab id: `privacy`
+- Renderer: `window.renderPrivacy`
+- Frontend: `public/dashboard/privacy.js`
+- Backend route: `src/dashboard/privacy-routes.js`
+- API base: `/api/dashboard/privacy`
+
+Privacy rules:
+- No hard delete by default — soft delete/archive only.
+- No raw secrets exported or displayed in any output.
+- Life OS mood/energy data is owner-only and blocked from coding agents.
+- All export/archive/delete actions require proposal + approval.
+- Privacy audit records never log secrets.

@@ -61,7 +61,7 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security.
+deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security, privacy.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -153,6 +153,18 @@ Phase 48 Security Hardening rule:
 - Security audit runs are in-memory (acceptable for Phase 48; Postgres persistence deferred).
 - Security dashboard tab must not fallback to System Overview.
 
+Phase 49 Privacy & Data Retention rule:
+- Data inventory scanner catalogs 24 data categories across all modules.
+- Data classification engine marks Life OS mood/energy as private/sensitive and owner-only.
+- Privacy policy engine restricts access by role (owner/admin/user) and blocks coding agents from private Life OS notes.
+- Retention policy manager defines retention periods (session: 30d, audit: 180d, mood: 90d, etc.) — archive preferred.
+- Privacy access guard enforces owner-only for sensitive data, blocks hard delete for audit/security logs.
+- Export control manager enforces strict redaction — never export raw tokens, secrets, API keys, or env values.
+- Archive/delete requests require proposal + approval — no direct hard delete.
+- Privacy audit records all privacy events (inventory, policy changes, export, archive, delete).
+- All privacy-sensitive write/export/delete actions must go through dry-run → Evaluation v2 → executor proposal → approval → run.
+- Privacy dashboard tab must not fallback to System Overview.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js
@@ -219,6 +231,18 @@ Specific test files to run when relevant:
 - scratch/test-security-proposal-bridge.js
 - scratch/test-security-dashboard-api.js
 - scratch/test-phase48-security-regression.js
+- scratch/test-data-inventory-scanner.js
+- scratch/test-data-classification-engine.js
+- scratch/test-privacy-policy-engine.js
+- scratch/test-retention-policy-manager.js
+- scratch/test-privacy-access-guard.js
+- scratch/test-export-control-manager.js
+- scratch/test-export-package-builder.js
+- scratch/test-archive-cleanup-planner.js
+- scratch/test-delete-request-manager.js
+- scratch/test-privacy-audit.js
+- scratch/test-privacy-dashboard-api.js
+- scratch/test-phase49-privacy-regression.js
 
 Commit rules:
 - Do NOT commit unless explicitly asked.

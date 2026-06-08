@@ -346,6 +346,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['security-center', 'secrets', 'redteam', 'security-audit', 'hardening', 'keamanan'],
     renderer: 'renderSecurity'
+  },
+  privacy: {
+    label: 'Privacy',
+    title: 'Privacy, Data Retention & Export Control',
+    navIcon: '🔏',
+    navVisible: true,
+    aliases: ['data-privacy', 'retention', 'export', 'data-control', 'privacy-center', 'data-inventory', 'privasi'],
+    renderer: 'renderPrivacy'
   }
 };
 

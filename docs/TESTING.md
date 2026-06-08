@@ -265,3 +265,28 @@ node --check src/dashboard/security-routes.js
 node --check src/dashboard/dashboard-routes.js
 node --check public/dashboard/security.js
 ```
+
+## Phase 49 Privacy & Data Retention Tests
+
+```bash
+node scratch/test-data-inventory-scanner.js
+node scratch/test-data-classification-engine.js
+node scratch/test-privacy-policy-engine.js
+node scratch/test-retention-policy-manager.js
+node scratch/test-privacy-access-guard.js
+node scratch/test-export-control-manager.js
+node scratch/test-export-package-builder.js
+node scratch/test-archive-cleanup-planner.js
+node scratch/test-delete-request-manager.js
+node scratch/test-privacy-audit.js
+node scratch/test-privacy-dashboard-api.js
+node scratch/test-phase49-privacy-regression.js
+```
+
+Also verify:
+```bash
+node --check src/privacy/index.js
+node --check src/dashboard/privacy-routes.js
+node --check src/dashboard/dashboard-routes.js
+node --check public/dashboard/privacy.js
+```

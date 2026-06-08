@@ -361,3 +361,130 @@ Phase 48 — Security Hardening + Secrets Rotation + Red-Team Safety Audit
 
 ### Recommended Next Branch/Commit
 Commit message: `security: add hardening audit and rotation planner`
+
+---
+
+### Agent
+OpenCode / Hermes
+
+### Date
+2026-06-09
+
+### Current Task
+Phase 49 — Privacy, Data Retention & Export Control
+
+### Files Changed
+**New Files (src/privacy/):**
+- `privacy-store.js` — in-memory store for privacy data
+- `data-inventory-scanner.js` — scan 24 data categories across modules
+- `data-classification-engine.js` — classify sensitivity (public/internal/private/sensitive/secret_blocked)
+- `privacy-policy-engine.js` — role-based access policies per data category
+- `retention-policy-manager.js` — retention periods, archive/delete candidates
+- `privacy-access-guard.js` — access checks for export/archive/delete
+- `export-control-manager.js` — export request model with redaction
+- `export-package-builder.js` — JSON/markdown/manifest export with strict redaction
+- `archive-cleanup-planner.js` — archive plans, stale data detection
+- `delete-request-manager.js` — delete requests (soft delete only by default)
+- `privacy-audit.js` — privacy event audit with secret sanitization
+- `privacy-report-generator.js` — 7 report types
+- `privacy-utils.js` — ID generation
+- `index.js` — exports all modules
+
+**New Files (src/dashboard/):**
+- `privacy-routes.js` — 19 protected API endpoints
+
+**New File (public/dashboard/):**
+- `privacy.js` — Privacy Center tab with inventory, policies, retention, export, archive, delete, audit
+
+**New Docs:**
+- `docs/PRIVACY_DATA_RETENTION.md`
+- `docs/DATA_INVENTORY.md`
+- `docs/EXPORT_CONTROL.md`
+- `docs/ARCHIVE_CLEANUP_POLICY.md`
+- `docs/PRIVACY_SECURITY.md`
+- `docs/PRIVACY_DASHBOARD.md`
+
+**New Test Files:**
+- `scratch/test-data-inventory-scanner.js` — 16 PASS
+- `scratch/test-data-classification-engine.js` — 26 PASS
+- `scratch/test-privacy-policy-engine.js` — 21 PASS
+- `scratch/test-retention-policy-manager.js` — 17 PASS
+- `scratch/test-privacy-access-guard.js` — 19 PASS
+- `scratch/test-export-control-manager.js` — 19 PASS
+- `scratch/test-export-package-builder.js` — 16 PASS
+- `scratch/test-archive-cleanup-planner.js` — 17 PASS
+- `scratch/test-delete-request-manager.js` — 19 PASS
+- `scratch/test-privacy-audit.js` — 16 PASS
+- `scratch/test-privacy-dashboard-api.js` — 2 PASS
+- `scratch/test-phase49-privacy-regression.js` — 78 PASS
+
+**Modified Files:**
+- `src/dashboard/index.js` — added privacyRoutes export
+- `src/dashboard/dashboard-routes.js` — registers privacy routes
+- `public/dashboard/index.html` — added privacy nav item + script
+- `public/dashboard/state.js` — added privacy tab with aliases
+- `public/dashboard/service-worker.js` — bumped cache to v43
+- `AGENTS.md` — added privacy to known tabs, added Phase 49 rules
+- `docs/ARCHITECTURE_MAP.md` — added privacy tab, routes, modules
+- `docs/COMMANDS.md` — added Phase 49 command coverage
+- `docs/INTEGRATION_CONTRACT.md` — added Privacy contract
+- `docs/TESTING.md` — added Privacy test section
+- `README.md` — added Phase 49 summary
+- `docs/AGENT_HANDOFF.md` — updated this handoff
+
+### What Was Completed
+- Data inventory scanner with 24 data categories across all modules
+- Data classification engine with 5 sensitivity levels (public → secret_blocked)
+- Privacy policy engine with role-based access (owner/admin/user), Life OS mood/energy owner-only
+- Retention policy manager with 9 default policies (30d session, 180d audit, 90d mood, etc.)
+- Privacy access guard for export/archive/delete checks
+- Export control manager with strict redation — never export tokens/secrets/env values
+- Export package builder for JSON/markdown/manifest formats
+- Archive cleanup planner with stale data detection
+- Delete request manager — soft delete only by default, hard delete requires owner + approval
+- Privacy audit with secret sanitization — never logs secrets
+- Privacy report generator (7 report types)
+- Dashboard Privacy Center with 18 API endpoints and 7 sub-tabs
+- 13 test files with 266 total assertions (all PASS)
+- Quality gates: privacyAccessScore=100, exportRedactionScore=100, retentionPolicyScore=100, hardDeleteSafetyScore=100, LifeOSPrivacyScore=100, no secret export, no direct hard delete
+
+### What Is Unfinished
+- Wire privacy policies into Telegram Control Layer command handlers
+- Wire export/archive/delete into executor proposal flow
+- Wire privacy access guard into Knowledge/LifeOS/Improvement modules
+- Postgres persistence for privacy policies, export requests, archive plans
+- Real export file generation (current: manifest/report only)
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `node --check telebot.js` | PASS |
+| `test-data-inventory-scanner.js` | 16 PASS |
+| `test-data-classification-engine.js` | 26 PASS |
+| `test-privacy-policy-engine.js` | 21 PASS |
+| `test-retention-policy-manager.js` | 17 PASS |
+| `test-privacy-access-guard.js` | 19 PASS |
+| `test-export-control-manager.js` | 19 PASS |
+| `test-export-package-builder.js` | 16 PASS |
+| `test-archive-cleanup-planner.js` | 17 PASS |
+| `test-delete-request-manager.js` | 19 PASS |
+| `test-privacy-audit.js` | 16 PASS |
+| `test-privacy-dashboard-api.js` | 2 PASS |
+| `test-phase49-privacy-regression.js` | 78 PASS |
+
+### Remaining Risks
+- Privacy modules are standalone; runtime wiring pending
+- In-memory stores reset on restart
+- Export generates manifest/report only, not actual file artifacts
+- Hard delete is blocked by design but needs enforcement at executor level
+
+### Next Safe Task
+```
+1. Wire privacy policies into Telegram Control Layer and Knowledge module
+2. Wire export/archive/delete into executor proposal flow
+3. Add privacy evaluation cases to Evaluation Harness v2
+4. Deploy to Render and run manual test sequence
+```
+
+### Recommended Next Branch/Commit
+Commit message: `privacy: add data retention export control`

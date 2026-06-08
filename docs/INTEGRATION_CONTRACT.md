@@ -225,3 +225,25 @@ Dashboard contract:
 - `/api/dashboard/security/*` routes are protected and sanitized.
 - No secret values are exposed in security dashboard, findings, reports, or scorecard.
 - Credential rotation plans display system names and manual steps only — no secret values.
+
+## Privacy / Data Retention Contract (Phase 49)
+
+Privacy data flow MUST follow:
+1. Data inventory scan catalogs all 24 data categories across modules.
+2. Classification engine marks sensitivity (public/internal/private/sensitive/secret_blocked).
+3. Privacy policy determines role-based access (owner/admin/user).
+4. Life OS mood/energy data is owner-only; coding agents blocked by default.
+5. Retention policy defines how long each category is kept (session: 30d, audit: 180d, mood: 90d, etc.).
+6. Export requests use strict redaction — no raw secrets, tokens, env values ever exported.
+7. Archive plans prefer archive over delete; bulk archive requires proposal.
+8. Delete requests are soft-delete only by default; hard delete requires owner + explicit approval.
+9. All export/archive/delete actions must go through dry-run → Evaluation v2 → executor proposal → approval → run.
+10. Privacy audit records all inventory scans, policy changes, export/archive/delete requests, and access denials.
+
+Dashboard contract:
+- `#privacy` is a known dashboard tab and must not fallback to Overview.
+- `/api/dashboard/privacy/*` routes are protected and sanitized.
+- No raw secrets, env values, or sensitive personal data are displayed.
+- Export manifests show metadata only — never raw record values.
+- Delete requests default to soft delete; no direct hard delete button in UI.
+- Known tab must not fallback to Overview.
