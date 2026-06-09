@@ -403,6 +403,30 @@ const DASHBOARD_TABS = {
     aliases: ['plugin', 'connectors', 'connector', 'plugin-sdk', 'plugin-sdk', 'plugin_sdk', 'pasang'],
     renderer: 'renderPlugins'
   },
+  'mobile': {
+    label: 'Mobile',
+    title: 'Mobile / PWA UX',
+    navIcon: '📱',
+    navVisible: true,
+    aliases: ['mobile', 'pwa', 'offline', 'ux', 'mobile-ux', 'notifications', 'hp', 'ponsel'],
+    renderer: 'renderMobile'
+  },
+  'disaster-recovery': {
+    label: 'DR',
+    title: 'Disaster Recovery',
+    navIcon: '🛟',
+    navVisible: true,
+    aliases: ['disaster-recovery', 'dr', 'recovery', 'backup', 'restore', 'backup-encryption', 'restore-rehearsal', 'bencana'],
+    renderer: 'renderDisasterRecovery'
+  },
+  'consolidation': {
+    label: 'Consolidation',
+    title: 'Architecture Consolidation',
+    navIcon: '🏗️',
+    navVisible: true,
+    aliases: ['consolidation', 'architecture', 'v2', 'v2-roadmap', 'registry-audit', 'module-audit', 'arsitektur'],
+    renderer: 'renderConsolidation'
+  },
   'rag-kb': {
     label: 'RAG / KB',
     title: 'Personal Knowledge Search & RAG',

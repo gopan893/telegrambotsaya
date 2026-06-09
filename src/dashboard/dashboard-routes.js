@@ -572,6 +572,30 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Recipe routes skipped:', e.message);
   }
 
+  try {
+    const mobileRoutes = require('./mobile-routes');
+    mobileRoutes.registerMobileRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Mobile routes skipped:', e.message);
+  }
+
+  try {
+    const disasterRecoveryRoutes = require('./disaster-recovery-routes');
+    disasterRecoveryRoutes.registerDisasterRecoveryRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Disaster Recovery routes skipped:', e.message);
+  }
+
+  try {
+    const consolidationRoutes = require('./consolidation-routes');
+    consolidationRoutes.registerConsolidationRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Consolidation routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);
