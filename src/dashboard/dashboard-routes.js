@@ -500,6 +500,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Privacy routes skipped:', e.message);
   }
 
+  try {
+    const releaseCandidateRoutes = require('./release-candidate-routes');
+    releaseCandidateRoutes.registerReleaseCandidateRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Release Candidate routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

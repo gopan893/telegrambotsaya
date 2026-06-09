@@ -226,6 +226,29 @@ Dashboard contract:
 - No secret values are exposed in security dashboard, findings, reports, or scorecard.
 - Credential rotation plans display system names and manual steps only — no secret values.
 
+## Release Candidate Contract (Phase 50)
+
+Release Candidate management follows:
+
+1. Create RC → v1.0.0-rc.1 default version.
+2. Start release freeze — blocks new major features.
+3. Run module readiness check — 30 modules checked.
+4. Run production readiness gate — 9 gates (boot, dashboard, telegram, storage, governance, security, privacy, deploy, blockers).
+5. Run compatibility verification — 6 areas (dashboard, telegram, executor, integration, storage, PWA).
+6. Review release risks — 6 categories (security, privacy, deploy, cost, operational, integration).
+7. Generate release notes, changelog, env checklist, operator guide.
+8. Create release proposals (action plan, GitHub tag/release, deploy).
+9. All proposals are proposal-only — no direct GitHub/render/deploy writes.
+10. All write/external/danger actions require Evaluation v2 + executor approval.
+11. No auto-approve, no auto-run, no secret leakage.
+12. Release gates: readiness >= 90%, security >= 95%, privacy >= 95%, approval boundary = 100%, dashboard route = 100%.
+
+Dashboard contract:
+- `#release-candidate` is a known dashboard tab and must not fallback to Overview.
+- `/api/dashboard/release-candidate/*` routes are protected and sanitized.
+- No secret values are exposed in RC dashboard, reports, or API responses.
+- Service worker may cache `release-candidate.js` as static shell only; must not cache `/api/dashboard/*`.
+
 ## Privacy / Data Retention Contract (Phase 49)
 
 Privacy data flow MUST follow:

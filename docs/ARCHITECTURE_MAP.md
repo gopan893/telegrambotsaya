@@ -117,6 +117,21 @@
 - `/improvement/regression-cases`
 - `/improvement/plans`
 - `/improvement/report`
+- `/release-candidate`
+- `/release-candidate/freeze-status`
+- `/release-candidate/:id`
+- `/release-candidate/:id/run-readiness`
+- `/release-candidate/:id/run-production-gate`
+- `/release-candidate/:id/run-compatibility`
+- `/release-candidate/:id/risk-review`
+- `/release-candidate/:id/notes`
+- `/release-candidate/:id/changelog`
+- `/release-candidate/:id/env-checklist`
+- `/release-candidate/:id/operator-guide`
+- `/release-candidate/:id/report`
+- `/release-candidate/:id/proposal`
+- `/release-candidate/start-freeze`
+- `/release-candidate/end-freeze`
 
 ## Phase 41 Portfolio Modules
 
@@ -392,6 +407,20 @@ Total known commands: 86 (Phase 42 added 12 knowledge commands: /knowledge, /kg,
 - `message-bus.js`
 - `task-queue.js`
 
+### Release Candidate (Phase 50)
+
+Dashboard:
+- Tab id: `release-candidate`
+- Renderer: `window.renderReleaseCandidate`
+- Frontend: `public/dashboard/release-candidate.js`
+- Backend route: `src/dashboard/release-candidate-routes.js`
+- API base: `/api/dashboard/release-candidate`
+
+Commands:
+- `/releasecandidate`, `/rc`, `/v1status`, `/releasefreeze`, `/readiness`, `/productionready`
+- `/releaseblockers`, `/releaserisks`, `/releasenotes`, `/changelog`, `/envchecklist`, `/operatorguide`
+- `/propose_release`, `/propose_release_deploy`
+
 ### dashboard/
 
 - `agent-evaluation-routes.js`
@@ -558,6 +587,21 @@ Total known commands: 86 (Phase 42 added 12 knowledge commands: /knowledge, /kg,
 ### bot/ (Phase 42)
 
 - `knowledge-command-handler.js`
+
+### release/ (Phase 50)
+
+- `release-candidate-store.js` — RC model, CRUD, storage
+- `release-freeze-manager.js` — Freeze/unfreeze, feature work detection, P0 patch gate
+- `module-readiness-checker.js` — Check 30 modules for readiness status
+- `production-readiness-gate.js` — Boot, dashboard, telegram, storage, governance, security, privacy, deploy gates
+- `compatibility-verifier.js` — Verify dashboard, telegram, executor, integration, storage, PWA compatibility
+- `release-risk-reviewer.js` — Security, privacy, deploy, cost, operational risk review
+- `release-notes-generator.js` — Feature summary, safety summary, known limitations, upgrade/rollback notes
+- `changelog-generator.js` — Changelog by phase and module, human-readable format
+- `environment-checklist-generator.js` — Required/recommended/optional env, dangerous flag detection
+- `operator-guide-generator.js` — Admin, telegram, dashboard, approval, incident, backup, security guides
+- `release-proposal-bridge.js` — Release action plan, GitHub tag/release proposal, deploy proposal
+- `release-utils.js` — Redaction, sanitization, formatting helpers
 
 ### monitoring/
 

@@ -266,6 +266,38 @@ node --check src/dashboard/dashboard-routes.js
 node --check public/dashboard/security.js
 ```
 
+## Phase 50 Release Candidate Tests
+
+```bash
+node --check telebot.js
+node --check src/release/index.js
+node --check src/dashboard/release-candidate-routes.js
+node scratch/test-release-candidate-store.js
+node scratch/test-release-freeze-manager.js
+node scratch/test-module-readiness-checker.js
+node scratch/test-production-readiness-gate.js
+node scratch/test-compatibility-verifier.js
+node scratch/test-release-risk-reviewer.js
+node scratch/test-release-notes-generator.js
+node scratch/test-changelog-generator.js
+node scratch/test-environment-checklist-generator.js
+node scratch/test-release-candidate-dashboard-api.js
+node scratch/test-phase50-release-candidate-regression.js
+```
+
+Also rerun:
+- `node scratch/test-dashboard-router-registry.js`
+- `node scratch/test-dashboard-all-menu-routes.js`
+- `node scratch/test-dashboard-dark-form-ui.js`
+- `node scratch/test-telegram-command-registry.js`
+- `node scratch/test-telegram-natural-router.js`
+- `node scratch/test-executor-boundary-stable-release.js`
+- `node scratch/test-integration-gate-stable-release.js`
+- `node scratch/test-natural-chat-stable-release.js`
+- `node scratch/test-file-analysis-leak.js`
+- `node scratch/test-pwa-assets.js`
+- `node scratch/test-operating-loop-runner.js`
+
 ## Phase 49 Privacy & Data Retention Tests
 
 ```bash

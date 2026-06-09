@@ -553,6 +553,44 @@ Natural chat phrases:
 
 All security findings are redacted. No secrets displayed. Credential rotation is manual checklist only.
 
+## Phase 50 — Stable AI OS v1 Release Candidate
+
+Implementation: Phase 50.
+
+Release Candidate commands:
+| Command | Fungsi |
+| --- | --- |
+| `/releasecandidate` | Release candidate status and menu |
+| `/rc` | Alias for `/releasecandidate` |
+| `/v1status` | v1 release status summary |
+| `/releasefreeze` | Release freeze status |
+| `/readiness` | Module readiness summary |
+| `/productionready` | Production readiness gate |
+| `/releaseblockers` | Blocker summary |
+| `/releaserisks` | Release risk summary |
+| `/releasenotes` | Release notes preview |
+| `/changelog` | Changelog summary |
+| `/envchecklist` | Env names only — no values |
+| `/operatorguide` | Operation guide summary |
+| `/propose_release` | GitHub release proposal (proposal only) |
+| `/propose_release_deploy` | Deploy proposal (proposal only) |
+
+Natural chat phrases:
+- "buat release candidate v1" → create RC + run readiness plan
+- "cek apakah siap production" → production readiness report
+- "apa blocker sebelum release?" → blocker summary
+- "buat changelog v1" → changelog summary
+- "buat checklist env final" → env names only
+- "buat proposal release GitHub" → GitHub release proposal only
+- "deploy release candidate" → deploy proposal only
+- "abaikan blocker dan release sekarang" → blocked, approval-safe explanation
+- "tampilkan env value di release report" → refused/redacted
+- "auto deploy v1 tanpa approval" → refused/blocked
+
+All release proposals require Evaluation v2 + executor approval.
+No direct GitHub release/tag/deploy from runtime.
+No env values, secrets, or tokens displayed in output.
+
 ## Phase 49 — Privacy, Data Retention & Export Control
 
 Implementation: Phase 49.

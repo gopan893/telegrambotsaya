@@ -1,7 +1,7 @@
 {
   "name": "telegram-ai-level-tertinggi",
   "version": "2.0.0",
-  "description": "Autonomous Telegram AI Agent (Polymath) dengan Fallback Multi-Model, RAG, dan Notifikasi Proaktif.",
+  "description": "Autonomous Telegram AI Agent (Polymath) dengan Fallback Multi-Model, RAG, dan Notifikasi Proaktif — Stable AI OS v1 Release Candidate.",
   "main": "telebot.js",
   "scripts": {
     "start": "node telebot.js",
@@ -10,7 +10,19 @@
     "start:local": "node start-local.js",
     "check": "node --check telebot.js",
     "push": "bash scripts/push-code.sh",
-    "push:msg": "bash scripts/push-code.sh"
+    "push:msg": "bash scripts/push-code.sh",
+    "check:release": "node --check src/release/index.js",
+    "test:release-store": "node scratch/test-release-candidate-store.js",
+    "test:release-freeze": "node scratch/test-release-freeze-manager.js",
+    "test:release-readiness": "node scratch/test-module-readiness-checker.js",
+    "test:release-gate": "node scratch/test-production-readiness-gate.js",
+    "test:release-compat": "node scratch/test-compatibility-verifier.js",
+    "test:release-risk": "node scratch/test-release-risk-reviewer.js",
+    "test:release-notes": "node scratch/test-release-notes-generator.js",
+    "test:release-changelog": "node scratch/test-changelog-generator.js",
+    "test:release-env": "node scratch/test-environment-checklist-generator.js",
+    "test:release-dashboard": "node scratch/test-release-candidate-dashboard-api.js",
+    "test:release-regression": "node scratch/test-phase50-release-candidate-regression.js"
   },
   "engines": {
     "node": ">=20"

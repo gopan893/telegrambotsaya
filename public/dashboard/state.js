@@ -354,6 +354,14 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['data-privacy', 'retention', 'export', 'data-control', 'privacy-center', 'data-inventory', 'privasi'],
     renderer: 'renderPrivacy'
+  },
+  'release-candidate': {
+    label: 'Release Candidate',
+    title: 'Release Candidate Manager',
+    navIcon: '🚀',
+    navVisible: true,
+    aliases: ['rc', 'stable-release', 'v1', 'release-v1', 'production-ready', 'rilis-kandidat'],
+    renderer: 'renderReleaseCandidate'
   }
 };
 

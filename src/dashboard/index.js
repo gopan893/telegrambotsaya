@@ -97,6 +97,13 @@ try {
   privacyRoutes = { registerPrivacyRoutes: () => {} };
 }
 
+let releaseCandidateRoutes;
+try {
+  releaseCandidateRoutes = require('./release-candidate-routes');
+} catch (e) {
+  releaseCandidateRoutes = { registerReleaseCandidateRoutes: () => {} };
+}
+
 module.exports = {
   registerDashboardRoutes: (...args) => dashboardRoutes.registerDashboardRoutes(...args),
   registerCodingWorkspaceRoutes: (...args) => dashboardRoutes.registerCodingWorkspaceRoutes(...args),
