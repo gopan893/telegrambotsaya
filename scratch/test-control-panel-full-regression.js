@@ -11,7 +11,8 @@ const tests = [
   'test-control-panel-content-validation.js',
   'test-control-panel-content-no-cross-tab-leak.js',
   'test-control-panel-content-empty-state.js',
-  'test-control-panel-content-api-contract.js'
+  'test-control-panel-content-api-contract.js',
+  'test-control-panel-broken-menu-matrix.js'
 ];
 
 const { execSync } = require('child_process');

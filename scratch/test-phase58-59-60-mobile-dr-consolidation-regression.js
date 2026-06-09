@@ -295,7 +295,7 @@ function runWiringTests() {
   assert(stateJs.includes("'mobile'"), 'W8: mobile tab in state.js');
   assert(stateJs.includes("'disaster-recovery'"), 'W9: DR tab in state.js');
   assert(stateJs.includes("'consolidation'"), 'W10: consolidation tab in state.js');
-  assert(swJs.includes('v48-stability-audit'), 'W11: SW cache bumped to v48-stability-audit');
+  assert(swJs.includes('v49-alias-fix'), 'W11: SW cache bumped to v49-alias-fix');
   assert(swJs.includes('mobile.js'), 'W12: mobile.js in SW cache');
   assert(swJs.includes('notification-center.js'), 'W13: notification-center.js in SW cache');
   assert(swJs.includes('disaster-recovery.js'), 'W14: disaster-recovery.js in SW cache');

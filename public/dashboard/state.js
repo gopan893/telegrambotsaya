@@ -102,7 +102,7 @@ const DASHBOARD_TABS = {
     title: 'External Integrations',
     navIcon: '🔌',
     navVisible: true,
-    aliases: ['integration', 'connectors', 'connector', 'integrasi'],
+    aliases: ['integration', 'integrasi'],
     renderer: 'renderIntegrations'
   },
   backup: {
@@ -110,7 +110,7 @@ const DASHBOARD_TABS = {
     title: 'Backup & Recovery',
     navIcon: '💾',
     navVisible: true,
-    aliases: ['backups', 'recovery', 'cadangan'],
+    aliases: ['backups', 'cadangan'],
     renderer: 'renderBackup'
   },
   insights: {
@@ -126,7 +126,7 @@ const DASHBOARD_TABS = {
     title: 'Knowledge Graph',
     navIcon: '🕸️',
     navVisible: true,
-    aliases: ['knowledge-graph', 'kgraph', 'graf'],
+    aliases: ['kgraph', 'graf'],
     renderer: 'renderGraph'
   },
   benchmarks: {
@@ -150,7 +150,7 @@ const DASHBOARD_TABS = {
     title: 'Observability / Incidents',
     navIcon: '🛰️',
     navVisible: true,
-    aliases: ['incident-center', 'production', 'prod-monitor', 'health-monitor', 'observability-center', 'incidents'],
+    aliases: ['incident-center', 'prod-monitor', 'health-monitor', 'observability-center'],
     renderer: 'renderObservability'
   },
   portfolio: {
@@ -166,7 +166,7 @@ const DASHBOARD_TABS = {
     title: 'Research / Docs',
     navIcon: '🔎',
     navVisible: true,
-    aliases: ['docs', 'documentation', 'research-agent', 'evidence', 'sources', 'docs-agent', 'web-research', 'riset'],
+    aliases: ['research-agent', 'evidence', 'sources', 'web-research', 'riset'],
     renderer: 'renderResearch'
   },
   lifeos: {
@@ -392,7 +392,7 @@ const DASHBOARD_TABS = {
     title: 'Hybrid Local/Cloud AI Model Router',
     navIcon: '🌐',
     navVisible: true,
-    aliases: ['models', 'model-router', 'local-ai', 'cloud-ai', 'ai-router', 'hybrid-ai', 'model-router', 'router-model'],
+    aliases: ['models', 'model-router', 'local-ai', 'cloud-ai', 'ai-router', 'hybrid-ai', 'router-model'],
     renderer: 'renderModelRouter'
   },
   'plugins': {
@@ -400,7 +400,7 @@ const DASHBOARD_TABS = {
     title: 'Plugin / Connector SDK',
     navIcon: '🔌',
     navVisible: true,
-    aliases: ['plugin', 'connectors', 'connector', 'plugin-sdk', 'plugin-sdk', 'plugin_sdk', 'pasang'],
+    aliases: ['plugin', 'connectors', 'connector', 'plugin-sdk', 'plugin_sdk', 'pasang'],
     renderer: 'renderPlugins'
   },
   'operator': {
