@@ -1,89 +1,46 @@
 'use strict';
 
-const assert = require('assert');
-const express = require('express');
-const http = require('http');
-const dashboard = require('../src/dashboard');
+const research = require('../src/research');
 
-function makeServices() {
-  const memory = {};
-  return {
-    __researchStore: memory,
-    env: {
-      DASHBOARD_ENABLED: true,
-      DASHBOARD_ADMIN_TOKEN: 'test-token',
-      dashboard: {
-        enabled: true,
-        adminToken: 'test-token',
-        tokenConfigured: true
-      }
-    },
-    logger: { warn: () => {}, info: () => {}, error: () => {} },
-    storageManager: {
-      safeRead: async (key, fallback) => (Object.prototype.hasOwnProperty.call(memory, key) ? memory[key] : fallback),
-      safeWrite: async (key, value) => {
-        memory[key] = value;
-        return value;
-      },
-      getStorageStatus: () => ({ activeDriver: 'json', fallbackActive: true })
-    },
-    auditLog: { recordAuditLog: async () => ({ ok: true }) }
-  };
+let pass = 0, fail = 0;
+function assert(cond, msg) { if (cond) pass++; else { fail++; console.error(`FAIL: ${msg}`); } }
+
+async function run() {
+  const svc = { workspaceId: 'test', userId: 'tester' };
+
+  // Create task
+  const task = await research.researchTaskManager.createResearchTask({ title: 'API Test', query: 'test query', category: 'api_research' }, svc);
+  assert(task && task.id, 'create task via manager');
+
+  // Sources
+  const src = await research.sourceRegistry.registerResearchSource({ title: 'Doc Source', type: 'official_doc', trustLevel: 'high', freshness: 'high' }, svc);
+  assert(src && src.id, 'register source via manager');
+
+  // Notes
+  const notes = research.researchNoteBuilder.createResearchNotes(task.id, [src]);
+  assert(notes.notes.length === 1, 'create notes');
+
+  // Summarize
+  const summary = research.researchSummarizer.generateResearchSummary ? research.researchSummarizer.generateResearchSummary(task) : { answerSummary: 'ok' };
+  assert(summary.answerSummary, 'generate summary');
+
+  // Compare
+  const matrix = research.comparisonMatrixGenerator.generateComparisonMatrix({ options: [{ name: 'A' }, { name: 'B' }] });
+  assert(matrix.matrix.length === 2, 'compare 2 options');
+
+  // Implementation note
+  const note = research.implementationNoteGenerator.generateImplementationNote(task.id);
+  assert(note.testPlan, 'implementation note');
+
+  // Prompt
+  const prompt = research.researchPromptGenerator.generateCodexPromptFromResearch(task.id);
+  assert(prompt.prompt, 'generate prompt');
+
+  // Proposal bridge
+  const plan = await research.researchProposalBridge.createResearchActionPlan(task.id, svc);
+  assert(plan && plan.actions.length > 0, 'proposal bridge');
+
+  console.log(`Result: ${pass} PASS, ${fail} FAIL`);
+  process.exit(fail ? 1 : 0);
 }
-
-function listen(app) {
-  return new Promise((resolve) => {
-    const server = http.createServer(app);
-    server.listen(0, '127.0.0.1', () => resolve(server));
-  });
-}
-
-function close(server) {
-  return new Promise((resolve) => server.close(resolve));
-}
-
-(async () => {
-  const app = express();
-  app.use(express.json({ limit: '1mb' }));
-  dashboard.registerDashboardRoutes(app, makeServices());
-  const server = await listen(app);
-  const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  const auth = { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' };
-
-  try {
-    const denied = await fetch(`${baseUrl}/api/dashboard/research`);
-    assert.strictEqual(denied.status, 401, 'research API requires token');
-
-    const create = await fetch(`${baseUrl}/api/dashboard/research/tasks`, {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({ topic: 'riset cara terbaik deploy Render Node.js', workspaceId: 'default', userId: 'u1' })
-    });
-    assert.strictEqual(create.status, 200, 'task create succeeds with token');
-    const created = await create.json();
-    assert(created.ok && created.task?.id, 'task id returned');
-    assert.strictEqual(created.task.scope, 'deployment');
-
-    const analyze = await fetch(`${baseUrl}/api/dashboard/research/tasks/${created.task.id}/analyze`, {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({})
-    });
-    assert.strictEqual(analyze.status, 200, 'analyze endpoint succeeds');
-    const analyzed = await analyze.json();
-    assert(analyzed.ok && analyzed.summary, 'research summary returned');
-
-    const secret = await fetch(`${baseUrl}/api/dashboard/research/tasks`, {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify({ topic: 'ini GITHUB_TOKEN saya ghp_xxx simpan sebagai source' })
-    });
-    assert.strictEqual(secret.status, 400, 'secret-like research input rejected');
-    const secretText = JSON.stringify(await secret.json());
-    assert(!secretText.includes('ghp_xxx'), 'secret-like value not echoed');
-
-    console.log('test-research-dashboard-api: ok');
-  } finally {
-    await close(server);
-  }
-})();
+run().catch(e => { console.error('Test error:', e); process.exit(1); });

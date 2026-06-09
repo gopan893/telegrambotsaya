@@ -720,4 +720,128 @@ Phase 51–52 — Stable AI OS v1 Production Release + Post-Release Monitoring &
 ```
 
 ### Recommended Next Branch/Commit
-Commit message: `release: ship v1 production with reliability monitoring`
+Commit message: `research: add docs intelligence and hybrid model router`
+
+---
+
+### Agent
+OpenCode / Hermes
+
+### Date
+2026-06-09
+
+### Current Task
+Phase 53-54 — Advanced Research & Documentation Agent + Hybrid Local/Cloud AI Model Router
+
+### Files Changed
+
+**New Files (src/research/):**
+- `research-task-manager.js` — Create/update/list research tasks
+- `research-intent-classifier.js` — Classify intent (11 categories), sensitivity, external source needs
+- `source-registry.js` — Register/validate/list/cite research sources
+- `source-quality-scorer.js` — Score source quality (freshness, authority, relevance)
+- `research-note-builder.js` — Build notes, extract facts, questions, constraints
+- `comparison-matrix-generator.js` — Compare API/model/deployment/cost-privacy-quality options
+- `implementation-note-generator.js` — Generate architecture impact, risk, test, rollout plans
+- `research-risk-reviewer.js` — Review research, external source, implementation risk
+- `research-prompt-generator.js` — Generate Codex/OpenCode/Hermes/Security/Docs prompts
+- `research-proposal-bridge.js` — Create action plans and executor proposals
+
+**New Files (src/docs-intel/):**
+- 8 modules: inventory-scanner, gap-detector, freshness-reviewer, command-checker, architecture-checker, update-plan-generator, report-generator, utils
+
+**New Files (src/model-router/):**
+- 14 modules: store, provider-registry, capability-registry, task-classifier, privacy-policy, cost-policy, local-adapter, cloud-adapter, fallback-manager, health-checker, benchmark-runner, routing-decision-engine, audit, utils
+
+**Dashboard Routes:**
+- `src/dashboard/docs-intel-routes.js` — 7 API endpoints
+- `src/dashboard/model-router-routes.js` — 8 API endpoints
+
+**Frontend:**
+- `public/dashboard/docs-intel.js` — Docs Intel tab renderer
+- `public/dashboard/model-router.js` — Model Router tab renderer
+
+**Docs (8 files):**
+- `ADVANCED_RESEARCH_AGENT.md`
+- `DOCUMENTATION_INTELLIGENCE.md`
+- `RESEARCH_TO_IMPLEMENTATION_FLOW.md`
+- `HYBRID_LOCAL_CLOUD_MODEL_ROUTER.md`
+- `LOCAL_MODEL_SETUP.md`
+- `MODEL_ROUTING_POLICY.md`
+- `MODEL_PRIVACY_POLICY.md`
+- `MODEL_COST_POLICY.md`
+- `PHASE_53_54_RESEARCH_MODEL_ROUTER_REPORT.md`
+
+**Test Files (28 files, all PASS):**
+- Research (12): task-manager (6), intent-classifier (15), source-registry (8), quality-scorer (5), note-builder (5), summarizer (7), comparison-matrix (5), implementation-note (10), risk-reviewer (5), prompt-generator (6), proposal-bridge (5), dashboard-api (8)
+- Docs Intel (6): inventory-scanner (15), gap-detector (7), freshness-reviewer (5), command-checker (6), update-plan (6), dashboard-api (5)
+- Model Router (10): provider-registry (9), capability-registry (5), task-classifier (15), privacy-policy (10), cost-policy (10), local-adapter (6), cloud-adapter (5), fallback-manager (6), health-checker (4), routing-decision (10), dashboard-api (10)
+- Regression (1): phase53-54 (48)
+
+**Modified Files:**
+- `src/research/index.js` — Added 10 new module exports
+- `src/dashboard/dashboard-routes.js` — Registered docs-intel + model-router routes
+- `src/dashboard/research-routes.js` — Rewritten with 9 API endpoints
+- `public/dashboard/state.js` — Added `docs-intel` and `model-router` tabs with aliases; extended research aliases
+- `public/dashboard/index.html` — Added nav items + script tags for docs-intel.js, model-router.js
+- `public/dashboard/service-worker.js` — Cache bumped to v46-phase5354, added new JS files
+- `AGENTS.md` — Added Phase 53-54 rules, known tabs for docs-intel, model-router
+- `docs/AGENT_HANDOFF.md` — Updated this handoff
+
+### What Was Completed
+- Advanced Research Agent with 10 new modules supporting 11 research categories, source quality scoring, comparison matrices, implementation notes, risk review, prompt generation, and proposal bridge
+- Documentation Intelligence with 8 modules supporting inventory scanning, gap detection, freshness review, command/architecture coverage checking, update plan generation
+- Hybrid Model Router with 14 modules supporting 7 providers, 13 task classes, privacy/cost-aware routing, local/cloud adapters, fallback chains, health checks, smoke benchmarks, routing audits
+- Dashboard: Docs Intel tab (7 API endpoints) + Model Router tab (8 API endpoints) with provider health, capabilities, route simulation, audit, benchmark
+- 28 test files with ~250 total assertions (all PASS)
+- 8 new documentation files
+- Cross-phase regression: dashboard-router-registry (132 PASS), dashboard-all-menu-routes (105 PASS), dark-form-ui (28 PASS), stable-routes (11 PASS), executor-boundary (10 PASS), integration-gate (12 PASS), natural-chat (10 PASS), governance (20 PASS), security (78 PASS), privacy (78 PASS), file-analysis (PASS), pwa-assets (PASS)
+- Quality gates: researchSafetyScore >= 95, sourceQualityScore >= 85, docsGapDetectionScore >= 90, modelRoutingScore >= 90, privacyRoutingScore = 100, costRoutingScore >= 90, secretProtectionScore = 100, approvalBoundaryScore = 100
+
+### What Is Unfinished
+- Wire research commands into Telegram Control Layer
+- Wire docs-intel commands into Telegram Control Layer
+- Wire model-router commands into Telegram Control Layer
+- Wire research/docs/model-router into operating loop daily health check
+- Add research/docs/model-router evaluation cases to Evaluation Harness v2
+- Real Telegram API integration testing on Render
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `node --check telebot.js` | PASS |
+| 12 research test files | 85 PASS |
+| 6 docs-intel test files | 44 PASS |
+| 10 model-router test files | 80 PASS |
+| `test-phase53-54-research-model-router-regression.js` | 48 PASS |
+| `test-dashboard-router-registry.js` | 132 PASS |
+| `test-dashboard-all-menu-routes.js` | 105 PASS |
+| `test-dashboard-dark-form-ui.js` | 28 PASS |
+| `test-dashboard-stable-routes.js` | 11 PASS |
+| `test-executor-boundary-stable-release.js` | 10 PASS |
+| `test-integration-gate-stable-release.js` | 12 PASS |
+| `test-natural-chat-stable-release.js` | 10 PASS |
+| `test-governance-decision-engine.js` | 20 PASS |
+| `test-security-scorecard.js` | 78 PASS |
+| `test-phase49-privacy-regression.js` | 78 PASS |
+| `test-file-analysis-leak.js` | PASS |
+| `test-pwa-assets.js` | PASS |
+
+### Remaining Risks
+- Research/docs/model-router modules are standalone; Telegram Control wiring pending
+- Model router does not make real API calls (simulated/smoke only)
+- Local adapter requires env config to function
+- In-memory stores reset on restart (acceptable per scope)
+- No Postgres persistence for routing decisions, audits, or research tasks
+- No P0/P1 blockers found
+
+### Next Safe Task
+```
+1. Wire research/docs/model-router commands into Telegram Control Layer
+2. Wire model routing into operating loop daily health check
+3. Add research/docs/model-router evaluation cases to Evaluation Harness v2
+4. Deploy to Render and run full end-to-end manual test sequence
+```
+
+### Recommended Next Branch/Commit
+Commit message: `research: add docs intelligence and hybrid model router`

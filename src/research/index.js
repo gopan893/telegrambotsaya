@@ -15,6 +15,16 @@ module.exports = {
   researchTaskPlanner: require('./research-task-planner'),
   researchUtils: require('./research-utils'),
   sourceCollector: require('./source-collector'),
-  sourceCredibilityScorer: require('./source-credibility-scorer')
-};
+  sourceCredibilityScorer: require('./source-credibility-scorer'),
 
+  researchTaskManager: require('./research-task-manager'),
+  researchIntentClassifier: require('./research-intent-classifier'),
+  sourceRegistry: require('./source-registry'),
+  sourceQualityScorer: require('./source-quality-scorer'),
+  researchNoteBuilder: require('./research-note-builder'),
+  comparisonMatrixGenerator: require('./comparison-matrix-generator'),
+  implementationNoteGenerator: require('./implementation-note-generator'),
+  researchRiskReviewer: require('./research-risk-reviewer'),
+  researchPromptGenerator: require('./research-prompt-generator'),
+  researchProposalBridge: require('./research-proposal-bridge')
+};

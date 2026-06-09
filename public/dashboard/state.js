@@ -166,7 +166,7 @@ const DASHBOARD_TABS = {
     title: 'Research / Docs',
     navIcon: '🔎',
     navVisible: true,
-    aliases: ['docs', 'documentation', 'research-agent', 'evidence', 'sources', 'docs-agent'],
+    aliases: ['docs', 'documentation', 'research-agent', 'evidence', 'sources', 'docs-agent', 'web-research', 'riset'],
     renderer: 'renderResearch'
   },
   lifeos: {
@@ -378,6 +378,22 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['slo', 'uptime', 'health-window', 'post-release', 'reliability-score', 'keandalan'],
     renderer: 'renderReliability'
+  },
+  'docs-intel': {
+    label: 'Docs Intel',
+    title: 'Documentation Intelligence',
+    navIcon: '📝',
+    navVisible: true,
+    aliases: ['docs', 'documentation', 'docs-intel', 'docscheck', 'documentation-intelligence', 'docs-intelligence', 'dokumentasi'],
+    renderer: 'renderDocsIntel'
+  },
+  'model-router': {
+    label: 'Model Router',
+    title: 'Hybrid Local/Cloud AI Model Router',
+    navIcon: '🌐',
+    navVisible: true,
+    aliases: ['models', 'model-router', 'local-ai', 'cloud-ai', 'ai-router', 'hybrid-ai', 'model-router', 'router-model'],
+    renderer: 'renderModelRouter'
   }
 };
 

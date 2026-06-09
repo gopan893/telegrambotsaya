@@ -61,7 +61,8 @@ overview, ops-viewer, workspaces, users, permissions, memory,
 goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
-deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security, privacy, release-candidate.
+deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security, privacy, release-candidate,
+docs-intel, model-router.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -174,6 +175,25 @@ Phase 50.5 RC Stabilization rule:
 - RC regression checker verifies dashboard registry, sidebar, renderer, PWA cache, Telegram commands, approval boundary, secret redaction, privacy export.
 - RC fix policy enforces stabilization freeze — only P0/P1 fixes and docs/tests updates allowed.
 - RC stabilization report generator produces readiness scoring and Phase 51 recommendation.
+
+Phase 53-54 Research & Documentation Intelligence rule:
+- Research Agent may create research tasks, collect read-only sources, classify intent (api_research, ai_model_research, cost_comparison, etc.), score source quality, build notes, generate comparison matrices, create implementation notes, review risks, generate next-agent prompts (Codex/OpenCode/Hermes), and create action plans.
+- Documentation Intelligence may scan project docs inventory, detect gaps, review freshness, check command documentation coverage, and create update plans.
+- All research/docs operations are read-only by default.
+- Docs/code updates require Evaluation v2 + executor approval.
+- No direct file write from runtime.
+- No secrets stored in research notes, source registry, comparison matrices, implementation notes, prompts, or proposals.
+- Research sensitivity detection marks Life OS data as high sensitivity.
+
+Phase 53-54 Hybrid Model Router rule:
+- Model Router may classify tasks (simple_chat, coding_light/heavy, research, private_lifeos, etc.), evaluate privacy/cost routing policies, select local/cloud providers, manage fallback chains, check provider health, run smoke benchmarks, and audit routing decisions.
+- Local model preferred for private/simple/offline-safe tasks.
+- Cloud model allowed for heavy coding/reasoning/research after secret redaction.
+- Private Life OS data blocked from cloud routing unless explicitly owner-approved.
+- High-cost routes require approval.
+- No API key values exposed in any output.
+- Local adapter fails softly on connection errors.
+- Routing audit never logs secrets or private prompts.
 
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js

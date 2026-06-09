@@ -41,7 +41,45 @@
     "test:health-window": "node scratch/test-release-health-window.js",
     "test:watchdog": "node scratch/test-regression-watchdog.js",
     "test:scorecard": "node scratch/test-reliability-scorecard.js",
-    "test:51-52-regression": "node scratch/test-phase51-52-production-release-regression.js"
+    "test:51-52-regression": "node scratch/test-phase51-52-production-release-regression.js",
+
+    "test:research-task-manager": "node scratch/test-research-task-manager.js",
+    "test:research-intent": "node scratch/test-research-intent-classifier.js",
+    "test:source-registry": "node scratch/test-source-registry.js",
+    "test:source-quality": "node scratch/test-source-quality-scorer.js",
+    "test:research-notes": "node scratch/test-research-note-builder.js",
+    "test:research-summarizer": "node scratch/test-research-summarizer.js",
+    "test:comparison-matrix": "node scratch/test-comparison-matrix-generator.js",
+    "test:implementation-note": "node scratch/test-implementation-note-generator.js",
+    "test:research-risk": "node scratch/test-research-risk-reviewer.js",
+    "test:research-prompt": "node scratch/test-research-prompt-generator.js",
+    "test:research-proposal": "node scratch/test-research-proposal-bridge.js",
+    "test:research-dashboard": "node scratch/test-research-dashboard-api.js",
+    "test:research-all": "npm run test:research-task-manager && npm run test:research-intent && npm run test:source-registry && npm run test:source-quality && npm run test:research-notes && npm run test:research-summarizer && npm run test:comparison-matrix && npm run test:implementation-note && npm run test:research-risk && npm run test:research-prompt && npm run test:research-proposal && npm run test:research-dashboard",
+
+    "test:docs-scanner": "node scratch/test-docs-inventory-scanner.js",
+    "test:docs-gaps": "node scratch/test-docs-gap-detector.js",
+    "test:docs-freshness": "node scratch/test-docs-freshness-reviewer.js",
+    "test:docs-commands": "node scratch/test-command-docs-checker.js",
+    "test:docs-update-plan": "node scratch/test-docs-update-plan-generator.js",
+    "test:docs-dashboard": "node scratch/test-docs-intel-dashboard-api.js",
+    "test:docs-all": "npm run test:docs-scanner && npm run test:docs-gaps && npm run test:docs-freshness && npm run test:docs-commands && npm run test:docs-update-plan && npm run test:docs-dashboard",
+
+    "test:mr-provider": "node scratch/test-model-provider-registry.js",
+    "test:mr-capability": "node scratch/test-model-capability-registry.js",
+    "test:mr-classifier": "node scratch/test-task-model-classifier.js",
+    "test:mr-privacy": "node scratch/test-privacy-aware-routing-policy.js",
+    "test:mr-cost": "node scratch/test-cost-aware-routing-policy.js",
+    "test:mr-local": "node scratch/test-local-model-adapter.js",
+    "test:mr-cloud": "node scratch/test-cloud-model-adapter.js",
+    "test:mr-fallback": "node scratch/test-model-fallback-manager.js",
+    "test:mr-health": "node scratch/test-model-health-checker.js",
+    "test:mr-routing": "node scratch/test-model-routing-decision-engine.js",
+    "test:mr-dashboard": "node scratch/test-model-router-dashboard-api.js",
+    "test:mr-all": "npm run test:mr-provider && npm run test:mr-capability && npm run test:mr-classifier && npm run test:mr-privacy && npm run test:mr-cost && npm run test:mr-local && npm run test:mr-cloud && npm run test:mr-fallback && npm run test:mr-health && npm run test:mr-routing && npm run test:mr-dashboard",
+
+    "test:phase53-54-regression": "node scratch/test-phase53-54-research-model-router-regression.js",
+    "test:phase53-54-all": "npm run test:research-all && npm run test:docs-all && npm run test:mr-all && npm run test:phase53-54-regression"
   },
   "engines": {
     "node": ">=20"

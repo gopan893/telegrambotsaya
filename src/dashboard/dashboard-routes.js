@@ -36,6 +36,18 @@ try {
 } catch (e) {
   researchRoutes = { registerResearchRoutes: () => {} };
 }
+let docsIntelRoutes;
+try {
+  docsIntelRoutes = require('./docs-intel-routes');
+} catch (e) {
+  docsIntelRoutes = { registerDocsIntelRoutes: () => {} };
+}
+let modelRouterRoutes;
+try {
+  modelRouterRoutes = require('./model-router-routes');
+} catch (e) {
+  modelRouterRoutes = { registerModelRouterRoutes: () => {} };
+}
 let lifeOsRoutes;
 try {
   lifeOsRoutes = require('./lifeos-routes');
@@ -404,6 +416,18 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] Research routes skipped:', e.message);
+  }
+  try {
+    docsIntelRoutes.registerDocsIntelRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Docs-Intel routes skipped:', e.message);
+  }
+  try {
+    modelRouterRoutes.registerModelRouterRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Model Router routes skipped:', e.message);
   }
   try {
     lifeOsRoutes.registerLifeOsRoutes(router, services);
