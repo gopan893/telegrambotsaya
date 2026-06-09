@@ -93,7 +93,7 @@ const renderReleaseCandidate = (function () {
     if (!el) return;
 
     try {
-      const res = await Api.fetch('/api/dashboard/release-candidate/freeze-status');
+      const res = await Api.apiGet('/release-candidate/freeze-status');
       const data = res.ok ? res.data : { freezeActive: false };
 
       if (data && data.freezeActive) {
@@ -123,7 +123,7 @@ const renderReleaseCandidate = (function () {
     if (!el) return;
 
     try {
-      const res = await Api.fetch('/api/dashboard/release-candidate');
+      const res = await Api.apiGet('/release-candidate');
       const data = res.ok ? res.data : { candidates: [], latest: null };
       const candidates = data.candidates || [];
 
@@ -183,7 +183,7 @@ const renderReleaseCandidate = (function () {
     if (!panel || !content) return;
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}`);
+      const res = await Api.apiGet(`/release-candidate/${id}`);
       const data = res.ok ? res.data : null;
       if (!data || !data.candidate) {
         content.innerHTML = UI.renderError('Not Found', 'Release candidate not found');
@@ -240,7 +240,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/run-readiness`, { method: 'POST' });
+      const res = await Api.apiPost(`/release-candidate/${id}/run-readiness`, {});
       const data = res.ok ? res.data : null;
 
       if (!data || !data.moduleReadiness) {
@@ -300,7 +300,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/run-production-gate`, { method: 'POST' });
+      const res = await Api.apiPost(`/release-candidate/${id}/run-production-gate`, {});
       const data = res.ok ? res.data : null;
 
       if (!data || !data.productionReadiness) {
@@ -357,7 +357,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/run-compatibility`, { method: 'POST' });
+      const res = await Api.apiPost(`/release-candidate/${id}/run-compatibility`, {});
       const data = res.ok ? res.data : null;
 
       if (!data || !data.compatibility) {
@@ -405,7 +405,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/risk-review`, { method: 'POST' });
+      const res = await Api.apiPost(`/release-candidate/${id}/risk-review`, {});
       const data = res.ok ? res.data : null;
 
       if (!data || !data.riskSummary) {
@@ -454,7 +454,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/notes`);
+      const res = await Api.apiGet(`/release-candidate/${id}/notes`);
       const data = res.ok ? res.data : null;
 
       if (!data || !data.notes) {
@@ -518,7 +518,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/changelog`);
+      const res = await Api.apiGet(`/release-candidate/${id}/changelog`);
       const data = res.ok ? res.data : null;
 
       if (!data || !data.changelog) {
@@ -556,7 +556,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/env-checklist`);
+      const res = await Api.apiGet(`/release-candidate/${id}/env-checklist`);
       const data = res.ok ? res.data : null;
 
       if (!data || !data.checklist) {
@@ -609,7 +609,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/operator-guide`);
+      const res = await Api.apiGet(`/release-candidate/${id}/operator-guide`);
       const data = res.ok ? res.data : null;
 
       if (!data || !data.guides) {
@@ -687,7 +687,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/report`);
+      const res = await Api.apiGet(`/release-candidate/${id}/report`);
       const data = res.ok ? res.data : null;
 
       if (!data || !data.report) {
@@ -733,10 +733,7 @@ const renderReleaseCandidate = (function () {
     panel.style.display = 'block';
 
     try {
-      const res = await Api.fetch(`/api/dashboard/release-candidate/${id}/proposal`, {
-        method: 'POST',
-        body: { type }
-      });
+      const res = await Api.apiPost(`/release-candidate/${id}/proposal`, { type });
       const data = res.ok ? res.data : null;
 
       if (!data) {
@@ -781,7 +778,7 @@ const renderReleaseCandidate = (function () {
 
       if (target.id === 'btn-rc-create') {
         try {
-          const res = await Api.fetch('/api/dashboard/release-candidate/create', { method: 'POST' });
+          const res = await Api.apiPost('/release-candidate/create', {});
           if (res.ok) {
             await loadData();
             Utils.showToast('Release candidate created', 'success');
@@ -795,7 +792,7 @@ const renderReleaseCandidate = (function () {
 
       if (target.id === 'btn-rc-start-freeze') {
         try {
-          const res = await Api.fetch('/api/dashboard/release-candidate/start-freeze', { method: 'POST' });
+          const res = await Api.apiPost('/release-candidate/start-freeze', {});
           if (res.ok) {
             await loadFreezeStatus();
             Utils.showToast('Release freeze started', 'success');
@@ -807,7 +804,7 @@ const renderReleaseCandidate = (function () {
 
       if (target.id === 'btn-rc-end-freeze') {
         try {
-          const res = await Api.fetch('/api/dashboard/release-candidate/end-freeze', { method: 'POST' });
+          const res = await Api.apiPost('/release-candidate/end-freeze', {});
           if (res.ok) {
             await loadFreezeStatus();
             Utils.showToast('Release freeze ended', 'success');

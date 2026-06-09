@@ -5,7 +5,6 @@
   'use strict';
 
   const TAB_ID = 'telegram-control';
-  const API_BASE = '/api/dashboard/telegram-control';
 
   function init() {
     DashboardState.DASHBOARD_TABS[TAB_ID] = {
@@ -102,7 +101,7 @@
   }
 
   function loadOverview() {
-    Api.get(API_BASE).then(function(data) {
+    Api.apiGet('/telegram-control').then(function(data) {
       if (!data || !data.ok) {
         document.getElementById('tc-overview-content').innerHTML = '<p class="error">Gagal memuat data.</p>';
         return;
@@ -144,11 +143,11 @@
     if (category) params.push('category=' + encodeURIComponent(category));
     if (risk) params.push('riskLevel=' + encodeURIComponent(risk));
 
-    var url = API_BASE + '/commands' + (params.length > 0 ? '?' + params.join('&') : '');
+    var url = '/telegram-control/commands' + (params.length > 0 ? '?' + params.join('&') : '');
 
     document.getElementById('tc-command-list').innerHTML = '<p class="loading">Memuat...</p>';
 
-    Api.get(url).then(function(data) {
+    Api.apiGet(url).then(function(data) {
       if (!data || !data.ok) {
         document.getElementById('tc-command-list').innerHTML = '<p class="error">Gagal memuat commands.</p>';
         return;
@@ -192,7 +191,7 @@
   }
 
   function loadAudit() {
-    Api.get(API_BASE + '/audit?limit=20').then(function(data) {
+    Api.apiGet('/telegram-control/audit?limit=20').then(function(data) {
       if (!data || !data.ok) {
         document.getElementById('tc-audit-content').innerHTML = '<p class="error">Gagal memuat audit.</p>';
         return;
@@ -225,7 +224,7 @@
   }
 
   function loadProposals() {
-    Api.get(API_BASE + '/pending-proposals').then(function(data) {
+    Api.apiGet('/telegram-control/pending-proposals').then(function(data) {
       if (!data || !data.ok) {
         document.getElementById('tc-proposals-content').innerHTML = '<p class="error">Gagal memuat proposal.</p>';
         return;
@@ -263,7 +262,7 @@
     resultDiv.classList.remove('hidden');
     resultDiv.innerHTML = '<p class="loading">Menganalisis...</p>';
 
-    Api.post(API_BASE + '/test-intent', { text: text }).then(function(data) {
+    Api.apiPost('/telegram-control/test-intent', { text: text }).then(function(data) {
       if (!data || !data.ok) {
         resultDiv.innerHTML = '<p class="error">Gagal menganalisis.</p>';
         return;
@@ -298,9 +297,9 @@
     var resultDiv = document.getElementById('tc-help-result');
     resultDiv.classList.remove('hidden');
     resultDiv.innerHTML = '<p class="loading">Memuat...</p>';
+    var url = '/telegram-control/help?command=' + encodeURIComponent(query);
 
-    var url = API_BASE + '/help?command=' + encodeURIComponent(query);
-    Api.get(url).then(function(data) {
+    Api.apiGet(url).then(function(data) {
       if (!data || !data.ok) {
         resultDiv.innerHTML = '<p class="error">Gagal memuat bantuan.</p>';
         return;

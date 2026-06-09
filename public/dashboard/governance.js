@@ -17,52 +17,52 @@ const Governance = (() => {
 
   async function fetchGovernanceStatus() {
     if (isCached('status')) return cache.status.data;
-    const res = await Api.get('/api/dashboard/governance');
+    const res = await Api.apiGet('/governance');
     if (res.ok) setCache('status', res.data);
     return res.ok ? res.data : null;
   }
 
   async function fetchCapabilities(filters) {
     const params = new URLSearchParams(filters || {});
-    const res = await Api.get(`/api/dashboard/governance/capabilities?${params}`);
+    const res = await Api.apiGet(`/governance/capabilities?${params}`);
     return res.ok ? res.data : [];
   }
 
   async function fetchCapabilityDetail(id) {
-    const res = await Api.get(`/api/dashboard/governance/capabilities/${encodeURIComponent(id)}`);
+    const res = await Api.apiGet(`/governance/capabilities/${encodeURIComponent(id)}`);
     return res.ok ? res.data : null;
   }
 
   async function fetchPolicies() {
     if (isCached('policies')) return cache.policies.data;
-    const res = await Api.get('/api/dashboard/governance/policies');
+    const res = await Api.apiGet('/governance/policies');
     if (res.ok) setCache('policies', res.data);
     return res.ok ? res.data : null;
   }
 
   async function fetchAudit(filters) {
     const params = new URLSearchParams(filters || {});
-    const res = await Api.get(`/api/dashboard/governance/audit?${params}`);
+    const res = await Api.apiGet(`/governance/audit?${params}`);
     return res.ok ? { events: res.data, summary: res.summary } : { events: [], summary: {} };
   }
 
   async function fetchBlocked() {
-    const res = await Api.get('/api/dashboard/governance/blocked');
+    const res = await Api.apiGet('/governance/blocked');
     return res.ok ? res.data : [];
   }
 
   async function postSimulate(action, actor, context) {
-    const res = await Api.post('/api/dashboard/governance/simulate', { action, actor, context });
+    const res = await Api.apiPost('/governance/simulate', { action, actor, context });
     return res.ok ? res.data : null;
   }
 
   async function postSecretScan(payload) {
-    const res = await Api.post('/api/dashboard/governance/secret-scan', { payload });
+    const res = await Api.apiPost('/governance/secret-scan', { payload });
     return res.ok ? res.data : null;
   }
 
   async function postValidate(action, actor, context) {
-    const res = await Api.post('/api/dashboard/governance/validate', { action, actor, context });
+    const res = await Api.apiPost('/governance/validate', { action, actor, context });
     return res.ok ? { data: res.data, explanation: res.explanation } : null;
   }
 

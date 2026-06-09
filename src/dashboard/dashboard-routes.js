@@ -501,6 +501,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
   }
 
   try {
+    const operatingLoopRoutes = require('./operating-loop-routes');
+    operatingLoopRoutes.registerOperatingLoopRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Operating Loop routes skipped:', e.message);
+  }
+
+  try {
     const governanceRoutes = require('./governance-routes');
     governanceRoutes.registerGovernanceRoutes(app, services);
   } catch (e) {
