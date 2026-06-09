@@ -394,6 +394,30 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['models', 'model-router', 'local-ai', 'cloud-ai', 'ai-router', 'hybrid-ai', 'model-router', 'router-model'],
     renderer: 'renderModelRouter'
+  },
+  'plugins': {
+    label: 'Plugins',
+    title: 'Plugin / Connector SDK',
+    navIcon: '🔌',
+    navVisible: true,
+    aliases: ['plugin', 'connectors', 'connector', 'plugin-sdk', 'plugin-sdk', 'plugin_sdk', 'pasang'],
+    renderer: 'renderPlugins'
+  },
+  'rag-kb': {
+    label: 'RAG / KB',
+    title: 'Personal Knowledge Search & RAG',
+    navIcon: '📚',
+    navVisible: true,
+    aliases: ['rag', 'kb', 'knowledge-base', 'vector-search', 'semantic-search', 'dokumen', 'dokumen-search'],
+    renderer: 'renderRagKb'
+  },
+  'recipes': {
+    label: 'Recipes',
+    title: 'Automation Recipe Builder',
+    navIcon: '⚡',
+    navVisible: true,
+    aliases: ['recipe', 'automation', 'workflow-automation', 'recipe-builder', 'resep'],
+    renderer: 'renderRecipes'
   }
 };
 

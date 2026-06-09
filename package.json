@@ -79,7 +79,51 @@
     "test:mr-all": "npm run test:mr-provider && npm run test:mr-capability && npm run test:mr-classifier && npm run test:mr-privacy && npm run test:mr-cost && npm run test:mr-local && npm run test:mr-cloud && npm run test:mr-fallback && npm run test:mr-health && npm run test:mr-routing && npm run test:mr-dashboard",
 
     "test:phase53-54-regression": "node scratch/test-phase53-54-research-model-router-regression.js",
-    "test:phase53-54-all": "npm run test:research-all && npm run test:docs-all && npm run test:mr-all && npm run test:phase53-54-regression"
+    "test:phase53-54-all": "npm run test:research-all && npm run test:docs-all && npm run test:mr-all && npm run test:phase53-54-regression",
+
+    "test:plugin-store": "node scratch/test-plugin-store.js",
+    "test:connector-registry": "node scratch/test-connector-registry.js",
+    "test:plugin-validator": "node scratch/test-plugin-validator.js",
+    "test:plugin-sandbox": "node scratch/test-plugin-sandbox.js",
+    "test:plugin-permission": "node scratch/test-plugin-permission-engine.js",
+    "test:connector-factory": "node scratch/test-connector-factory.js",
+    "test:plugin-installer": "node scratch/test-plugin-installer.js",
+    "test:plugin-lifecycle": "node scratch/test-plugin-lifecycle-manager.js",
+    "test:plugin-dependency": "node scratch/test-plugin-dependency-resolver.js",
+    "test:plugin-config": "node scratch/test-plugin-config-manager.js",
+    "test:plugin-event-bus": "node scratch/test-plugin-event-bus.js",
+    "test:plugin-marketplace": "node scratch/test-plugin-marketplace.js",
+    "test:plugins-all": "npm run test:plugin-store && npm run test:connector-registry && npm run test:plugin-validator && npm run test:plugin-sandbox && npm run test:plugin-permission && npm run test:connector-factory && npm run test:plugin-installer && npm run test:plugin-lifecycle && npm run test:plugin-dependency && npm run test:plugin-config && npm run test:plugin-event-bus && npm run test:plugin-marketplace",
+
+    "test:rag-doc-store": "node scratch/test-rag-document-store.js",
+    "test:rag-chunker": "node scratch/test-rag-document-chunker.js",
+    "test:rag-embedding": "node scratch/test-rag-embedding-service.js",
+    "test:rag-vector": "node scratch/test-rag-vector-index.js",
+    "test:rag-hybrid": "node scratch/test-rag-hybrid-searcher.js",
+    "test:rag-context": "node scratch/test-rag-context-builder.js",
+    "test:rag-filter": "node scratch/test-rag-filter-engine.js",
+    "test:rag-ranker": "node scratch/test-rag-source-ranker.js",
+    "test:rag-cache": "node scratch/test-rag-caching-layer.js",
+    "test:rag-analyzer": "node scratch/test-rag-query-analyzer.js",
+    "test:rag-all": "npm run test:rag-doc-store && npm run test:rag-chunker && npm run test:rag-embedding && npm run test:rag-vector && npm run test:rag-hybrid && npm run test:rag-context && npm run test:rag-filter && npm run test:rag-ranker && npm run test:rag-cache && npm run test:rag-analyzer",
+
+    "test:recipe-store": "node scratch/test-recipe-store.js",
+    "test:recipe-triggers": "node scratch/test-recipe-trigger-registry.js",
+    "test:recipe-actions": "node scratch/test-recipe-action-registry.js",
+    "test:recipe-conditions": "node scratch/test-recipe-condition-engine.js",
+    "test:recipe-exec": "node scratch/test-recipe-execution-engine.js",
+    "test:recipe-templates": "node scratch/test-recipe-template-library.js",
+    "test:recipe-validator": "node scratch/test-recipe-validator.js",
+    "test:recipe-scheduler": "node scratch/test-recipe-scheduler.js",
+    "test:recipe-dry-run": "node scratch/test-recipe-dry-runner.js",
+    "test:recipe-logs": "node scratch/test-recipe-log-manager.js",
+    "test:recipe-rollback": "node scratch/test-recipe-rollback-manager.js",
+    "test:recipe-interpolator": "node scratch/test-recipe-variable-interpolator.js",
+    "test:recipe-utils": "node scratch/test-recipe-utils.js",
+    "test:recipes-all": "npm run test:recipe-store && npm run test:recipe-triggers && npm run test:recipe-actions && npm run test:recipe-conditions && npm run test:recipe-exec && npm run test:recipe-templates && npm run test:recipe-validator && npm run test:recipe-scheduler && npm run test:recipe-dry-run && npm run test:recipe-logs && npm run test:recipe-rollback && npm run test:recipe-interpolator && npm run test:recipe-utils",
+
+    "test:phase55-57-regression": "node scratch/test-phase55-57-plugin-rag-recipe-regression.js",
+    "test:phase55-57-all": "npm run test:plugins-all && npm run test:rag-all && npm run test:recipes-all && npm run test:phase55-57-regression"
   },
   "engines": {
     "node": ">=20"

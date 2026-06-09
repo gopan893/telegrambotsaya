@@ -62,7 +62,7 @@ goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
 deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security, privacy, release-candidate,
-docs-intel, model-router.
+docs-intel, model-router, plugins, rag-kb, recipes.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.
@@ -194,6 +194,53 @@ Phase 53-54 Hybrid Model Router rule:
 - No API key values exposed in any output.
 - Local adapter fails softly on connection errors.
 - Routing audit never logs secrets or private prompts.
+
+Phase 55-57 Plugin/Connector SDK rule:
+- Plugin SDK manages install, enable, disable, uninstall lifecycle via plugin-store, plugin-installer, plugin-lifecycle-manager.
+- Plugin validator checks manifest fields (id, name, version, main) and type (module/middleware/hook/adapter/theme).
+- Plugin sandbox restricts plugin access to allowed resources only; no direct filesystem or network access without permission.
+- Connector registry provides 15+ built-in connector templates (HTTP webhook, Slack, Discord, GitHub, GitLab, Jira, Linear, Notion, Google Drive, etc.).
+- Connector factory creates named instances with connect/disconnect lifecycle; connector health checker monitors status.
+- Plugin permission engine enforces granular access per connector (none/read/write/admin).
+- Plugin event bus supports pub/sub for inter-plugin communication.
+- Plugin dependency resolver checks for missing deps and circular dependencies.
+- Plugin marketplace client provides mock searchable marketplace with 5 sample plugins.
+- Plugin config manager stores per-plugin config with schema validation.
+- Plugin signing verifier provides checksum and signature verification.
+- Plugin update checker compares installed vs marketplace versions.
+- Connector rate limiter uses token bucket algorithm per connector.
+- Plugin event bus, config, and log stores are in-memory (acceptable for Phase 55; Postgres persistence deferred).
+
+Phase 55-57 RAG/Knowledge Base rule:
+- RAG document store manages CRUD for text documents with tags, types, sources, and metadata.
+- Document chunker supports paragraph, sentence, and token-based chunking strategies.
+- Embedding service generates mock 128-dimension vectors with cosine similarity (pluggable to real embedding API).
+- Vector index enables semantic search with configurable top-K results.
+- Hybrid searcher combines vector similarity (70%) and keyword BM25-like scoring (30%).
+- Context builder constructs LLM-ready context from top results with token budget enforcement.
+- Filter engine supports tag, type, source, date range, and custom field filters.
+- Source ranker incorporates recency and authority bonuses into ranking.
+- Caching layer caches search results with configurable TTL (default 5 min).
+- Query analyzer classifies intent (how_to, definition, troubleshooting, comparison, listing, code, general) and extracts key phrases.
+- Relevance scorer scores documents by exact match and term density.
+- Feedback loop records relevance feedback for future ranking improvement.
+- All RAG stores are in-memory (acceptable for Phase 55; vector DB persistence deferred).
+
+Phase 55-57 Automation Recipe Builder rule:
+- Recipe store manages CRUD for automation recipes with trigger, conditions, actions, variables, tags, and parallel execution flag.
+- Trigger registry provides 10 built-in triggers: manual, schedule (cron), webhook, file_change, memory_added, goal_completed, insight_generated, error_detected, health_degraded, external_event.
+- Action registry provides 16 built-in actions: send_message, send_notification, create_memory, create_goal, update_goal, create_insight, log_event, run_health_check, trigger_workflow, run_research, export_data, call_connector, http_request, set_variable, condition_branch, delay.
+- Condition engine supports 10 condition types: equals, contains, greater_than, less_than, regex, exists, boolean, and, or, not — with $variable resolution from context.
+- Execution engine runs actions sequentially with retry (configurable maxRetries), timeout, and abort on failure.
+- Template library provides 6 built-in recipe templates: daily_summary, weekly_review, error_alert, goal_milestone, weekly_health_check, webhook_data_ingest.
+- Recipe validator checks name, trigger, actions, conditions, timeout, and maxRetries validity.
+- Recipe scheduler manages cron-based scheduling with parse, pause, resume.
+- Dry runner simulates recipe execution without side effects.
+- Variable interpolator resolves $variable patterns from context and recipe variables.
+- Rollback manager provides undo plan for reversible actions (create_memory, create_goal, create_insight have reversals).
+- Parallel fork enables forking multiple actions in parallel with merge results.
+- Recipe log manager stores execution logs with per-recipe filtering and stats.
+- All recipe stores are in-memory (acceptable for Phase 55; Postgres persistence deferred).
 
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js

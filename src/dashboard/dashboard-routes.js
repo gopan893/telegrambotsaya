@@ -548,6 +548,30 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Reliability routes skipped:', e.message);
   }
 
+  try {
+    const pluginRoutes = require('./plugin-routes');
+    pluginRoutes.registerPluginRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Plugin routes skipped:', e.message);
+  }
+
+  try {
+    const ragKbRoutes = require('./rag-kb-routes');
+    ragKbRoutes.registerRagKbRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] RAG/KB routes skipped:', e.message);
+  }
+
+  try {
+    const recipeRoutes = require('./recipe-routes');
+    recipeRoutes.registerRecipeRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Recipe routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);
