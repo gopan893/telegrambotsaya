@@ -362,6 +362,22 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['rc', 'stable-release', 'v1', 'release-v1', 'production-ready', 'rilis-kandidat'],
     renderer: 'renderReleaseCandidate'
+  },
+  'production-release': {
+    label: 'Production Release',
+    title: 'Production Release Manager',
+    navIcon: '🏭',
+    navVisible: true,
+    aliases: ['pr', 'prod-release', 'production', 'v1-release', 'release-plan', 'rilis-produksi'],
+    renderer: 'renderProductionRelease'
+  },
+  'reliability': {
+    label: 'Reliability',
+    title: 'Reliability & SLO Monitor',
+    navIcon: '📊',
+    navVisible: true,
+    aliases: ['slo', 'uptime', 'health-window', 'post-release', 'reliability-score', 'keandalan'],
+    renderer: 'renderReliability'
   }
 };
 

@@ -28,7 +28,20 @@
     "test:rc-regression": "node scratch/test-rc-regression-checker.js",
     "test:rc-fixpolicy": "node scratch/test-rc-fix-policy.js",
     "test:rc-stabilization": "node scratch/test-phase50-5-rc-stabilization-regression.js",
-    "test:rc-all": "node scratch/test-rc-stabilization-auditor.js && node scratch/test-rc-blocker-classifier.js && node scratch/test-rc-regression-checker.js && node scratch/test-rc-fix-policy.js && node scratch/test-phase50-5-rc-stabilization-regression.js"
+    "test:rc-all": "node scratch/test-rc-stabilization-auditor.js && node scratch/test-rc-blocker-classifier.js && node scratch/test-rc-regression-checker.js && node scratch/test-rc-fix-policy.js && node scratch/test-phase50-5-rc-stabilization-regression.js",
+    "test:pr-manager": "node scratch/test-production-release-manager.js",
+    "test:pr-readiness": "node scratch/test-rollout-readiness-gate.js",
+    "test:pr-planner": "node scratch/test-release-rollout-planner.js",
+    "test:pr-github": "node scratch/test-github-release-proposal-builder.js",
+    "test:pr-deploy": "node scratch/test-production-deploy-proposal-builder.js",
+    "test:pr-verify": "node scratch/test-release-verification-checker.js",
+    "test:slo-registry": "node scratch/test-slo-registry.js",
+    "test:slo-monitor": "node scratch/test-slo-monitor.js",
+    "test:pr-monitor": "node scratch/test-post-release-monitor.js",
+    "test:health-window": "node scratch/test-release-health-window.js",
+    "test:watchdog": "node scratch/test-regression-watchdog.js",
+    "test:scorecard": "node scratch/test-reliability-scorecard.js",
+    "test:51-52-regression": "node scratch/test-phase51-52-production-release-regression.js"
   },
   "engines": {
     "node": ">=20"
