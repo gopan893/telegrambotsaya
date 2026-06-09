@@ -22,7 +22,13 @@
     "test:release-changelog": "node scratch/test-changelog-generator.js",
     "test:release-env": "node scratch/test-environment-checklist-generator.js",
     "test:release-dashboard": "node scratch/test-release-candidate-dashboard-api.js",
-    "test:release-regression": "node scratch/test-phase50-release-candidate-regression.js"
+    "test:release-regression": "node scratch/test-phase50-release-candidate-regression.js",
+    "test:rc-auditor": "node scratch/test-rc-stabilization-auditor.js",
+    "test:rc-blocker": "node scratch/test-rc-blocker-classifier.js",
+    "test:rc-regression": "node scratch/test-rc-regression-checker.js",
+    "test:rc-fixpolicy": "node scratch/test-rc-fix-policy.js",
+    "test:rc-stabilization": "node scratch/test-phase50-5-rc-stabilization-regression.js",
+    "test:rc-all": "node scratch/test-rc-stabilization-auditor.js && node scratch/test-rc-blocker-classifier.js && node scratch/test-rc-regression-checker.js && node scratch/test-rc-fix-policy.js && node scratch/test-phase50-5-rc-stabilization-regression.js"
   },
   "engines": {
     "node": ">=20"

@@ -623,3 +623,12 @@ Natural chat phrases:
 - "hard delete audit logs sekarang" → blocked/proposal-only
 
 All exports use strict redaction. No secrets exported. No direct hard delete. Archive preferred.
+
+## Phase 50.5 — RC Stabilization Audit
+
+| Command | Fungsi |
+| --- | --- |
+| `/rcstabilize` or `/rcaudit` | Run RC stabilization audit |
+| `/rcblockers` | View P0/P1 blocker summary |
+| `/rcfixpolicy` | Check if a change is allowed during freeze |
+| `/rcstabilityreport` | Generate RC stabilization report |

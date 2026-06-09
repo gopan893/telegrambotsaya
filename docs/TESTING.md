@@ -322,3 +322,14 @@ node --check src/dashboard/privacy-routes.js
 node --check src/dashboard/dashboard-routes.js
 node --check public/dashboard/privacy.js
 ```
+
+## Phase 50.5 — RC Stabilization
+
+### Stabilization Modules
+- test-rc-stabilization-auditor.js — 27 assertions
+- test-rc-blocker-classifier.js — 30 assertions
+- test-rc-regression-checker.js — 15 assertions
+- test-rc-fix-policy.js — 20 assertions
+- test-phase50-5-rc-stabilization-regression.js — 56 assertions
+- Run: `node scratch/test-rc-stabilization-auditor.js && node scratch/test-rc-blocker-classifier.js && node scratch/test-rc-regression-checker.js && node scratch/test-rc-fix-policy.js && node scratch/test-phase50-5-rc-stabilization-regression.js`
+- Or: `npm run test:rc-all`

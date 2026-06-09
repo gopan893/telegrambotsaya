@@ -270,3 +270,12 @@ Dashboard contract:
 - Export manifests show metadata only — never raw record values.
 - Delete requests default to soft delete; no direct hard delete button in UI.
 - Known tab must not fallback to Overview.
+
+## Phase 50.5 — RC Stabilization Audit
+
+- `RcStabilizationAuditor.runRcStabilizationAudit(services)` — runs full stabilization audit
+- `RcBlockerClassifier.classifyRcFinding(finding)` — classifies P0/P1/P2/P3
+- `RcRegressionChecker` has 10 check functions
+- `RcFixPolicy.evaluateRcFixAllowed(change)` — enforces stabilization freeze
+- `RcStabilizationReportGenerator.generateStabilizationReport()` — produces report
+- All stabilization checks are read-only; no external write capability

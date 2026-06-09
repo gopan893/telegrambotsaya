@@ -1180,3 +1180,25 @@ Privacy rules:
 - Life OS mood/energy data is owner-only and blocked from coding agents.
 - All export/archive/delete actions require proposal + approval.
 - Privacy audit records never log secrets.
+
+## Phase 50.5 (RC Stabilization)
+
+Modules:
+- `src/release/rc-stabilization-auditor.js` — Runs full stabilization audit across boot, dashboard, telegram, executor, governance, security, privacy, docs
+- `src/release/rc-blocker-classifier.js` — Classifies findings as P0 (release blocker), P1 (must fix), P2 (known limitation), P3 (backlog)
+- `src/release/rc-regression-checker.js` — 10 check functions for dashboard registry, sidebar, renderer, PWA cache, Telegram commands, approval boundary, secret redaction, privacy export
+- `src/release/rc-fix-policy.js` — Enforces stabilization freeze (P0/P1 only, no new features)
+- `src/release/rc-stabilization-report-generator.js` — Produces readiness scoring and Phase 51 recommendation
+
+Test files:
+- `scratch/test-rc-stabilization-auditor.js`
+- `scratch/test-rc-blocker-classifier.js`
+- `scratch/test-rc-regression-checker.js`
+- `scratch/test-rc-fix-policy.js`
+- `scratch/test-phase50-5-rc-stabilization-regression.js`
+
+Doc files:
+- `docs/RC_STABILIZATION_AUDIT.md`
+- `docs/RC_BLOCKER_CLASSIFICATION.md`
+- `docs/RC_FIX_POLICY.md`
+- `docs/RC_STABILIZATION_REPORT.md`

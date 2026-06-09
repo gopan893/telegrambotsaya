@@ -488,3 +488,103 @@ Phase 49 — Privacy, Data Retention & Export Control
 
 ### Recommended Next Branch/Commit
 Commit message: `privacy: add data retention export control`
+
+---
+
+### Agent
+OpenCode / Hermes
+
+### Date
+2026-06-09
+
+### Current Task
+Phase 50.5 — RC Stabilization Audit + P0/P1 Fix Only
+
+### Files Changed
+
+**New Files (src/release/):**
+- `rc-stabilization-auditor.js` — Full RC stabilization audit (8 check functions)
+- `rc-blocker-classifier.js` — P0/P1/P2/P3 finding classification
+- `rc-regression-checker.js` — 10 regression check functions
+- `rc-fix-policy.js` — RC fix policy enforcement
+- `rc-stabilization-report-generator.js` — Stabilization report generation
+
+**New Test Files:**
+- `scratch/test-rc-stabilization-auditor.js` — 27 PASS
+- `scratch/test-rc-blocker-classifier.js` — 30 PASS
+- `scratch/test-rc-regression-checker.js` — 15 PASS
+- `scratch/test-rc-fix-policy.js` — 20 PASS
+- `scratch/test-phase50-5-rc-stabilization-regression.js` — 56 PASS
+
+**New Docs:**
+- `docs/RC_STABILIZATION_AUDIT.md`
+- `docs/RC_P0_P1_FIX_LOG.md`
+- `docs/RC_50_5_RELEASE_READINESS.md`
+- `docs/PHASE_50_5_STABILIZATION_REPORT.md`
+
+**Modified Files:**
+- `src/release/index.js` — exports all 5 stabilization modules
+- `package.json` — added 6 new test scripts (test:rc-auditor, test:rc-blocker, test:rc-regression, test:rc-fixpolicy, test:rc-stabilization, test:rc-all)
+- `AGENTS.md` — added Phase 50.5 RC Stabilization rule
+
+### What Was Completed
+- RC stabilization auditor with 8 check functions (boot, dashboard, telegram, executor, governance, security/privacy, docs, artifacts)
+- RC blocker classifier with P0/P1/P2/P3 classification and summary builder
+- RC regression checker with 10 regression check functions (dashboard registry, sidebar, renderer, PWA cache, Telegram commands, natural router, approval boundary, secret redaction, privacy export, release candidate)
+- RC fix policy with feature freeze enforcement — P0/P1 fixes allowed, new features/unsafe capabilities blocked
+- RC stabilization report generator with stabilization summary, P0/P1 sections, fixed issues, tests, dashboard/telegram/executor/security status, readiness scoring, quality gates, Phase 51 recommendation
+- 5 test files with 148 total assertions (all PASS)
+- All existing cross-phase tests rerun (all PASS): dashboard-router-registry (132), dashboard-all-menu-routes (105), dashboard-dark-form-ui (28), dashboard-stable-routes (11), executor-boundary (10), integration-gate (12), natural-chat (10), governance-decision-engine (24), security-scorecard (20), privacy-regression (78), release-candidate-dashboard-api (20), phase50-regression (20), render-deploy-gate (15), file-analysis-leak (PASS), pwa-assets (PASS), plus 23 governance/security/privacy module tests (all PASS)
+- Fixed: auditor removed redundant require('../bot') that failed in test context
+- Fixed: blocker classifier tightened "not configured" pattern to only match critical env vars (TELEGRAM_TOKEN, OWNER_CHAT_ID)
+- Phase 50.5 rules added to AGENTS.md
+- Quality gates: rcStabilizationScore >= 95, p0BlockerDetectionScore=100, dashboardRegressionScore=100, approvalBoundaryScore=100, securityPrivacyScore >= 95, featureFreezeScore=100, no direct external write, no secret leakage, no auto-approve, no hard delete, no shell executor
+
+### What Is Unfinished
+- Wire stabilization audit into Telegram Control Layer command handlers (Phase 51)
+- Wire stabilization report into dashboard RC Stabilization sub-tab (Phase 51)
+- Add stabilization evaluation cases to Evaluation Harness v2 (Phase 51)
+- Real integration testing with Telegram API on Render (Phase 51)
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `node --check telebot.js` | PASS |
+| `test-rc-stabilization-auditor.js` | 27 PASS |
+| `test-rc-blocker-classifier.js` | 30 PASS |
+| `test-rc-regression-checker.js` | 15 PASS |
+| `test-rc-fix-policy.js` | 20 PASS |
+| `test-phase50-5-rc-stabilization-regression.js` | 56 PASS |
+| `test-dashboard-router-registry.js` | 132 PASS |
+| `test-dashboard-all-menu-routes.js` | 105 PASS |
+| `test-dashboard-dark-form-ui.js` | 28 PASS |
+| `test-dashboard-stable-routes.js` | 11 PASS |
+| `test-executor-boundary-stable-release.js` | 10 PASS |
+| `test-integration-gate-stable-release.js` | 12 PASS |
+| `test-natural-chat-stable-release.js` | 10 PASS |
+| `test-governance-decision-engine.js` | 24 PASS |
+| `test-security-scorecard.js` | 20 PASS |
+| `test-phase49-privacy-regression.js` | 78 PASS |
+| `test-release-candidate-dashboard-api.js` | 20 PASS |
+| `test-phase50-release-candidate-regression.js` | 20 PASS |
+| `test-render-deploy-gate.js` | 15 PASS |
+| `test-file-analysis-leak.js` | PASS |
+| `test-pwa-assets.js` | PASS |
+| 23 governance/security/privacy module tests | all PASS |
+
+### Remaining Risks
+- No P0/P1 blockers found in audit — release candidate is stable
+- Stabilization audit modules are standalone; runtime wiring pending for Phase 51
+- All quality gates passed; ready for Phase 51 production release preparation
+- In-memory stores reset on restart (acceptable per Phase 50.5 scope)
+
+### Next Safe Task
+```
+1. Wire stabilization audit into Telegram Control Layer command handlers
+2. Wire stabilization report into dashboard RC Stabilization sub-tab
+3. Add stabilization evaluation cases to Evaluation Harness v2
+4. Deploy to Render and run full end-to-end manual test sequence
+```
+
+### Recommended Next Branch/Commit
+Commit message: `release: stabilize v1 rc with p0 p1 audit`

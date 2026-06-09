@@ -165,6 +165,16 @@ Phase 49 Privacy & Data Retention rule:
 - All privacy-sensitive write/export/delete actions must go through dry-run → Evaluation v2 → executor proposal → approval → run.
 - Privacy dashboard tab must not fallback to System Overview.
 
+Phase 50.5 RC Stabilization rule:
+- Run RC stabilization audit before Phase 51 production release.
+- Only P0/P1 fixes allowed during stabilization freeze.
+- No new large features, no shell executor, no new external write capability, no direct deploy/push/release.
+- RC stabilization auditor checks boot, dashboard, telegram, executor, governance, security, privacy, docs, and artifacts.
+- RC blocker classifier assigns P0 (release blocker), P1 (must fix), P2 (known limitation), P3 (backlog).
+- RC regression checker verifies dashboard registry, sidebar, renderer, PWA cache, Telegram commands, approval boundary, secret redaction, privacy export.
+- RC fix policy enforces stabilization freeze — only P0/P1 fixes and docs/tests updates allowed.
+- RC stabilization report generator produces readiness scoring and Phase 51 recommendation.
+
 Specific test files to run when relevant:
 - scratch/test-dashboard-router-registry.js
 - scratch/test-dashboard-all-menu-routes.js

@@ -12,6 +12,11 @@ const EnvironmentChecklistGenerator = require('./environment-checklist-generator
 const OperatorGuideGenerator = require('./operator-guide-generator');
 const ReleaseProposalBridge = require('./release-proposal-bridge');
 const ReleaseUtils = require('./release-utils');
+const RcStabilizationAuditor = require('./rc-stabilization-auditor');
+const RcBlockerClassifier = require('./rc-blocker-classifier');
+const RcRegressionChecker = require('./rc-regression-checker');
+const RcFixPolicy = require('./rc-fix-policy');
+const RcStabilizationReportGenerator = require('./rc-stabilization-report-generator');
 
 module.exports = {
   ...ReleaseCandidateStore,
@@ -25,5 +30,10 @@ module.exports = {
   ...EnvironmentChecklistGenerator,
   ...OperatorGuideGenerator,
   ...ReleaseProposalBridge,
+  RcStabilizationAuditor,
+  RcBlockerClassifier,
+  RcRegressionChecker,
+  RcFixPolicy,
+  RcStabilizationReportGenerator,
   utils: ReleaseUtils
 };
