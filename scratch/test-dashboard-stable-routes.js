@@ -119,7 +119,7 @@ test('dashboard shell loads stable Phase 33 monitoring/cicd scripts', () => {
 
 test('asset version query busts stale PWA dashboard cache', () => {
   assert(/v=202606\d{2}-phase\d+[-\w]*/.test(html), 'dashboard shell should version static assets');
-  assert(swJs.includes('telegram-aios-dashboard-static-v48-phase5860'), 'service worker cache name should be bumped');
+  assert(swJs.includes('telegram-aios-dashboard-static-v48-stability-audit'), 'service worker cache name should be bumped');
 });
 
 test('service worker does not cache dashboard API responses', () => {

@@ -99,6 +99,7 @@
   }
 
   window.renderReliability = render;
+  if (window.UI) window.UI.renderReliability = render;
   window.DASHBOARD_TABS = window.DASHBOARD_TABS || {};
   window.DASHBOARD_TABS.reliability = { label: 'Reliability', title: 'Reliability & SLO Monitor', navIcon: '📊', navVisible: true, renderer: 'renderReliability' };
 })();

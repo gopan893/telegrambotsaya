@@ -179,6 +179,7 @@
   }
 
   window.renderProductionRelease = render;
+  if (window.UI) window.UI.renderProductionRelease = render;
   window.DASHBOARD_TABS = window.DASHBOARD_TABS || {};
   window.DASHBOARD_TABS['production-release'] = { label: 'Production Release', title: 'Production Release Manager', navIcon: '🚀', navVisible: true, renderer: 'renderProductionRelease' };
 })();

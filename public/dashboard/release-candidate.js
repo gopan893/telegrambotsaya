@@ -871,3 +871,4 @@ const renderReleaseCandidate = (function () {
 })();
 
 window.renderReleaseCandidate = renderReleaseCandidate;
+if (window.UI) window.UI.renderReleaseCandidate = renderReleaseCandidate;

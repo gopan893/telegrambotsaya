@@ -403,6 +403,14 @@ const DASHBOARD_TABS = {
     aliases: ['plugin', 'connectors', 'connector', 'plugin-sdk', 'plugin-sdk', 'plugin_sdk', 'pasang'],
     renderer: 'renderPlugins'
   },
+  'operator': {
+    label: 'Operator',
+    title: 'Project Operator',
+    navIcon: '🤖',
+    navVisible: true,
+    aliases: ['project-operator', 'project-ops', 'semi-autonomous', 'project-delivery', 'goal-operator', 'operator-panel'],
+    renderer: 'renderOperator'
+  },
   'mobile': {
     label: 'Mobile',
     title: 'Mobile / PWA UX',
@@ -432,7 +440,7 @@ const DASHBOARD_TABS = {
     title: 'Personal Knowledge Search & RAG',
     navIcon: '📚',
     navVisible: true,
-    aliases: ['rag', 'kb', 'knowledge-base', 'vector-search', 'semantic-search', 'dokumen', 'dokumen-search'],
+    aliases: ['rag', 'kb', 'knowledge-base', 'vector-search', 'semantic-search', 'dokumen', 'dokumen-search', 'knowledge-search', 'knowledge_search'],
     renderer: 'renderRagKb'
   },
   'recipes': {

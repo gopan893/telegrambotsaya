@@ -62,7 +62,7 @@ goals, workflows, planner, executor, agents, tools, integrations,
 backup, insights, observability, agent-evaluation, coding-workspace, release,
 routines, selfhealing, monitoring, cicd, devgovernance, githubops,
 deploy, cost, operator, portfolio, knowledge, telegram-control, improvement, governance, security, privacy, release-candidate,
-docs-intel, model-router, plugins, rag-kb, recipes, mobile, disaster-recovery, consolidation.
+docs-intel, model-router, plugins, rag-kb, recipes, mobile, disaster-recovery, consolidation, operator, production-release, reliability.
 
 Agent routing rules:
 - Personal/school/emotional chat → orchestrator/reflection.

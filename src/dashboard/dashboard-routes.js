@@ -596,6 +596,14 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Consolidation routes skipped:', e.message);
   }
 
+  try {
+    const operatorRoutes = require('./operator-routes');
+    operatorRoutes.registerOperatorRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Operator routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

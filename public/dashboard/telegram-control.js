@@ -344,6 +344,9 @@
   if (typeof window.renderTelegramControl === 'undefined') {
     window.renderTelegramControl = renderTelegramControl;
   }
+  if (window.UI && typeof window.UI.renderTelegramControl === 'undefined') {
+    window.UI.renderTelegramControl = renderTelegramControl;
+  }
 
   init();
   setTimeout(function() {

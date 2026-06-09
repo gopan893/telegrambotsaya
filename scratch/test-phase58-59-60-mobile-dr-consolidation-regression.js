@@ -295,7 +295,7 @@ function runWiringTests() {
   assert(stateJs.includes("'mobile'"), 'W8: mobile tab in state.js');
   assert(stateJs.includes("'disaster-recovery'"), 'W9: DR tab in state.js');
   assert(stateJs.includes("'consolidation'"), 'W10: consolidation tab in state.js');
-  assert(swJs.includes('v48-phase5860'), 'W11: SW cache bumped to v48-phase5860');
+  assert(swJs.includes('v48-stability-audit'), 'W11: SW cache bumped to v48-stability-audit');
   assert(swJs.includes('mobile.js'), 'W12: mobile.js in SW cache');
   assert(swJs.includes('notification-center.js'), 'W13: notification-center.js in SW cache');
   assert(swJs.includes('disaster-recovery.js'), 'W14: disaster-recovery.js in SW cache');
@@ -317,7 +317,7 @@ function runWiringTests() {
   const agentsMd = fs.readFileSync(ROOT + '/AGENTS.md', 'utf8');
   assert(agentsMd.includes('mobile,'), 'W20: mobile in AGENTS.md known tabs');
   assert(agentsMd.includes('disaster-recovery,'), 'W21: DR in AGENTS.md known tabs');
-  assert(agentsMd.includes('consolidation.'), 'W22: consolidation in AGENTS.md known tabs');
+  assert(agentsMd.includes('consolidation,'), 'W22: consolidation in AGENTS.md known tabs');
 
   console.log(`\n=== Cross-phase wiring: ${pass} passed (cumulative), ${fail} failed ===\n`);
 }

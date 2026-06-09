@@ -220,3 +220,5 @@ UI._opShowReport = async function(goalId) {
   if (!res.ok) { Utils.showToast('Failed', 'error'); return; }
   Utils.showToast('Report generated', 'info', 3000);
 };
+
+if (window.UI) window.UI.renderOperator = renderOperatorTab;
