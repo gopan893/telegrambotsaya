@@ -28,10 +28,10 @@ const publicTabs = [
   'agents', 'tools', 'integrations', 'backup', 'insights',
   'graph', 'benchmarks', 'incidents', 'observability', 'portfolio', 'research', 'lifeos', 'audit', 'commands',
   'env', 'settings', 'agent-evaluation', 'coding', 'release',
-  'selfhealing', 'monitoring', 'cicd'
+  'selfhealing', 'monitoring', 'cicd', 'routines'
 ];
 
-const internalTabs = ['routines'];
+const internalTabs = [];
 
 let passed = 0;
 let failed = 0;
@@ -119,7 +119,7 @@ test('dashboard shell loads stable Phase 33 monitoring/cicd scripts', () => {
 
 test('asset version query busts stale PWA dashboard cache', () => {
   assert(/v=202606\d{2}-phase\d+[-\w]*/.test(html), 'dashboard shell should version static assets');
-  assert(swJs.includes('telegram-aios-dashboard-static-v49-alias-fix'), 'service worker cache name should be bumped');
+  assert(swJs.includes('telegram-aios-dashboard-static-v50-hotfix'), 'service worker cache name should be bumped');
 });
 
 test('service worker does not cache dashboard API responses', () => {

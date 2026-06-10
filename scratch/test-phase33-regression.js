@@ -20,7 +20,7 @@ function run() {
 
   assert(indexHtml.includes('data-tab="monitoring"'), 'Monitoring tab visible');
   assert(indexHtml.includes('data-tab="cicd"'), 'CI/CD tab visible');
-  assert(!indexHtml.includes('data-tab="routines"'), 'Routines remains hidden');
+  assert(indexHtml.includes('data-tab="routines"'), 'Routines tab visible as public tab');
   assert(stateJs.includes("renderer: 'renderMonitoring'"), 'Monitoring renderer registered');
   assert(stateJs.includes("renderer: 'renderCicd'"), 'CI/CD renderer registered');
   assert(uiJs.includes('/cicd/workflow-dispatch/propose'), 'CI/CD workflow proposal UI present');
