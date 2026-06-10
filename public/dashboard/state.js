@@ -498,6 +498,54 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['v2-release', 'v2-rc', 'v2rc', 'ai-os-v2', 'release-v2', 'v2-readiness'],
     renderer: 'renderV2Release'
+  },
+  'v2-stabilization': {
+    label: 'V2 Stabilization',
+    title: 'V2 RC Stabilization Audit',
+    navIcon: '🔒',
+    navVisible: true,
+    aliases: ['v2-stabilization', 'v2-rc-stabilization', 'rc-stabilization', 'v2-rc-audit', 'rc-audit'],
+    renderer: 'renderV2Stabilization'
+  },
+  'v2-production': {
+    label: 'V2 Production',
+    title: 'AI OS v2 Production Release',
+    navIcon: '🏭',
+    navVisible: true,
+    aliases: ['v2-production', 'production-v2', 'release-v2-production', 'v2-rollout', 'v2-deploy-plan'],
+    renderer: 'renderV2Production'
+  },
+  'post-v2': {
+    label: 'Post-v2 Watch',
+    title: 'Post-v2 Reliability & Regression Watch',
+    navIcon: '👁️',
+    navVisible: true,
+    aliases: ['post-v2', 'post-v2-watch', 'v2-monitoring', 'v2-reliability', 'v2-regression-watch'],
+    renderer: 'renderPostV2'
+  },
+  'plugin-hardening': {
+    label: 'Plugin Hardening',
+    title: 'Plugin Ecosystem Hardening',
+    navIcon: '🔌',
+    navVisible: true,
+    aliases: ['plugin-security', 'plugin-certification', 'connector-hardening', 'plugin-health'],
+    renderer: 'renderPluginHardening'
+  },
+  'rag-quality': {
+    label: 'RAG Quality',
+    title: 'RAG Quality & Memory Intelligence',
+    navIcon: '📚',
+    navVisible: true,
+    aliases: ['memory-intelligence', 'memory-quality', 'retrieval-quality', 'citations', 'hallucination-guard'],
+    renderer: 'renderRagQuality'
+  },
+  'agent-runtime': {
+    label: 'Agent Runtime',
+    title: 'Agent Runtime Optimization & Model Strategy',
+    navIcon: '⚡',
+    navVisible: true,
+    aliases: ['agent-optimization', 'model-strategy', 'model-routing-v2', 'agent-performance', 'model-budget'],
+    renderer: 'renderAgentRuntime'
   }
 };
 

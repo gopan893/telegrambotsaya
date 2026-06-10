@@ -26,7 +26,7 @@ const Api = {
     }
 
     try {
-      const response = await fetch(url, fetchOptions);
+      const response = await window.fetch(url, fetchOptions);
       
       // Auto logout if 401 unauthorized is received on non-public endpoints
       if (response.status === 401 && path !== '/health') {
@@ -57,6 +57,18 @@ const Api = {
       console.error(`API Error on ${method} ${path}:`, err);
       return { ok: false, status: 0, error: 'NETWORK_ERROR', message: err.message };
     }
+  },
+
+  async fetch(url, options) {
+    if (!url) return { ok: false, status: 0, error: 'NO_URL', message: 'No URL provided' };
+    const opts = options || {};
+    const method = opts.method || 'GET';
+    let body = opts.body || null;
+    if (body && typeof body === 'string') {
+      try { body = JSON.parse(body); } catch (_) {}
+    }
+    const path = url.startsWith(this.BASE_URL) ? url.slice(this.BASE_URL.length) : url;
+    return this.request(path, method, body, { auth: opts.auth });
   },
 
   async apiGet(path, options = {}) {
@@ -1029,3 +1041,6 @@ const apiPost = (path, body, options) => Api.apiPost(path, body, options);
 window.Api = Api;
 window.apiGet = apiGet;
 window.apiPost = apiPost;
+
+if (!Api.get) Api.get = Api.apiGet;
+if (!Api.post) Api.post = Api.apiPost;

@@ -41,7 +41,13 @@ const RENDERER_FILE_MAP = {
   renderRegistryV2: 'registry-v2',
   renderBoundary: 'boundary',
   renderPerformance: 'performance',
-  renderV2Release: 'v2-release'
+  renderV2Release: 'v2-release',
+  renderV2Stabilization: 'v2-stabilization',
+  renderV2Production: 'v2-production',
+  renderPostV2: 'post-v2',
+  renderPluginHardening: 'plugin-hardening',
+  renderRagQuality: 'rag-quality',
+  renderAgentRuntime: 'agent-runtime'
 };
 
 // Check renderer exists in UI for all tabs
