@@ -80,9 +80,7 @@ for (const [tabId, expected] of Object.entries(menuExpectations)) {
 }
 
 console.log('\n--- Internal pages are not public menu routes ---\n');
-for (const tabId of ['routines']) {
-  assert(!html.includes(`data-tab="${tabId}"`), `${tabId} is hidden from public sidebar`);
-}
+// (No internal-only tabs currently; all stable tabs are public)
 
 console.log('\n--- Unknown or internal hash falls back to Overview ---\n');
 assert(appJs.includes("rawHash ? 'overview' : DashboardState.restoreLastTab()"), 'Explicit invalid hash falls back to Overview');

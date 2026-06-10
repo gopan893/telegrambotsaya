@@ -21,7 +21,6 @@ assert(stateJs.includes('normalizeCanonicalTabId'), 'normalizeCanonicalTabId exi
 
 // Check that findTabId correctly resolves known tab IDs directly
 knownTabs.forEach(tab => {
-  if (tab === 'routines') return;
   assert(true, `Tab ${tab} is known`);
 });
 

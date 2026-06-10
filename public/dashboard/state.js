@@ -237,9 +237,9 @@ const DASHBOARD_TABS = {
     label: 'Routines',
     title: 'Routine Center',
     navIcon: '⏰',
-    navVisible: false,
-    routeEnabled: false,
-    internalOnly: true,
+    navVisible: true,
+    routeEnabled: true,
+    internalOnly: false,
     aliases: ['routine', 'routine-center', 'daily-ops', 'rutinitas'],
     renderer: 'renderRoutines'
   },
@@ -264,7 +264,7 @@ const DASHBOARD_TABS = {
     title: 'CI/CD Pipeline',
     navIcon: '🔄',
     navVisible: true,
-    aliases: ['ci-cd', 'cicd', 'pipeline', 'deploy'],
+    aliases: ['ci-cd', 'cicd', 'pipeline', 'deploy-pipeline'],
     renderer: 'renderCicd'
   },
   devgovernance: {
@@ -272,7 +272,7 @@ const DASHBOARD_TABS = {
     title: 'Dev Governance',
     navIcon: '🏛️',
     navVisible: true,
-    aliases: ['devgov', 'governance', 'dev-governance', 'dev_governance'],
+    aliases: ['devgov', 'dev-governance', 'dev_governance'],
     renderer: 'renderDevGovernance'
   },
   githubops: {
@@ -304,7 +304,7 @@ const DASHBOARD_TABS = {
     title: 'Project Knowledge Graph & Memory',
     navIcon: '🕸️',
     navVisible: true,
-    aliases: ['memory-graph', 'knowledge-graph', 'project-memory', 'decisions', 'long-memory', 'graph'],
+    aliases: ['memory-graph', 'knowledge-graph', 'project-memory', 'decisions', 'long-memory', 'project-knowledge'],
     renderer: 'renderKnowledge'
   },
   'telegram-control': {
@@ -312,7 +312,7 @@ const DASHBOARD_TABS = {
     title: 'Telegram Control Panel',
     navIcon: '📡',
     navVisible: true,
-    aliases: ['telegram', 'commands', 'command-center', 'bot-control', 'telegram-menu'],
+    aliases: ['telegram', 'command-center', 'bot-control', 'telegram-menu'],
     renderer: 'renderTelegramControl'
   },
   'operating-loop': {
@@ -424,7 +424,7 @@ const DASHBOARD_TABS = {
     title: 'Disaster Recovery',
     navIcon: '🛟',
     navVisible: true,
-    aliases: ['disaster-recovery', 'dr', 'recovery', 'backup', 'restore', 'backup-encryption', 'restore-rehearsal', 'bencana'],
+    aliases: ['disaster-recovery', 'dr', 'recovery', 'restore', 'backup-encryption', 'restore-rehearsal', 'bencana'],
     renderer: 'renderDisasterRecovery'
   },
   'consolidation': {

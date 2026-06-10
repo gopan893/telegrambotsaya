@@ -24,8 +24,8 @@ assert(!apiInAssets, 'No /api/dashboard/ routes in static assets');
 
 // 4. Mobile nav includes stable tabs
 const stableTabs = [
-  'overview', 'agents', 'executor', 'integrations', 'coding',
-  'selfhealing', 'monitoring', 'cicd', 'deploy', 'observability',
+    'overview', 'agents', 'executor', 'integrations', 'coding',
+    'selfhealing', 'routines', 'monitoring', 'cicd', 'deploy', 'observability',
   'cost', 'portfolio', 'knowledge', 'lifeos', 'telegram-control',
   'operating-loop', 'improvement', 'governance', 'security', 'privacy',
   'release-candidate', 'production-release', 'reliability', 'research',

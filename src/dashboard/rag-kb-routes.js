@@ -3,6 +3,12 @@
 const ragKb = require('../rag-kb');
 
 function registerRagKbRoutes(router, services = {}) {
+  router.get('/rag', async (req, res) => {
+    try {
+      res.json({ ok: true, status: 'ready', message: 'RAG/Knowledge Search API active', data: { note: 'Use /rag-kb/... endpoints for full access' } });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   router.get('/rag-kb', async (req, res) => {
     try {
       res.json({ ok: true, status: 'RAG/Knowledge Base routes active', endpoints: ['documents', 'search', 'hybrid', 'analyze', 'stats', 'reindex', 'feedback'] });

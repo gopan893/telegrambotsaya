@@ -38,9 +38,9 @@ const publicTabs = [
   'memory', 'goals', 'workflows', 'planner', 'executor',
   'agents', 'tools', 'integrations', 'backup', 'insights',
   'graph', 'benchmarks', 'incidents', 'observability', 'portfolio', 'audit', 'commands',
-  'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing', 'monitoring', 'cicd'
+  'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing', 'monitoring', 'cicd', 'routines'
 ];
-const internalTabs = ['routines'];
+const internalTabs = [];
 const expectedRenderers = {
   workspaces: 'renderWorkspaces',
   agents: 'renderAgents',
@@ -102,7 +102,7 @@ for (const alias of ['codingworkspace', 'coding_workspace', 'codingWorkspace', '
 console.log('\n--- Service Worker ---\n');
 assert(swJs.includes("url.pathname.startsWith('/api/dashboard')"), 'SW excludes /api/dashboard from caching');
 assert(swJs.includes('CACHE_NAME'), 'SW has CACHE_NAME');
-assert(swJs.includes('telegram-aios-dashboard-static-v49-alias-fix'), 'SW cache version bumped');
+assert(swJs.includes('telegram-aios-dashboard-static-v50-hotfix'), 'SW cache version bumped');
 
 console.log('\n--- Autofill CSS ---\n');
 assert(stylesCss.includes('-webkit-autofill'), 'Autofill override exists');
