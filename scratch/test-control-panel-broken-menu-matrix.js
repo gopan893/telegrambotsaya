@@ -57,7 +57,7 @@ if (sidebar) {
 }
 
 // Load standalone renderer files
-const standaloneFiles = ['graph.js','observability.js','portfolio.js','research.js','lifeos.js','cicd.js','githubops.js','deploy.js','cost.js','knowledge.js','telegram-control.js','operating-loop.js','improvement.js','governance.js','security.js','privacy.js','release-candidate.js','production-release.js','reliability.js','docs-intel.js','model-router.js','plugins.js','operator.js','mobile.js','disaster-recovery.js','consolidation.js','rag-kb.js','recipes.js'];
+const standaloneFiles = ['graph.js','observability.js','portfolio.js','research.js','lifeos.js','cicd.js','githubops.js','deploy.js','cost.js','knowledge.js','telegram-control.js','operating-loop.js','improvement.js','governance.js','security.js','privacy.js','release-candidate.js','production-release.js','reliability.js','docs-intel.js','model-router.js','plugins.js','operator.js','mobile.js','disaster-recovery.js','consolidation.js','rag-kb.js','recipes.js','stabilization.js','v2-planning.js','registry-v2.js'];
 const standaloneContents = {};
 standaloneFiles.forEach(f => {
   try { standaloneContents[f] = fs.readFileSync(path.join(ROOT, 'public/dashboard', f), 'utf8'); }

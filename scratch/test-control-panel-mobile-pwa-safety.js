@@ -30,7 +30,8 @@ const stableTabs = [
   'operating-loop', 'improvement', 'governance', 'security', 'privacy',
   'release-candidate', 'production-release', 'reliability', 'research',
   'docs-intel', 'model-router', 'plugins', 'rag-kb', 'recipes',
-  'mobile', 'disaster-recovery', 'consolidation', 'operator'
+  'mobile', 'disaster-recovery', 'consolidation', 'operator',
+  'stabilization', 'v2-planning', 'registry-v2'
 ];
 stableTabs.forEach(tab => {
   assert(html.includes(`data-tab="${tab}"`), `Mobile nav has stable tab "${tab}"`);

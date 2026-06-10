@@ -35,7 +35,10 @@ const RENDERER_FILE_MAP = {
   renderAgentEvaluation: 'agent-evaluation',
   renderGithubOps: 'githubops',
   renderDevGovernance: 'devgovernance',
-  renderCicd: 'cicd'
+  renderCicd: 'cicd',
+  renderStabilization: 'stabilization',
+  renderV2Planning: 'v2-planning',
+  renderRegistryV2: 'registry-v2'
 };
 
 // Check renderer exists in UI for all tabs

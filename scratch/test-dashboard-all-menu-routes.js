@@ -16,7 +16,10 @@ const observabilityJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', '
 const portfolioJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'portfolio.js'), 'utf8');
 const researchJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'research.js'), 'utf8');
 const lifeosJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'lifeos.js'), 'utf8');
-const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}\n${researchJs}\n${lifeosJs}`;
+const stabilizationJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'stabilization.js'), 'utf8');
+const v2PlanningJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'v2-planning.js'), 'utf8');
+const registryV2Js = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'registry-v2.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}\n${researchJs}\n${lifeosJs}\n${stabilizationJs}\n${v2PlanningJs}\n${registryV2Js}`;
 const html = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
 
 let passed = 0;
@@ -66,7 +69,10 @@ const menuExpectations = {
   release: { title: 'Release / Health', renderer: 'renderRelease' },
   selfhealing: { title: 'Self-Healing & Regression Guard', renderer: 'renderSelfHealing' },
   monitoring: { title: 'Real-Time Monitoring', renderer: 'renderMonitoring' },
-  cicd: { title: 'CI/CD Pipeline', renderer: 'renderCicd' }
+  cicd: { title: 'CI/CD Pipeline', renderer: 'renderCicd' },
+  stabilization: { title: 'V1 Final Stabilization', renderer: 'renderStabilization' },
+  'v2-planning': { title: 'AI OS v2 Planning Gate', renderer: 'renderV2Planning' },
+  'registry-v2': { title: 'Registry Normalization v2', renderer: 'renderRegistryV2' }
 };
 
 console.log('--- Public tabs have renderers and own titles ---\n');

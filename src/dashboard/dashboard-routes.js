@@ -612,6 +612,30 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Operator routes skipped:', e.message);
   }
 
+  try {
+    const stabilizationRoutes = require('./stabilization-routes');
+    stabilizationRoutes.registerStabilizationRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Stabilization routes skipped:', e.message);
+  }
+
+  try {
+    const v2PlanningRoutes = require('./v2-planning-routes');
+    v2PlanningRoutes.registerV2PlanningRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] V2 Planning routes skipped:', e.message);
+  }
+
+  try {
+    const registryV2Routes = require('./registry-v2-routes');
+    registryV2Routes.registerRegistryV2Routes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Registry v2 routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

@@ -450,6 +450,30 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['recipe', 'automation', 'workflow-automation', 'recipe-builder', 'resep'],
     renderer: 'renderRecipes'
+  },
+  'stabilization': {
+    label: 'Stabilization',
+    title: 'V1 Final Stabilization',
+    navIcon: '🔒',
+    navVisible: true,
+    aliases: ['stabilization', 'v1-stabilization', 'stabilize', 'final-lock', 'v1lock'],
+    renderer: 'renderStabilization'
+  },
+  'v2-planning': {
+    label: 'V2 Planning',
+    title: 'AI OS v2 Planning Gate',
+    navIcon: '📋',
+    navVisible: true,
+    aliases: ['v2-planning', 'v2planning', 'v2-gate', 'v2gate', 'v2-scope', 'v2scope'],
+    renderer: 'renderV2Planning'
+  },
+  'registry-v2': {
+    label: 'Registry v2',
+    title: 'Registry Normalization v2',
+    navIcon: '📋',
+    navVisible: true,
+    aliases: ['registry-v2', 'registryv2', 'registry', 'normalization', 'tab-registry', 'command-registry', 'capability-registry'],
+    renderer: 'renderRegistryV2'
   }
 };
 
