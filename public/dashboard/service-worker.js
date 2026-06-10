@@ -43,7 +43,10 @@ const STATIC_ASSETS = [
   '/dashboard/notification-center.js',
   '/dashboard/disaster-recovery.js',
   '/dashboard/consolidation.js',
-  '/dashboard/operator.js'
+  '/dashboard/operator.js',
+  '/dashboard/plugin-hardening.js',
+  '/dashboard/rag-quality.js',
+  '/dashboard/agent-runtime.js'
 ];
 
 function isSensitiveRequest(request) {
