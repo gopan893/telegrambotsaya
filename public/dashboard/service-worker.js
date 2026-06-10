@@ -46,7 +46,9 @@ const STATIC_ASSETS = [
   '/dashboard/operator.js',
   '/dashboard/plugin-hardening.js',
   '/dashboard/rag-quality.js',
-  '/dashboard/agent-runtime.js'
+  '/dashboard/agent-runtime.js',
+  '/dashboard/devices.js',
+  '/dashboard/workflow-studio.js'
 ];
 
 function isSensitiveRequest(request) {

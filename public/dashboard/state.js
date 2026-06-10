@@ -546,6 +546,22 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['agent-optimization', 'model-strategy', 'model-routing-v2', 'agent-performance', 'model-budget'],
     renderer: 'renderAgentRuntime'
+  },
+  'devices': {
+    label: 'Devices',
+    title: 'Multi-Device Control & Local Nodes',
+    navIcon: '📱',
+    navVisible: true,
+    aliases: ['multi-device', 'local-nodes', 'termux-node', 'mac-node', 'nas-node', 'local-ai-node'],
+    renderer: 'renderDevices'
+  },
+  'workflow-studio': {
+    label: 'Workflow Studio',
+    title: 'User Workflow Studio',
+    navIcon: '🔀',
+    navVisible: true,
+    aliases: ['workflows', 'workflow-builder', 'automation-studio', 'workflow', 'studio'],
+    renderer: 'renderWorkflowStudio'
   }
 };
 

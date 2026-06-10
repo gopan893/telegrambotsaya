@@ -47,7 +47,9 @@ const RENDERER_FILE_MAP = {
   renderPostV2: 'post-v2',
   renderPluginHardening: 'plugin-hardening',
   renderRagQuality: 'rag-quality',
-  renderAgentRuntime: 'agent-runtime'
+  renderAgentRuntime: 'agent-runtime',
+  renderDevices: 'devices',
+  renderWorkflowStudio: 'workflow-studio'
 };
 
 // Check renderer exists in UI for all tabs
