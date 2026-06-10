@@ -19,7 +19,10 @@ const lifeosJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'lifeos.
 const stabilizationJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'stabilization.js'), 'utf8');
 const v2PlanningJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'v2-planning.js'), 'utf8');
 const registryV2Js = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'registry-v2.js'), 'utf8');
-const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}\n${researchJs}\n${lifeosJs}\n${stabilizationJs}\n${v2PlanningJs}\n${registryV2Js}`;
+const boundaryJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'boundary.js'), 'utf8');
+const performanceJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'performance.js'), 'utf8');
+const v2ReleaseJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'v2-release.js'), 'utf8');
+const dashboardRenderers = `${uiJs}\n${observabilityJs}\n${portfolioJs}\n${researchJs}\n${lifeosJs}\n${stabilizationJs}\n${v2PlanningJs}\n${registryV2Js}\n${boundaryJs}\n${performanceJs}\n${v2ReleaseJs}`;
 const html = fs.readFileSync(path.join(ROOT, 'public', 'dashboard', 'index.html'), 'utf8');
 
 let passed = 0;
@@ -72,7 +75,10 @@ const menuExpectations = {
   cicd: { title: 'CI/CD Pipeline', renderer: 'renderCicd' },
   stabilization: { title: 'V1 Final Stabilization', renderer: 'renderStabilization' },
   'v2-planning': { title: 'AI OS v2 Planning Gate', renderer: 'renderV2Planning' },
-  'registry-v2': { title: 'Registry Normalization v2', renderer: 'renderRegistryV2' }
+  'registry-v2': { title: 'Registry Normalization v2', renderer: 'renderRegistryV2' },
+  'boundary': { title: 'Storage & Module Boundary', renderer: 'renderBoundary' },
+  'performance': { title: 'Performance Optimization', renderer: 'renderPerformance' },
+  'v2-release': { title: 'AI OS v2 Release Candidate', renderer: 'renderV2Release' }
 };
 
 console.log('--- Public tabs have renderers and own titles ---\n');

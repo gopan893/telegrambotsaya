@@ -636,6 +636,30 @@ function registerDashboardRoutes(app, rawServices = {}) {
     log.warn('[dashboard] Registry v2 routes skipped:', e.message);
   }
 
+  try {
+    const boundaryRoutes = require('./boundary-routes');
+    boundaryRoutes.registerBoundaryRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Boundary routes skipped:', e.message);
+  }
+
+  try {
+    const performanceRoutes = require('./performance-routes');
+    performanceRoutes.registerPerformanceRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Performance routes skipped:', e.message);
+  }
+
+  try {
+    const v2ReleaseRoutes = require('./v2-release-routes');
+    v2ReleaseRoutes.registerV2ReleaseRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] V2 Release routes skipped:', e.message);
+  }
+
   router.get('/summary', async (req, res) => {
     const storageStatus = getStorageStatus(services.storageManager);
     const counts = countAiosUserData(services);

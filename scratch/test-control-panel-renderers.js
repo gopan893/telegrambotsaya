@@ -38,7 +38,10 @@ const RENDERER_FILE_MAP = {
   renderCicd: 'cicd',
   renderStabilization: 'stabilization',
   renderV2Planning: 'v2-planning',
-  renderRegistryV2: 'registry-v2'
+  renderRegistryV2: 'registry-v2',
+  renderBoundary: 'boundary',
+  renderPerformance: 'performance',
+  renderV2Release: 'v2-release'
 };
 
 // Check renderer exists in UI for all tabs

@@ -474,6 +474,30 @@ const DASHBOARD_TABS = {
     navVisible: true,
     aliases: ['registry-v2', 'registryv2', 'registry', 'normalization', 'tab-registry', 'command-registry', 'capability-registry'],
     renderer: 'renderRegistryV2'
+  },
+  'boundary': {
+    label: 'Boundaries',
+    title: 'Storage & Module Boundary',
+    navIcon: '🧱',
+    navVisible: true,
+    aliases: ['boundary', 'boundaries', 'storage-boundary', 'module-boundary', 'env-contract', 'module-map'],
+    renderer: 'renderBoundary'
+  },
+  'performance': {
+    label: 'Performance',
+    title: 'Performance Optimization',
+    navIcon: '⚡',
+    navVisible: true,
+    aliases: ['performance', 'perf', 'optimization', 'speed', 'startup', 'bundle', 'payload'],
+    renderer: 'renderPerformance'
+  },
+  'v2-release': {
+    label: 'V2 Release',
+    title: 'AI OS v2 Release Candidate',
+    navIcon: '🚀',
+    navVisible: true,
+    aliases: ['v2-release', 'v2-rc', 'v2rc', 'ai-os-v2', 'release-v2', 'v2-readiness'],
+    renderer: 'renderV2Release'
   }
 };
 

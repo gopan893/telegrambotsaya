@@ -39,7 +39,8 @@ const publicTabs = [
   'agents', 'tools', 'integrations', 'backup', 'insights',
   'graph', 'benchmarks', 'incidents', 'observability', 'portfolio', 'audit', 'commands',
   'env', 'settings', 'agent-evaluation', 'coding', 'release', 'selfhealing', 'monitoring', 'cicd', 'routines',
-  'stabilization', 'v2-planning', 'registry-v2'
+  'stabilization', 'v2-planning', 'registry-v2',
+  'boundary', 'performance', 'v2-release'
 ];
 const internalTabs = [];
 const expectedRenderers = {
