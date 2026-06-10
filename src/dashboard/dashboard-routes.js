@@ -78,6 +78,24 @@ try {
 } catch (e) {
   improvementRoutes = { registerImprovementRoutes: () => {} };
 }
+let longTermPlanningRoutes;
+try {
+  longTermPlanningRoutes = require('./long-term-planning-routes');
+} catch (e) {
+  longTermPlanningRoutes = { registerLongTermPlanningRoutes: () => {} };
+}
+let v3PlanningRoutes;
+try {
+  v3PlanningRoutes = require('./v3-planning-routes');
+} catch (e) {
+  v3PlanningRoutes = { registerV3PlanningRoutes: () => {} };
+}
+let v3BlueprintRoutes;
+try {
+  v3BlueprintRoutes = require('./v3-blueprint-routes');
+} catch (e) {
+  v3BlueprintRoutes = { registerV3BlueprintRoutes: () => {} };
+}
 
 function getDashboardServices(services = {}) {
   return {
@@ -658,6 +676,27 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] V2 Release routes skipped:', e.message);
+  }
+
+  try {
+    longTermPlanningRoutes.registerLongTermPlanningRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Long-Term Planning routes skipped:', e.message);
+  }
+
+  try {
+    v3PlanningRoutes.registerV3PlanningRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] V3 Planning routes skipped:', e.message);
+  }
+
+  try {
+    v3BlueprintRoutes.registerV3BlueprintRoutes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] V3 Blueprint routes skipped:', e.message);
   }
 
   router.get('/summary', async (req, res) => {
