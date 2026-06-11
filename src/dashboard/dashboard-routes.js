@@ -2,6 +2,7 @@
 
 const express = require('express');
 const path = require('path');
+const helmet = require('helmet');
 const auth = require('./dashboard-auth');
 const guards = require('./dashboard-guards');
 const serializers = require('./dashboard-serializers');
@@ -357,7 +358,8 @@ function setDashboardSecurityHeaders(res) {
   res.set({
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer'
+    'X-XSS-Protection': '1; mode=block',
+    'Referrer-Policy': 'strict-origin-when-cross-origin'
   });
 }
 

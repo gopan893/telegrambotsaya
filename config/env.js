@@ -10,6 +10,18 @@ function readEnv(env = process.env) {
   const dashboardAdminToken = env.DASHBOARD_ADMIN_TOKEN || '';
   const dashboardWriteToken = env.DASHBOARD_WRITE_TOKEN || '';
   const dashboardDangerToken = env.DASHBOARD_DANGER_TOKEN || '';
+  const userDailyTokenLimit = Number(env.USER_DAILY_TOKEN_LIMIT) || 50000;
+  const userHourlyMessageLimit = Number(env.USER_HOURLY_MESSAGE_LIMIT) || 30;
+
+  const dashboardAllowedIps = env.DASHBOARD_ALLOWED_IPS
+    ? env.DASHBOARD_ALLOWED_IPS.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  const enablePortfolioManager = String(env.ENABLE_PORTFOLIO_MANAGER || '').toLowerCase() === 'true';
+  const enableDisasterRecovery = String(env.ENABLE_DISASTER_RECOVERY || '').toLowerCase() === 'true';
+  const enableAutonomousLoop = String(env.ENABLE_AUTONOMOUS_LOOP || '').toLowerCase() === 'true';
+  const enableMultibot = String(env.ENABLE_MULTIBOT || '').toLowerCase() === 'true';
+
   const webhookBaseUrl =
     env.WEBHOOK_URL ||
     env.TELEGRAM_WEBHOOK_URL ||
@@ -100,7 +112,19 @@ function readEnv(env = process.env) {
     ),
     WEBHOOK_BASE_URL: webhookBaseUrl,
     WEBHOOK_PATH: telegramToken ? `/webhook/${telegramToken}` : '/webhook/legacy-disabled',
-    TELEGRAM_API: primaryTelegramToken ? `https://api.telegram.org/bot${primaryTelegramToken}` : null
+    TELEGRAM_API: primaryTelegramToken ? `https://api.telegram.org/bot${primaryTelegramToken}` : null,
+
+    USER_DAILY_TOKEN_LIMIT: userDailyTokenLimit,
+    USER_HOURLY_MESSAGE_LIMIT: userHourlyMessageLimit,
+    DASHBOARD_ALLOWED_IPS: dashboardAllowedIps,
+
+    ENABLE_PORTFOLIO_MANAGER: enablePortfolioManager,
+    ENABLE_DISASTER_RECOVERY: enableDisasterRecovery,
+    ENABLE_AUTONOMOUS_LOOP: enableAutonomousLoop,
+    ENABLE_MULTIBOT: enableMultibot,
+
+    ALERT_ENABLED: String(env.ALERT_ENABLED || '').toLowerCase() !== 'false',
+    ALERT_MIN_LEVEL: env.ALERT_MIN_LEVEL || 'warning'
   };
 }
 

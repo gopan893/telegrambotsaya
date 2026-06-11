@@ -3,6 +3,28 @@
 const budgetPolicy = require('./budget-policy');
 const costEstimator = require('./cost-estimator');
 const selectionPolicy = require('./model-selection-policy');
+const costUsageStore = require('./cost-usage-store');
+
+function checkUserDailyBudget(userId, estimatedTokens) {
+  const dailyLimit = Number(process.env.USER_DAILY_TOKEN_LIMIT) || 50000;
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const resetAt = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 0, 0, 0).getTime();
+
+  const usage = costUsageStore.getUsageSummary({ userId });
+  const todayUsage = usage.totalTokens || 0;
+  const remaining = Math.max(0, dailyLimit - todayUsage);
+
+  if (todayUsage >= dailyLimit) {
+    return { allowed: false, remaining: 0, resetAt };
+  }
+
+  if (estimatedTokens && (todayUsage + estimatedTokens) > dailyLimit) {
+    return { allowed: false, remaining, resetAt };
+  }
+
+  return { allowed: true, remaining, resetAt };
+}
 
 function runBudgetGuard(requestPlan, services) {
   const result = {
@@ -133,6 +155,7 @@ function buildBudgetGuardResponse(result) {
 }
 
 module.exports = {
+  checkUserDailyBudget,
   runBudgetGuard,
   shouldWarnBudget,
   shouldRequireApprovalForHighCost,

@@ -34,6 +34,21 @@ cicd_pipelines.json
 # File lokal sementara.
 *.log
 *.tmp
-scratch/.devgovernance/
+.test.log
+scratch/
+tests/coverage/
 FULL_*.txt
 *.tar.gz
+
+# Data runtime
+memory.json
+vocab.json
+knowledge/**/*.json
+
+# Build artifacts
+dist/
+.nyc_output/
+coverage/
+
+# Dev governance (not for production)
+scratch/.devgovernance/

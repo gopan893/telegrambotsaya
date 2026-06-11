@@ -6,6 +6,7 @@ const { createLogger } = require('../../core/logger');
 const { createBotContext } = require('./bot-context');
 const { registerWebhookRoutes } = require('./webhook');
 const legacyAdapter = require('./legacy-adapter');
+const alerter = require('../alerting/telegram-alerter');
 
 function createBotApp(dependencies = {}) {
   const config = dependencies.config || readEnv();
@@ -34,12 +35,17 @@ function createBotApp(dependencies = {}) {
 
 async function startBotServer(options = {}) {
   if (options.runtime === 'modular') {
-    const { app, context } = createBotApp(options);
-    const port = Number(context.config.PORT || process.env.PORT || 3000);
-    const server = app.listen(port, '0.0.0.0', () => {
-      context.logger.info(`Bot modular server listening on ${port}`);
-    });
-    return { app, context, server };
+    try {
+      const { app, context } = createBotApp(options);
+      const port = Number(context.config.PORT || process.env.PORT || 3000);
+      const server = app.listen(port, '0.0.0.0', () => {
+        context.logger.info(`Bot modular server listening on ${port}`);
+      });
+      return { app, context, server };
+    } catch (err) {
+      await alerter.sendOwnerAlert(`Startup failed: ${err.message}`, 'critical');
+      throw err;
+    }
   }
 
   return legacyAdapter.startLegacyBotServer(options);

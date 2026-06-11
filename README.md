@@ -2,8 +2,8 @@
 
 Project ini adalah versi AI bot Telegram yang sudah ditingkatkan untuk pemakaian serius:
 
-- OpenAI Responses API
-- Model default `gpt-5.2`
+- **Multi-model AI**: Groq (default), Mistral, DeepSeek (opsional), Gemini (opsional)
+- Model default: Groq `llama-3.3-70b-versatile`
 - Memori jangka panjang per user
 - Konteks percakapan berkelanjutan
 - Mode AI untuk coding, bisnis, belajar, kreatif, dan jawaban tegas
@@ -40,7 +40,24 @@ cp .env.example .env
 npm start
 ```
 
+### Model AI yang Didukung
+
+| Model | Env Variable | Status |
+|-------|-------------|--------|
+| Groq (LLaMA 3.3 70B) | `GROQ_API_KEY` | **Default** |
+| Mistral | `MISTRAL_API_KEY` | Aktif |
+| DeepSeek | `DEEPSEEK_API_KEY` | Opsional |
+| Gemini | `GEMINI_API_KEY` | Opsional |
+
 Isi `.env` minimal:
+
+```env
+TELEGRAM_TOKEN=isi_token_bot_telegram
+GROQ_API_KEY=isi_api_key_groq
+OWNER_CHAT_ID=telegram_user_id_owner
+```
+
+Atau jika menggunakan Mistral sebagai default:
 
 ```env
 TELEGRAM_TOKEN=isi_token_bot_telegram
@@ -48,7 +65,7 @@ MISTRAL_API_KEY=isi_api_key_mistral
 OWNER_CHAT_ID=telegram_user_id_owner
 ```
 
-File env juga mendukung `DATABASE_URL`, `REDIS_URL`, `WEBHOOK_URL`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `OPENWEATHER_API_KEY`, `ADMIN_IDS`, dan variabel lain yang ada di `.env.example`.
+File env juga mendukung `DATABASE_URL`, `REDIS_URL`, `WEBHOOK_URL`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`, `TAVILY_API_KEY`, `OPENWEATHER_API_KEY`, `ADMIN_IDS`, dan variabel lain yang ada di `.env.example`.
 
 Multi-bot optional memakai env seperti `TELEGRAM_TOKEN_ORCHESTRATOR`, `TELEGRAM_TOKEN_CODER`, `TELEGRAM_TOKEN_OPS`, dan `TELEGRAM_WEBHOOK_SECRET_<ROLE>`. Token tidak ditampilkan oleh dashboard/API. Lihat `docs/MULTIBOT.md`.
 
@@ -348,6 +365,97 @@ long-term memory governance.
 Protected decisions (15 core) cannot be renamed, archived, or silently
 overwritten. Secrets are detected at ingest, redacted, and never stored
 in raw form. Memory is archived, never hard-deleted.
+
+## Struktur Project
+
+```
+telegrambotsaya/
+├── telebot.js              # Entry point
+├── config/                 # Environment & config
+│   └── env.js
+├── core/                   # Core utilities (logger, circuit-breaker, ttl-map)
+├── services/               # External services (ai-router, etc.)
+├── src/
+│   ├── agents/             # Multi-agent system (orchestrator, coder, etc.)
+│   ├── alerting/           # Production alerting via Telegram
+│   ├── ai-os/              # AI OS (goals, workflows, graph, insight)
+│   ├── backup/             # Backup & restore engine
+│   ├── bot/                # Bot runtime (app, webhook, response pipeline)
+│   ├── conversation/       # Conversation continuity & context
+│   ├── cost/               # Budget guard, cost tracking, token estimation
+│   ├── dashboard/          # Express dashboard (77 route files)
+│   ├── governance/         # Permission, risk, approval policy engine
+│   ├── knowledge/          # Project knowledge graph
+│   ├── model-router/       # AI model routing (privacy/cost-aware)
+│   ├── natural-language/   # Natural language intent routing
+│   ├── observability/      # Incident detection & monitoring
+│   ├── plugins/            # Plugin/connector SDK
+│   ├── portfolio/          # Multi-project portfolio manager
+│   ├── privacy/            # Data retention & export control
+│   ├── rag-kb/             # RAG knowledge base
+│   ├── recipes/            # Automation recipe builder
+│   ├── research/           # Research agent
+│   ├── security/           # Security hardening & scorecard
+│   ├── storage/            # Storage layer (PostgreSQL → Redis → JSON)
+│   ├── telegram-control/   # Universal Telegram command routing
+│   └── ... (80+ domain modules)
+├── tests/
+│   ├── unit/               # Unit tests (Jest)
+│   ├── integration/        # Integration tests (Jest)
+│   └── scratch/            # Legacy manual test files (referensi)
+├── scratch/                # 700+ legacy manual test files
+├── scripts/                # Utility scripts
+├── docs/                   # Documentation
+├── storage/                # JSON file storage fallback
+├── knowledge/              # Knowledge base files
+└── public/                 # Dashboard static assets
+```
+
+## Troubleshooting Umum
+
+| Masalah | Penyebab | Solusi |
+|---------|----------|--------|
+| Bot tidak merespons | TELEGRAM_TOKEN salah atau WEBHOOK_URL tidak valid | Cek `TELEGRAM_TOKEN` di BotFather, pastikan `WEBHOOK_URL` bisa diakses publik |
+| Storage error | DATABASE_URL salah atau PostgreSQL tidak reachable | Cek `DATABASE_URL` atau set `STORAGE_DRIVER=json` untuk fallback |
+| AI tidak merespons | API key AI tidak valid atau kuota habis | Cek `GROQ_API_KEY` atau `MISTRAL_API_KEY`, pastikan masih aktif |
+| Dashboard tidak bisa dibuka | DASHBOARD_ENABLED=false atau token tidak diisi | Set `DASHBOARD_ENABLED=true` dan isi `DASHBOARD_ADMIN_TOKEN` |
+| Rate limit terasa lambat | Terlalu banyak request per menit | Cek `maxMessagesPerMinute` di botSettings |
+| Memory tidak tersimpan | Storage driver bermasalah | Cek log error di console, pastikan DATABASE_URL atau JSON writeable |
+
+## Kontribusi
+
+1. Clone repo dan `npm install`
+2. Copy `.env.example` ke `.env` dan isi konfigurasi
+3. Jalankan `npm run dev:local` untuk development lokal
+4. Pastikan `node --check telebot.js` tidak error
+5. Jalankan `npm test` untuk menjalankan test suite
+6. Buat branch baru: `git checkout -b fitur/nama-fitur`
+7. Commit perubahan dengan pesan yang jelas
+8. Buat Pull Request ke branch `main`
+
+### Cara Setup Lokal
+
+```bash
+npm install
+cp .env.example .env
+# Isi TELEGRAM_TOKEN, GROQ_API_KEY, OWNER_CHAT_ID
+npm run dev:local
+```
+
+### Cara Menjalankan Test
+
+```bash
+npm test          # Jalankan semua test
+npm run test:watch   # Watch mode
+npm run test:coverage  # Dengan coverage report
+```
+
+### Cara Membuat PR
+
+1. Pastikan semua test lulus: `npm test`
+2. Pastikan syntax check lulus: `node --check telebot.js`
+3. Pastikan tidak ada secret yang tercommit
+4. Buat PR dengan deskripsi jelas tentang perubahan
 
 ## Phase 44.5 — Universal Telegram Control Layer
 

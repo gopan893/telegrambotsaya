@@ -48,7 +48,23 @@ pm2 save
 pm2 startup
 ```
 
-## 6. Command Telegram
+## 6. IP Allowlist untuk Dashboard (Production)
+
+Untuk production di Render, isi `DASHBOARD_ALLOWED_IPS` di environment variables:
+
+```text
+DASHBOARD_ALLOWED_IPS=103.xx.xx.xx,203.xx.xx.xx
+```
+
+Nilai kosong berarti semua IP diizinkan (tidak aman untuk production).
+Isi dengan IP kantor Anda atau IP publik yang tetap.
+
+Cara mencari IP Anda:
+```bash
+curl ifconfig.me
+```
+
+## 7. Command Telegram
 
 - `/help` melihat fitur
 - `/mode` melihat mode AI

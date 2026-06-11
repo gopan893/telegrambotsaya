@@ -3,6 +3,11 @@
 const ADMIN_NOTIFY_TTL_MS = 60 * 1000;
 const lastAdminNotification = new Map();
 
+let alerter = null;
+function setAlerter(instance) {
+  alerter = instance;
+}
+
 function normalizeError(error) {
   if (!error) return { message: 'Unknown error', code: 'UNKNOWN' };
   return {
@@ -69,10 +74,15 @@ async function notifyAdminIfNeeded(context = {}, error, meta = {}) {
 
   try {
     await context.sendTelegramMessage(context.bot, ownerId, message);
-    return true;
-  } catch (_) {
-    return false;
+  } catch (_) {}
+
+  if (alerter && typeof alerter.sendOwnerAlert === 'function') {
+    try {
+      await alerter.sendOwnerAlert(`Scope: ${meta.scope || '-'} Code: ${normalizeError(error).code} Message: ${redact(normalizeError(error).message).slice(0, 200)}`, 'error');
+    } catch (_) {}
   }
+
+  return true;
 }
 
 module.exports = {
@@ -80,5 +90,6 @@ module.exports = {
   isAdminUser,
   logError,
   normalizeError,
-  notifyAdminIfNeeded
+  notifyAdminIfNeeded,
+  setAlerter
 };

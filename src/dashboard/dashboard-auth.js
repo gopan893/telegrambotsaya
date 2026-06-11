@@ -2,6 +2,23 @@
 
 const { isTruthy } = require('./dashboard-utils');
 
+function checkIpAllowed(req, env = process.env) {
+  const allowedIps = env.DASHBOARD_ALLOWED_IPS
+    ? (Array.isArray(env.DASHBOARD_ALLOWED_IPS) ? env.DASHBOARD_ALLOWED_IPS : String(env.DASHBOARD_ALLOWED_IPS).split(',').map(s => s.trim()).filter(Boolean))
+    : [];
+  
+  if (allowedIps.length === 0) return { allowed: true };
+  
+  const clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
+  
+  if (allowedIps.includes(clientIp)) return { allowed: true };
+  
+  const timestamp = new Date().toISOString();
+  console.warn(`[security] Dashboard access denied from IP: ${clientIp} at ${timestamp}`);
+  
+  return { allowed: false, ip: clientIp };
+}
+
 function getEnv(reqOrEnv) {
   if (reqOrEnv?.app?.locals?.dashboardEnv) return reqOrEnv.app.locals.dashboardEnv;
   return reqOrEnv && !reqOrEnv.headers ? reqOrEnv : process.env;
@@ -56,6 +73,11 @@ function requireDashboardAuth(req, res, next) {
     return res.status(401).json({ ok: false, error: 'DASHBOARD_TOKEN_NOT_CONFIGURED' });
   }
 
+  const ipCheck = checkIpAllowed(req, env);
+  if (!ipCheck.allowed) {
+    return res.status(403).json({ ok: false, error: 'IP_NOT_ALLOWED', message: 'Akses dashboard tidak diizinkan dari IP ini.' });
+  }
+
   const token = extractBearerToken(req);
   if (!token || !getDashboardTokens(env).includes(token)) {
     return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
@@ -71,6 +93,7 @@ function createDashboardAuth(env = process.env) {
 }
 
 module.exports = {
+  checkIpAllowed,
   createDashboardAuth,
   getDashboardToken,
   getDashboardTokens,

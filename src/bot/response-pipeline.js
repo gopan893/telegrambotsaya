@@ -1,6 +1,7 @@
 'use strict';
 
 const errorHandler = require('./error-handler');
+const { checkUserDailyBudget } = require('../cost/budget-guard');
 
 async function generateAiResponse(context = {}, input = {}) {
   if (typeof context.aiPipeline === 'function') {
@@ -12,6 +13,13 @@ async function generateAiResponse(context = {}, input = {}) {
   }
 
   throw new Error('AI pipeline is not configured');
+}
+
+async function checkUserBudget(context = {}, input = {}) {
+  const userId = input.userId || 'unknown';
+  const estimatedTokens = input.estimatedTokens || 0;
+  const budget = checkUserDailyBudget(userId, estimatedTokens);
+  return budget;
 }
 
 async function sendAiResponse(context = {}, chatId, response, keyboard = null, options = {}) {
@@ -34,6 +42,17 @@ async function sendAiResponse(context = {}, chatId, response, keyboard = null, o
 
 async function generateAndSendAiResponse(context = {}, msg = {}, text = '', options = {}) {
   const chatId = msg.chat?.id || options.chatId;
+  const userId = String(msg.from?.id || options.userId || '');
+
+  const budget = checkUserDailyBudget(userId, text.length * 1.5);
+  if (!budget.allowed) {
+    const resetDate = new Date(budget.resetAt);
+    const resetTime = resetDate.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' });
+    await sendAiResponse(context, chatId, `Kamu sudah mencapai limit harian. Reset besok pukul ${resetTime} WIB.`, null, {
+      reply_to_message_id: msg.message_id
+    });
+    return { ok: false, error: new Error('Daily budget exceeded') };
+  }
 
   try {
     const response = await generateAiResponse(context, {
@@ -68,6 +87,7 @@ async function generateAndSendAiResponse(context = {}, msg = {}, text = '', opti
 }
 
 module.exports = {
+  checkUserBudget,
   generateAiResponse,
   generateAndSendAiResponse,
   sendAiResponse

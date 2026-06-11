@@ -36,6 +36,7 @@ function createStorageManager(options = {}) {
   let postgresHealth = null;
   let redisHealth = null;
   let fallbackReason = null;
+  let alertFallbackFn = null;
 
   function shouldTryPostgres() {
     if (preferredDriver === 'json') return false;
@@ -52,6 +53,10 @@ function createStorageManager(options = {}) {
       errorMessageSafe: preferredDriver === 'json' ? 'PostgreSQL disabled by STORAGE_DRIVER=json' : 'DATABASE_URL missing',
       recommendedFix: preferredDriver === 'json' ? 'Set STORAGE_DRIVER=auto to use PostgreSQL' : 'Set DATABASE_URL or use JSON fallback'
     };
+  }
+
+  function setAlertFallbackHandler(fn) {
+    alertFallbackFn = fn;
   }
 
   function isPostgresReady(status = {}) {
@@ -103,6 +108,9 @@ function createStorageManager(options = {}) {
       fallbackReason = shouldTryPostgres()
         ? (pgStatus.reason || postgresHealth.errorMessageSafe || postgresHealth.status || 'postgres_unavailable')
         : (preferredDriver === 'json' ? 'storage_driver_json' : 'database_url_missing');
+      if (shouldTryPostgres() && typeof alertFallbackFn === 'function') {
+        alertFallbackFn(`Storage fallback to JSON: ${fallbackReason}`).catch(() => {});
+      }
     }
 
     initialized = true;
@@ -144,6 +152,9 @@ function createStorageManager(options = {}) {
         lastError = postgresStatus.lastError || 'postgres_read_failed';
         fallbackReason = lastError;
         value = await readJsonFile(jsonBaseDir, key, defaultValue);
+        if (typeof alertFallbackFn === 'function') {
+          alertFallbackFn(`Storage runtime fallback to JSON: ${fallbackReason}`).catch(() => {});
+        }
       }
     } else {
       value = await readJsonFile(jsonBaseDir, key, defaultValue);
@@ -441,7 +452,8 @@ function createStorageManager(options = {}) {
     writeData: saveData,
     listDataKeys: listKeys,
     close: closeStorage,
-    status: getStorageStatus
+    status: getStorageStatus,
+    setAlertFallbackHandler
   };
 }
 
