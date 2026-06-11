@@ -96,6 +96,12 @@ try {
 } catch (e) {
   v3BlueprintRoutes = { registerV3BlueprintRoutes: () => {} };
 }
+let registryV3Routes;
+try {
+  registryV3Routes = require('./registry-v3-routes');
+} catch (e) {
+  registryV3Routes = { registerRegistryV3Routes: () => {} };
+}
 
 function getDashboardServices(services = {}) {
   return {
@@ -697,6 +703,13 @@ function registerDashboardRoutes(app, rawServices = {}) {
   } catch (e) {
     const log = services.logger || console;
     log.warn('[dashboard] V3 Blueprint routes skipped:', e.message);
+  }
+
+  try {
+    registryV3Routes.registerRegistryV3Routes(router, services);
+  } catch (e) {
+    const log = services.logger || console;
+    log.warn('[dashboard] Registry v3 routes skipped:', e.message);
   }
 
   router.get('/summary', async (req, res) => {
