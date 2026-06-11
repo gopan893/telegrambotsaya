@@ -1,6 +1,7 @@
 'use strict';
 
 const errorHandler = require('./error-handler');
+const telegramUx = require('../telegram-ux');
 const { checkUserDailyBudget } = require('../cost/budget-guard');
 
 async function generateAiResponse(context = {}, input = {}) {
@@ -64,9 +65,19 @@ async function generateAndSendAiResponse(context = {}, msg = {}, text = '', opti
       adaptiveDecision: options.adaptiveDecision || null
     });
 
-    await sendAiResponse(context, chatId, response, options.keyboard || null, {
-      reply_to_message_id: msg.message_id
+    const rendered = telegramUx.telegramMessageRenderer.renderTelegramReply(response, {
+      keyboard: options.keyboard || null,
+      maxLength: telegramUx.telegramUxStore.getUxConfig(chatId).maxMessageLength
     });
+    const parts = rendered.parts || [response || ''];
+    for (let i = 0; i < parts.length; i++) {
+      const isLast = i === parts.length - 1;
+      const opts = { reply_to_message_id: msg.message_id };
+      const isHtml = parts[i].includes('<') && (parts[i].includes('</') || parts[i].includes('/>'));
+      if (isHtml) opts.parse_mode = 'HTML';
+      if (isLast && rendered.keyboard) opts.reply_markup = rendered.keyboard;
+      await sendAiResponse(context, chatId, parts[i], null, opts);
+    }
 
     return {
       ok: true,
@@ -75,9 +86,12 @@ async function generateAndSendAiResponse(context = {}, msg = {}, text = '', opti
   } catch (error) {
     errorHandler.logError('response-pipeline', error, { chatId }, context.logger);
     await errorHandler.notifyAdminIfNeeded(context, error, { scope: 'response-pipeline', chatId });
-    await sendAiResponse(context, chatId, errorHandler.buildSafeErrorMessage(), null, {
-      reply_to_message_id: msg.message_id
-    });
+    const safeRendered = telegramUx.telegramErrorPresenter.presentTelegramError(error);
+    for (const part of safeRendered.parts) {
+      await sendAiResponse(context, chatId, part, null, {
+        reply_to_message_id: msg.message_id
+      });
+    }
 
     return {
       ok: false,

@@ -1,5 +1,7 @@
 'use strict';
 
+const telegramUx = require('../telegram-ux');
+
 const ADMIN_NOTIFY_TTL_MS = 60 * 1000;
 const lastAdminNotification = new Map();
 
@@ -18,10 +20,7 @@ function normalizeError(error) {
 }
 
 function redact(text) {
-  return String(text || '')
-    .replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot[redacted]')
-    .replace(/sk-[A-Za-z0-9_-]+/g, 'sk-[redacted]')
-    .replace(/(api[_-]?key|token|secret|password)=([^&\s]+)/gi, '$1=[redacted]');
+  return telegramUx.telegramMarkdownSanitizer.redactSecrets(String(text || ''));
 }
 
 function logError(scope, error, meta = {}, logger = console) {
@@ -44,7 +43,8 @@ function logError(scope, error, meta = {}, logger = console) {
 }
 
 function buildSafeErrorMessage() {
-  return 'Maaf, saya sedang mengalami kendala memproses pesan ini. Coba ulangi sebentar lagi.';
+  const rendered = telegramUx.telegramErrorPresenter.presentTelegramError(new Error('Kendala internal'));
+  return rendered.parts.join('\n\n');
 }
 
 function isAdminUser(userId, context = {}) {

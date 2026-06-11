@@ -4,6 +4,7 @@ const messageHandler = require('./message-handler');
 const callbackHandler = require('./callback-handler');
 const errorHandler = require('./error-handler');
 const telegramControl = require('../telegram-control');
+const telegramRouter = require('../telegram-router');
 
 async function handleTelegramUpdate(context = {}, update = {}) {
   if (!update || typeof update !== 'object') return false;
@@ -30,7 +31,18 @@ async function handleTelegramUpdate(context = {}, update = {}) {
   }
 
   if (update.message || update.edited_message) {
-    return messageHandler.handleMessage(context, update.message || update.edited_message);
+    const msg = update.message || update.edited_message;
+    const text = String(msg.text || msg.caption || '').trim();
+    if (text && !text.startsWith('/')) {
+      const intent = telegramRouter.telegramIntentClassifier.classifyTelegramIntent(text);
+      context._telegramIntent = intent;
+      context._telegramRouterResult = await telegramRouter.telegramDomainRouter.routeTelegramMessageByDomain(
+        { text, chat: msg.chat, from: msg.from },
+        intent,
+        context
+      );
+    }
+    return messageHandler.handleMessage(context, msg);
   }
 
   return false;
