@@ -11312,7 +11312,7 @@ Data endpoint membutuhkan Authorization Bearer token.`;
       resolvedCmd === '/archmap' || resolvedCmd === '/contractcheck' || resolvedCmd === '/collisioncheck' ||
       resolvedCmd === '/dashboardroutes' || resolvedCmd === '/nextcodex' || resolvedCmd === '/nextopencode' ||
       resolvedCmd === '/p0prompt') {
-    const devGovTelegram = require('../../devgovernance/devgovernance-telegram');
+    const devGovTelegram = require('../../src/devgovernance/devgovernance-telegram');
     const dgResult = await devGovTelegram.handleDevGovCommand(resolvedCmd, args, chatId, { storageManager });
     if (dgResult) {
       await sendChunkedMessage(chatId, dgResult.text, { reply_to_message_id: msg.message_id });
