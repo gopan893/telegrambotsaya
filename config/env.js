@@ -97,6 +97,8 @@ function readEnv(env = process.env) {
     GACOR_API_KEY: env.GACOR_API_KEY,
     GACOR_BASE_URL: env.GACOR_BASE_URL || 'https://rbeafse.abc-tunnel.us/v1',
     GACOR_MODEL: env.GACOR_MODEL || 'gacor',
+    GOOGLE_SEARCH_API_KEY: env.GOOGLE_SEARCH_API_KEY,
+    GOOGLE_SEARCH_CX: env.GOOGLE_SEARCH_CX,
     NAS_BASE_URL: env.NAS_BASE_URL,
     NAS_HEALTH_URL: env.NAS_HEALTH_URL,
     EXTERNAL_WEBHOOK_URL: env.EXTERNAL_WEBHOOK_URL,

@@ -90,6 +90,8 @@ const {
   GACOR_BASE_URL = 'https://rbeafse.abc-tunnel.us/v1',
   GACOR_MODEL = 'gacor',
   TAVILY_API_KEY,
+  GOOGLE_SEARCH_API_KEY,
+  GOOGLE_SEARCH_CX,
   OPENWEATHER_API_KEY,
   DATABASE_URL,
   STORAGE_DRIVER,
@@ -134,9 +136,14 @@ let redisClient = null;
 let shortMemory = [];
 let lessons = { rules: [] };
 let userMemory = {};
+let chatMemory = {}; // per-chat: {chatId: {topics:[], participants:[], summary:'', lastActive:ts}}
+let chatMode = {};  // per-chat: {chatId: 'auto'|'santai'|'formal'}
+let chatTodos = {}; // per-chat: {chatId: [{text, done}]}
+let chatCalendar = {}; // per-chat calendar tokens
 let abLog = [];
 let knowledgeBase = [];
 let chatHistory = [];
+let chatHistoryMap = {}; // per-chat: {chatId: [{userId, chatId, role, text, timestamp}]}
 let quizState = {};
 
 let botSettings = {
@@ -673,10 +680,16 @@ function rateLimit(userId) {
 }
 
 function pushChatHistory(entry) {
+  // Always push to global for backward compat
   chatHistory.push(entry);
+  if (chatHistory.length > 400) chatHistory.shift();
 
-  if (chatHistory.length > 400) {
-    chatHistory.shift();
+  // Also push per-chat for multi-chat context
+  if (entry?.chatId) {
+    if (!chatHistoryMap[entry.chatId]) chatHistoryMap[entry.chatId] = [];
+    const arr = chatHistoryMap[entry.chatId];
+    arr.push(entry);
+    if (arr.length > 200) arr.splice(0, arr.length - 200);
   }
 }
 
@@ -972,6 +985,15 @@ function getModePrompt(mode) {
   }
 
   return 'Jawab santai, ramah, natural.';
+}
+
+function ensureChat(chatId) {
+  const id = String(chatId);
+  if (!chatMemory[id]) chatMemory[id] = { topics: [], participants: {}, summary: '', lastActive: 0 };
+  if (!chatMode[id]) chatMode[id] = 'auto';
+  if (!chatTodos[id]) chatTodos[id] = [];
+  chatMemory[id].lastActive = nowMs();
+  return { memory: chatMemory[id], mode: chatMode[id], todos: chatTodos[id] };
 }
 
 function ensureUser(userId) {
@@ -1353,6 +1375,7 @@ async function saveAll() {
   const safeKnowledgeBase = Array.isArray(knowledgeBase) ? knowledgeBase : [];
   const safeAbLog = Array.isArray(abLog) ? abLog : [];
   const safeChatHistory = Array.isArray(chatHistory) ? chatHistory : [];
+  const safeChatHistoryMap = chatHistoryMap && typeof chatHistoryMap === 'object' ? chatHistoryMap : {};
   const safeLessons = lessons && typeof lessons === 'object' ? lessons : { rules: [] };
   if (!Array.isArray(safeLessons.rules)) safeLessons.rules = [];
 
@@ -1363,7 +1386,10 @@ async function saveAll() {
     saveData('ab_log', safeAbLog.slice(-botSettings.maxAbLog)),
     saveData('knowledge', safeKnowledgeBase.slice(-botSettings.maxKnowledge)),
     saveData('bot_settings', botSettings),
-    saveData('chat_history', safeChatHistory.slice(-400))
+    saveData('chat_history', safeChatHistory.slice(-400)),
+    saveData('chat_history_map', safeChatHistoryMap),
+    saveData('chat_memory', chatMemory),
+    saveData('chat_mode', chatMode)
   ]);
 }
 
@@ -1399,6 +1425,9 @@ async function loadAllMemories() {
   abLog = await loadData('ab_log', []);
   knowledgeBase = await loadData('knowledge', []);
   chatHistory = await loadData('chat_history', []);
+  chatHistoryMap = await loadData('chat_history_map', {});
+  chatMemory = await loadData('chat_memory', {});
+  chatMode = await loadData('chat_mode', {});
   botSettings = { ...botSettings, ...(await loadData('bot_settings', {})) };
 
   if (!Array.isArray(shortMemory)) shortMemory = [];
@@ -1478,6 +1507,47 @@ async function downloadTelegramFile(fileId) {
   });
 
   return Buffer.from(fileRes.data);
+}
+
+async function transcribeVoice(fileId) {
+  try {
+    const buffer = await downloadTelegramFile(fileId);
+    const FormData = FormDataLib;
+    if (!FormData) return null;
+    const form = new FormData();
+    form.append('file', buffer, { filename: 'voice.ogg', contentType: 'audio/ogg' });
+    form.append('model', GACOR_MODEL);
+    const res = await axios.post(`${GACOR_BASE_URL}/audio/transcriptions`, form, {
+      headers: { Authorization: `Bearer ${GACOR_API_KEY}`, ...form.getHeaders() },
+      timeout: 30000
+    });
+    return res.data.text || '';
+  } catch (err) {
+    log.warn('Voice transcribe error:', err.message);
+    return null;
+  }
+}
+
+async function sendVoiceMessage(chatId, text) {
+  try {
+    const res = await axios.post('http://localhost:5000/tts', { text }, { timeout: 30000 });
+    if (res.data && res.data.audio) {
+      const audioBytes = Buffer.from(res.data.audio, 'base64');
+      const FormData = FormDataLib;
+      if (!FormData) return false;
+      const form = new FormData();
+      form.append('voice', audioBytes, { filename: 'reply.ogg', contentType: 'audio/ogg' });
+      form.append('chat_id', String(chatId));
+      await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendVoice`, form, {
+        headers: form.getHeaders(), timeout: 30000
+      });
+      return true;
+    }
+    return false;
+  } catch (err) {
+    log.warn('Voice send error:', err.message);
+    return false;
+  }
 }
 
 async function sendPhotoBuffer(chatId, buffer, caption = '', replyToMessageId = null) {
@@ -1592,6 +1662,41 @@ async function searchWebTavilyRaw(query, maxResults = 6) {
     answer: res.data.answer || null,
     results: Array.isArray(res.data.results) ? res.data.results : []
   };
+}
+
+async function searchWebGoogle(query, maxResults = 5) {
+  if (!GOOGLE_SEARCH_API_KEY || !GOOGLE_SEARCH_CX) {
+    return null;
+  }
+  try {
+    const res = await axios.get('https://www.googleapis.com/customsearch/v1', {
+      params: {
+        key: GOOGLE_SEARCH_API_KEY,
+        cx: GOOGLE_SEARCH_CX,
+        q: query,
+        num: Math.min(maxResults, 10)
+      },
+      timeout: 10000
+    });
+    const items = res.data.items || [];
+    return {
+      answer: res.data.searchInformation?.formattedTotalResults ? `~${res.data.searchInformation.formattedTotalResults} hasil` : null,
+      results: items.map(item => ({
+        title: item.title || '',
+        url: item.link || '',
+        content: (item.snippet || '').slice(0, 250)
+      }))
+    };
+  } catch (err) {
+    log.warn('Google Search error:', err.message);
+    return null;
+  }
+}
+
+async function searchWebFallback(query) {
+  const googleRes = await searchWebGoogle(query, 5);
+  if (googleRes && googleRes.results.length > 0) return googleRes;
+  return await searchWebTavilyRaw(query, 6);
 }
 
 async function searchWebTavily(query) {
@@ -11224,7 +11329,18 @@ await withUserActionLock(userId, async () => {
     return;
   }
 
-  if (!text && !msg.photo && !msg.document && !msg.voice) {
+  if (msg.voice && !text) {
+    const transcribed = await transcribeVoice(msg.voice.file_id);
+    if (transcribed) {
+      text = transcribed;
+      msg.text = transcribed;
+    } else {
+      await safeSendMessage(chatId, 'Maaf, saya belum bisa transkrip voice ini.');
+      return;
+    }
+  }
+
+  if (!text && !msg.photo && !msg.document) {
     await safeSendMessage(chatId, 'Maaf, saya hanya bisa membaca pesan teks biasa saat ini.');
     return;
   }
