@@ -86,6 +86,9 @@ const {
   TELEGRAM_TOKEN,
   MISTRAL_API_KEY,
   GROQ_API_KEY,
+  GACOR_API_KEY,
+  GACOR_BASE_URL = 'https://rbeafse.abc-tunnel.us/v1',
+  GACOR_MODEL = 'gacor',
   TAVILY_API_KEY,
   OPENWEATHER_API_KEY,
   DATABASE_URL,
@@ -1759,6 +1762,39 @@ async function askGroq(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 
   return res.data.choices?.[0]?.message?.content || '';
 }
 
+async function askGacor(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800) {
+  if (!GACOR_API_KEY) {
+    throw new Error('GACOR_API_KEY tidak diset');
+  }
+
+  const res = await withRetry(
+    () => axios.post(
+      `${GACOR_BASE_URL}/chat/completions`,
+      {
+        model: GACOR_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature,
+        max_tokens: maxTokens
+      },
+      {
+        headers: { Authorization: `Bearer ${GACOR_API_KEY}` },
+        timeout: 30000
+      }
+    ),
+    {
+      retries: 1,
+      baseDelayMs: 500,
+      onRetry: (err, attempt) => log.warn(`Gacor retry #${attempt}:`, err.message)
+    }
+  );
+
+  const choice = res.data.choices?.[0]?.message;
+  return choice?.content || choice?.reasoning_content || '';
+}
+
 function chooseAIModel(question, intent = null) {
   const q = safeLower(question);
 
@@ -1790,7 +1826,7 @@ function chooseAIModel(question, intent = null) {
     q.includes('analisis')
   ) return 'mistral';
 
-  return 'groq';
+  return 'gacor';
 }
 
 async function askAI(systemPrompt, userPrompt, opts = {}) {
@@ -1830,6 +1866,7 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
   const modelOrder = chooseProviderOrder({
     preferred: chooseAIModel(question, intent),
     available: {
+      gacor: Boolean(GACOR_API_KEY),
       groq: Boolean(GROQ_API_KEY),
       mistral: Boolean(MISTRAL_API_KEY)
     }
@@ -1856,7 +1893,9 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     try {
       const raw = m === 'mistral'
         ? await askMistral(systemPrompt, userPrompt, temperature, maxTokens)
-        : await askGroq(systemPrompt, userPrompt, temperature, maxTokens);
+        : m === 'gacor'
+          ? await askGacor(systemPrompt, userPrompt, temperature, maxTokens)
+          : await askGroq(systemPrompt, userPrompt, temperature, maxTokens);
 
       const answer = allowRawJson
         ? String(raw || '').trim()
@@ -4184,6 +4223,7 @@ function getOpsServices() {
     webhookStatus: WEBHOOK_URL || TELEGRAM_WEBHOOK_URL ? 'configured' : 'local',
     getRuntimeStatus: () => autonomousEngine.getRuntimeStatus(),
     env: {
+      GACOR_API_KEY,
       MISTRAL_API_KEY,
       GROQ_API_KEY,
       DATABASE_URL,
