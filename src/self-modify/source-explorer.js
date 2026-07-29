@@ -55,7 +55,7 @@ function readFileSafe(filePath) {
   const full = join(ROOT, filePath);
   try {
     const stat = statSync(full);
-    if (stat.size > 51200) return { ok: false, error: 'FILE_TOO_LARGE', size: stat.size };
+    if (stat.size > 512000) return { ok: false, error: 'FILE_TOO_LARGE', size: stat.size };
     return { ok: true, content: readFileSync(full, 'utf8') };
   } catch (e) {
     return { ok: false, error: e.code || e.message };
