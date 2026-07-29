@@ -69,6 +69,7 @@ try { FormDataLib = require('form-data'); } catch (_) {}
 try { ({ Mistral: MistralClass } = require('@mistralai/mistralai')); } catch (_) {}
 try { RedisClass = require('ioredis'); } catch (_) {}
 try { pdfParseLib = require('pdf-parse'); } catch (_) {}
+const voiceService = require('../voice/voice-service');
 
 const config = readEnv();
 
@@ -1027,7 +1028,8 @@ function ensureUser(userId) {
         welcome: false
       },
       lastSeen: nowMs(),
-      lastChatId: null
+      lastChatId: null,
+      voiceReplyEnabled: false
     };
   }
 
@@ -11390,6 +11392,14 @@ await withUserActionLock(userId, async () => {
     opsSystem.telemetry.recordCommand(resolvedCmd, userId, getOpsServices());
   }
 
+  if (resolvedCmd === '/voice') {
+    const newVal = args === 'on' ? true : args === 'off' ? false : !u.voiceReplyEnabled;
+    u.voiceReplyEnabled = newVal;
+    await persist();
+    await safeSendMessage(chatId, `🔊 Balasan suara: ${newVal ? 'ON ✅' : 'OFF ❌'}\n${newVal ? 'Jawaban pendek akan dikirim sebagai voice note.' : 'Balasan teks biasa.'}`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
   if (resolvedCmd === '/start') {
     await safeSendMessage(chatId, `🤖 Halo! Aku ${u.botName}. Ketik /help untuk semua perintah.`, { reply_to_message_id: msg.message_id });
     return;
@@ -11983,7 +11993,8 @@ Data endpoint membutuhkan Authorization Bearer token.`;
       OWNER_CHAT_ID,
       ADMIN_SET
     },
-    shortMemory
+    shortMemory,
+    transcribeAudio: (buffer, attachment) => voiceService.transcribeAudio(buffer, attachment, GACOR_API_KEY || process.env.GACOR_API_KEY, GACOR_BASE_URL || process.env.GACOR_BASE_URL)
   });
 
   if (autonomousResult && autonomousResult.processed) {
@@ -12484,6 +12495,19 @@ async function processAIMessage(chatId, userId, text, msg, conversationState = n
     }
   } catch (err) {
     log.warn('Interaction keyboard skipped:', err.message);
+  }
+
+  // ── Voice reply ──
+  const u = ensureUser(userId);
+  if (u.voiceReplyEnabled && answer.length <= 300) {
+    try {
+      const audioBuf = await voiceService.textToSpeechBuffer(answer, { voice: 'id-ID-ArdiNeural' });
+      await voiceService.sendVoiceBuffer(chatId, audioBuf, { reply_to_message_id: msg.message_id }, TELEGRAM_API);
+      pushChatHistory({ userId, chatId, role: 'assistant', text: `[voice] ${answer}`, timestamp: nowMs() });
+      return answer;
+    } catch (ttsErr) {
+      log.warn('Voice reply failed, fallback to text:', ttsErr.message);
+    }
   }
 
   await sendStreamingAnswer(chatId, answer, {
