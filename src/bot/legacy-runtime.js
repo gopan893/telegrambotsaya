@@ -5743,6 +5743,25 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
   const integrationResult = await handleNaturalIntegrationRoute(chatId, userId, userText, msg);
   if (integrationResult.handled) return integrationResult;
 
+  // ── Natural self-dev intent ──
+  const selfDevNeed = detectNaturalSelfDevIntent(userText);
+  if (selfDevNeed.needed) {
+    try {
+      await safeSendMessage(chatId, '🧠 Saya paham, saya akan buat itu...', { reply_to_message_id: msg.message_id });
+      const result = await selfModify.selfDevEngine.selfDev(chatId, userId, selfDevNeed.prompt, {
+        askAI,
+        safeSendMessage,
+        sendChunkedMessage
+      });
+      const lines = result.results.map(r => `${r.ok ? r.label : r.label} ${r.detail}`).join('\n\n');
+      await sendChunkedMessage(chatId, lines, { reply_to_message_id: msg.message_id });
+      return { handled: true };
+    } catch (err) {
+      log.warn('Natural self-dev failed:', err.message);
+      // fall through — jangan blokir proses normal
+    }
+  }
+
   const services = getAgentServices(userId);
   const settings = await smartAgentSystem.conversationBus.getGroupSettings(chatId, services);
   const recentTopic = await smartAgentSystem.conversationBus.getRecentChatTopic(chatId, userId, services);
@@ -5908,6 +5927,16 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
   await smartAgentSystem.conversationBus.sendAgentResponses(event, route, drafts, services);
   return { handled: true, answer: visibleText, route };
+}
+
+function detectNaturalSelfDevIntent(text = '') {
+  const raw = String(text || '').trim().toLowerCase();
+  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n).*fitur|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode))/i.test(raw);
+  if (!isSelfDev) return { needed: false };
+  return {
+    needed: true,
+    prompt: raw
+  };
 }
 
 function detectNaturalIntegrationIntent(text = '') {
