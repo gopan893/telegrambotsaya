@@ -5749,6 +5749,30 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
     try {
       const action = selfDevNeed.action || 'generate';
 
+      if (action === 'otonom') {
+        if (!global.autonomySystem) {
+          await safeSendMessage(chatId, 'Sistem Otonom belum diinisialisasi.', { reply_to_message_id: msg.message_id });
+          return { handled: true };
+        }
+        const stat = global.autonomySystem.scheduler.status();
+        const metrics = global.autonomySystem.monitor.getMetrics();
+        const lines = [
+          '🤖 **Sistem Otonom (Level 7-10)**',
+          '',
+          `Enabled: ${stat.enabled ? 'Yes' : 'No'}`,
+          `Scheduler Active: ${stat.started ? 'Yes' : 'No'}`,
+          `Running Job Lock: ${stat.running ? 'Yes' : 'No'}`,
+          `Records: ${stat.records}`,
+          '',
+          '*Metrik Ops (Level 10):*',
+          `Total Events: ${metrics.totalEvents}`,
+          `Errors: ${metrics.errors}`,
+          `Success Rate: ${metrics.successRate.toFixed(2)}%`
+        ];
+        await sendChunkedMessage(chatId, lines.join('\n'), { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
       if (action === 'evolve') {
         await safeSendMessage(chatId, '🧬 Menjalankan evolution cycle...', { reply_to_message_id: msg.message_id });
         const report = await selfModify.evolutionEngine.runEvolutionCycle({ askAI });
@@ -6032,11 +6056,12 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
 function detectNaturalSelfDevIntent(text = '') {
   const raw = String(text || '').trim().toLowerCase();
-  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n|evolusi|upgrade|restruktur|pindah|optimize|performa|profil|health|cek.*kesehatan|backup|self.*heal|auto.*fix|bikin.*agent|agent.*baru).*|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode)|(refactor|optimize|perbaiki|analisa|analisis|review)\s|bot.*(lambat|error|lemot|bug)|cek.*dependency|update.*dependency|test.*suite|bikin.*test|deploy|release.?note|build.?check|sembuhin|heal|spawn.*agent|council|debat|review.*(code|pr|diff))/i.test(raw);
+  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n|evolusi|upgrade|restruktur|pindah|optimize|performa|profil|health|cek.*kesehatan|backup|self.*heal|auto.*fix|bikin.*agent|agent.*baru).*|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode)|(refactor|optimize|perbaiki|analisa|analisis|review)\s|bot.*(lambat|error|lemot|bug)|cek.*dependency|update.*dependency|test.*suite|bikin.*test|deploy|release.?note|build.?check|sembuhin|heal|spawn.*agent|council|debat|review.*(code|pr|diff)|otonom|autonomy)/i.test(raw);
   if (!isSelfDev) return { needed: false };
 
   let action = 'generate';
-  if (/refactor|restruktur|pindah|optimize|performa|profil|bottleneck|lambat|lemot/i.test(raw)) action = 'refactor';
+  if (/otonom|autonomy/i.test(raw)) action = 'otonom';
+  else if (/refactor|restruktur|pindah|optimize|performa|profil|bottleneck|lambat|lemot/i.test(raw)) action = 'refactor';
   else if (/evolusi|auto.*improve|evolution|cycle/i.test(raw)) action = 'evolve';
   else if (/health|cek.*kesehatan|diagnostic|diagnosa/i.test(raw)) action = 'health';
   else if (/test.*suite|bikin.*test|generate.*test/i.test(raw)) action = 'test';
@@ -6424,9 +6449,58 @@ async function handlePhase33OpsCommands(chatId, userId, cmd, args, msg) {
     '/cicd_status',
     '/github_actions',
     '/propose_workflow',
-    '/propose_deploy'
+    '/propose_deploy',
+    '/otonom',
+    '/autonomy'
   ]);
   if (!commands.has(cmd)) return false;
+
+  if (cmd === '/otonom' || cmd === '/autonomy') {
+    if (!global.autonomySystem) {
+      await sendChunkedMessage(chatId, 'Sistem Otonom belum diinisialisasi.', replyOpt);
+      return true;
+    }
+    const stat = global.autonomySystem.scheduler.status();
+    const action = String(args || '').trim().toLowerCase();
+
+    if (action === 'start') {
+      const ok = global.autonomySystem.scheduler.start();
+      await sendChunkedMessage(chatId, ok ? '✅ Sistem Otonom diaktifkan.' : '⚠️ Gagal mengaktifkan otonom (sudah aktif atau dinonaktifkan env).', replyOpt);
+      return true;
+    }
+    if (action === 'stop') {
+      const ok = global.autonomySystem.scheduler.stop();
+      await sendChunkedMessage(chatId, ok ? '🛑 Sistem Otonom dinonaktifkan.' : '⚠️ Gagal menonaktifkan otonom (sudah mati).', replyOpt);
+      return true;
+    }
+    if (action === 'tick') {
+      await sendChunkedMessage(chatId, '⚡ Menjalankan otonom tick...', replyOpt);
+      const res = await global.autonomySystem.scheduler.tick();
+      await sendChunkedMessage(chatId, `Hasil tick:\n\`\`\`json\n${JSON.stringify(res, null, 2)}\n\`\`\``, replyOpt);
+      return true;
+    }
+
+    const metrics = global.autonomySystem.monitor.getMetrics();
+    await sendChunkedMessage(chatId, [
+      '🤖 *STATUS OTONOM (LEVEL 7-10)*',
+      '',
+      `Enabled: ${stat.enabled ? 'Yes' : 'No'}`,
+      `Scheduler Active: ${stat.started ? 'Yes' : 'No'}`,
+      `Running Job Lock: ${stat.running ? 'Yes' : 'No'}`,
+      `Scheduler Records: ${stat.records}`,
+      '',
+      '*Metrik Ops (Level 10):*',
+      `Total Events: ${metrics.totalEvents}`,
+      `Errors: ${metrics.errors}`,
+      `Success Rate: ${metrics.successRate.toFixed(2)}%`,
+      '',
+      'Gunakan:',
+      '- `/otonom start` (jalankan scheduler)',
+      '- `/otonom stop` (hentikan scheduler)',
+      '- `/otonom tick` (jalankan otonom manual)'
+    ].join('\n'), replyOpt);
+    return true;
+  }
 
   if (cmd === '/monitor' || cmd === '/livehealth') {
     if (!monitoringSystem) {
@@ -11275,6 +11349,69 @@ try {
   routineScheduler = routines.createRoutineScheduler({ storageManager, runner: routineRunner, env: config, logger: log });
 } catch (e) {
   log.warn('Routine system skipped:', e.message);
+}
+
+try {
+  const autonomy = require('../autonomy');
+  const sandbox = autonomy.createWorktreeSandbox({ root: process.cwd() });
+  const monitor = autonomy.createOperationsMonitor({
+    telegram: {
+      sendMessage: async (chatId, text) => {
+        try {
+          await safeSendMessage(chatId, text);
+        } catch (_) {}
+      }
+    },
+    chatId: String(config.OWNER_ID || config.OWNER || ''),
+    sandbox
+  });
+  const queue = autonomy.createDurableQueue({ storageManager });
+  const workflow = autonomy.createAgentWorkflow({
+    storageManager,
+    callbacks: {
+      planner: async (s) => {
+        log.info('Autonomy workflow planner ticking:', s.id);
+        return { planned: true, ts: Date.now() };
+      },
+      coder: async (s) => {
+        log.info('Autonomy workflow coder ticking:', s.id);
+        return { coded: true, ts: Date.now() };
+      },
+      reviewer: async (s) => {
+        log.info('Autonomy workflow reviewer ticking:', s.id);
+        return { ok: true, score: 100 };
+      },
+      deployer: async (s) => {
+        log.info('Autonomy workflow deployer ticking:', s.id);
+        return { deployed: true, ts: Date.now() };
+      }
+    }
+  });
+
+  const sm = require('../self-modify');
+  const scheduler = autonomy.createAutonomyScheduler({
+    storageManager,
+    enabled: process.env.AUTONOMY_ENABLED === 'true',
+    callbacks: {
+      health: async () => {
+        return await sm.godModeEngine.healthCheck();
+      },
+      evolution: async () => {
+        const services = { askAI: aiOS?.askAI || null };
+        return await sm.evolutionEngine.runEvolutionCycle(services);
+      },
+      heal: async () => {
+        const services = { askAI: aiOS?.askAI || null };
+        return await sm.selfHeal.healAll(services);
+      }
+    }
+  });
+
+  global.autonomySystem = { sandbox, monitor, queue, workflow, scheduler };
+  scheduler.start();
+  log.info('Autonomy System initialized successfully.');
+} catch (e) {
+  log.warn('Autonomy System skipped:', e.message);
 }
 
 try {

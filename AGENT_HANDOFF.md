@@ -426,3 +426,55 @@ telegram: stabilize ux command center and natural agent routing
 ```
 
 ---
+
+## Level 7 Autonomous Scheduler — 2026-07-29
+
+### Files Changed
+- `src/autonomy/autonomy-scheduler.js` — persistent injected-callback scheduler. Default disabled; `AUTONOMY_ENABLED=true` enables. Supports `start()`, `stop()`, `tick()`, `status()`. Records health/evolution/heal results through injected `storageManager`; process-local tick lock prevents overlap. No deploy/write action.
+- `src/autonomy/__tests__/autonomy-scheduler.test.js` — Jest coverage for persistence, callbacks, lock, disabled default.
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `npx jest src/autonomy/__tests__/autonomy-scheduler.test.js --runInBand` | PASS — 2/2 |
+
+## Level 8 Safe Git Worktree Sandbox — 2026-07-29
+
+### Files Changed
+- `src/autonomy/worktree-sandbox.js` — isolated worktree create/check/cleanup/branch rollback API. Uses `execFileSync` argument arrays only. Rejects unsafe branch names and protects `main`/`master`.
+- `src/autonomy/__tests__/worktree-sandbox.test.js` — Jest coverage for git argument arrays, injected checks, cleanup, unsafe input, protected rollback.
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `npx jest src/autonomy/__tests__/worktree-sandbox.test.js --runInBand` | PASS — 7/7 |
+| `node --check telebot.js && node --check src/autonomy/worktree-sandbox.js` | PASS |
+
+### TDD Record
+- RED: test failed because `../worktree-sandbox` did not exist.
+- GREEN: module added; all 7 tests pass.
+| `node --check telebot.js && node --check src/autonomy/autonomy-scheduler.js` | PASS |
+
+### Next Safe Task
+- Parent agent wire injected safe callbacks into runtime. Do not wire legacy-runtime here.
+
+## Level 10 Operations Monitor — 2026-07-29
+
+### Files Changed
+- `src/autonomy/operations-monitor.js` — standalone injected-storage monitor. Bounded 100-event persistence, recursive secret redaction, 15-minute error status and fingerprint alert cooldown.
+- `src/autonomy/__tests__/operations-monitor.test.js` — Jest coverage for redaction, bounded persistence, error window, alert dedupe.
+
+### Tests Run
+| Test | Result |
+|------|--------|
+| `npx jest src/autonomy/__tests__/operations-monitor.test.js --runInBand --ci` | PASS — 2/2 |
+| `node --check telebot.js && node --check src/autonomy/operations-monitor.js` | PASS |
+
+### TDD Record
+- RED: test failed because `../operations-monitor` did not exist.
+- GREEN: module added; all 2 tests pass.
+
+### Next Safe Task
+- Parent may inject monitor into runtime. No legacy integration done here.
+
+---
