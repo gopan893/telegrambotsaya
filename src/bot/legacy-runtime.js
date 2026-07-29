@@ -11353,8 +11353,21 @@ app.post(WEBHOOK_PATH, async (req, res) => {
             ensureUser,
             persist
           });
+          // ── Learning loop: auto-fix dari feedback negatif ──
+          try {
+            const learningLoop = require('../self-modify/learning-loop');
+            const result = await learningLoop.processNegativeFeedback(
+              feedbackUserId,
+              cb.message?.text || '',
+              '',
+              { askAI }
+            );
+            if (result.results.some(r => r.ok && r.label === '✅')) {
+              await safeSendMessage(chatId, '🔄 Saya sudah analisa dan perbaiki diri berdasarkan feedback.');
+            }
+          } catch (_) {}
         }
-        await safeSendMessage(chatId, '👎 Gunakan /koreksi untuk mengajari saya.');
+        await safeSendMessage(chatId, '👎 Terima kasih, feedback dicatat untuk perbaikan.');
       }
 
       try {
