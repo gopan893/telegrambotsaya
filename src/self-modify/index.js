@@ -12,6 +12,10 @@ const architectureEngine = require('./architecture-engine');
 const recursiveEngine = require('./recursive-engine');
 const optimizeEngine = require('./optimize-engine');
 const godModeEngine = require('./godmode-engine');
+const selfHeal = require('./self-heal');
+const agentDirector = require('./agent-director');
+const codeReviewEngine = require('./code-review-engine');
+const deployEngine = require('./deploy-engine');
 
 module.exports = {
   selfDevEngine,
@@ -26,4 +30,8 @@ module.exports = {
   recursiveEngine,
   optimizeEngine,
   godModeEngine,
+  selfHeal,
+  agentDirector,
+  codeReviewEngine,
+  deployEngine,
 };

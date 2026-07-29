@@ -5788,8 +5788,47 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
       }
 
       if (action === 'agent') {
-        await safeSendMessage(chatId, '🤖 Mode create agent. Sebut role dan deskripsi agent yang diinginkan.', { reply_to_message_id: msg.message_id });
-        // Tunggu prompt detail dari user via percakapan biasa
+        const roleMatch = selfDevNeed.prompt.match(/(?:agent|role)\s+([a-z0-9_-]+)/i);
+        const role = roleMatch?.[1];
+        if (!role) {
+          await safeSendMessage(chatId, 'Sebut role. Contoh: "bot bikin agent security untuk review kode".', { reply_to_message_id: msg.message_id });
+          return { handled: true };
+        }
+        const result = await selfModify.agentDirector.runAgent(role, selfDevNeed.prompt, '', { askAI });
+        await sendChunkedMessage(chatId, result.ok ? `🤖 **${role} agent**\n\n${result.result}` : `❌ Agent gagal: ${result.error}`, { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'heal') {
+        const result = await selfModify.selfHeal.healAll({ askAI });
+        await safeSendMessage(chatId, `🩹 Self-heal: ${result.healed} fixed, ${result.failed} perlu review.`, { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'review') {
+        const review = selfModify.codeReviewEngine.reviewLastDiff();
+        if (!review.ok) {
+          await safeSendMessage(chatId, `❌ Review gagal: ${review.error}`, { reply_to_message_id: msg.message_id });
+          return { handled: true };
+        }
+        const issues = review.issues.slice(0, 20);
+        const lines = [
+          '🔎 **Code Review**',
+          `Files: ${review.filesChanged.length} · +${review.addedLines} / -${review.removedLines}`,
+          '',
+          ...(issues.length ? issues.map(i => `${i.severity.toUpperCase()} ${i.file}: ${i.message}`) : ['✅ Tidak ada issue dari static review.'])
+        ];
+        await sendChunkedMessage(chatId, lines.join('\n'), { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'deploy') {
+        const build = selfModify.deployEngine.buildCheck();
+        const deploy = selfModify.deployEngine.verifyDeploy();
+        await safeSendMessage(chatId, build.ok
+          ? `🚀 Build OK: ${build.passed}/${build.total} file. Git: ${deploy.lastCommit}`
+          : `❌ Build gagal: ${build.failed.map(f => f.file).join(', ')}`,
+        { reply_to_message_id: msg.message_id });
         return { handled: true };
       }
 
@@ -5993,24 +6032,22 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
 function detectNaturalSelfDevIntent(text = '') {
   const raw = String(text || '').trim().toLowerCase();
-  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n|evolusi|upgrade|restruktur|pindah|optimize|performa|profil|health|cek.*kesehatan|backup|self.*heal|auto.*fix|bikin.*agent|agent.*baru).*|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode)|(refactor|optimize|perbaiki|analisa|analisis)\s|bot.*(lambat|error|lemot|bug)|cek.*dependency|update.*dependency|test.*suite|bikin.*test)/i.test(raw);
+  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n|evolusi|upgrade|restruktur|pindah|optimize|performa|profil|health|cek.*kesehatan|backup|self.*heal|auto.*fix|bikin.*agent|agent.*baru).*|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode)|(refactor|optimize|perbaiki|analisa|analisis|review)\s|bot.*(lambat|error|lemot|bug)|cek.*dependency|update.*dependency|test.*suite|bikin.*test|deploy|release.?note|build.?check|sembuhin|heal|spawn.*agent|council|debat|review.*(code|pr|diff))/i.test(raw);
   if (!isSelfDev) return { needed: false };
 
-  // Cari level intent
   let action = 'generate';
   if (/refactor|restruktur|pindah|optimize|performa|profil|bottleneck|lambat|lemot/i.test(raw)) action = 'refactor';
-  else if (/evolusi|evolusi|auto.*improve|evolution|cycle/i.test(raw)) action = 'evolve';
+  else if (/evolusi|auto.*improve|evolution|cycle/i.test(raw)) action = 'evolve';
   else if (/health|cek.*kesehatan|diagnostic|diagnosa/i.test(raw)) action = 'health';
   else if (/test.*suite|bikin.*test|generate.*test/i.test(raw)) action = 'test';
-  else if (/agent.*baru|bikin.*agent|create.*agent/i.test(raw)) action = 'agent';
+  else if (/agent.*baru|bikin.*agent|create.*agent|spawn.*agent/i.test(raw)) action = 'agent';
   else if (/dependency|update.*deps/i.test(raw)) action = 'deps';
   else if (/backup|self.*preserve/i.test(raw)) action = 'backup';
+  else if (/sembuhin|heal|error|bug|self.*heal/i.test(raw)) action = 'heal';
+  else if (/review|review.*code|review.*diff|council|debat/i.test(raw)) action = 'review';
+  else if (/deploy|release.?note|build.?check/i.test(raw)) action = 'deploy';
 
-  return {
-    needed: true,
-    prompt: raw,
-    action
-  };
+  return { needed: true, prompt: raw, action };
 }
 
 function detectNaturalIntegrationIntent(text = '') {
