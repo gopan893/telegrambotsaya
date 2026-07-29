@@ -93,6 +93,7 @@ const {
   TAVILY_API_KEY,
   GOOGLE_SEARCH_API_KEY,
   GOOGLE_SEARCH_CX,
+  SERP_API_KEY,
   OPENWEATHER_API_KEY,
   DATABASE_URL,
   STORAGE_DRIVER,
@@ -1695,9 +1696,40 @@ async function searchWebGoogle(query, maxResults = 5) {
   }
 }
 
+async function searchWebSerpApi(query, maxResults = 5) {
+  if (!SERP_API_KEY) {
+    return null;
+  }
+  try {
+    const res = await axios.get('https://serpapi.com/search', {
+      params: {
+        api_key: SERP_API_KEY,
+        q: query,
+        engine: 'google',
+        num: Math.min(maxResults, 10)
+      },
+      timeout: 15000
+    });
+    const organic = Array.isArray(res.data?.organic_results) ? res.data.organic_results : [];
+    return {
+      answer: res.data?.answer_box?.answer || res.data?.knowledge_graph?.description || null,
+      results: organic.map(r => ({
+        title: r.title,
+        url: r.link,
+        snippet: r.snippet
+      }))
+    };
+  } catch (err) {
+    log.warn('SerpAPI search error:', err.message);
+    return null;
+  }
+}
+
 async function searchWebFallback(query) {
   const googleRes = await searchWebGoogle(query, 5);
   if (googleRes && googleRes.results.length > 0) return googleRes;
+  const serpRes = await searchWebSerpApi(query, 5);
+  if (serpRes && serpRes.results.length > 0) return serpRes;
   return await searchWebTavilyRaw(query, 6);
 }
 
