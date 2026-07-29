@@ -16,6 +16,7 @@ const { buildLearningGuide } = require('../../handlers/learning');
 const autonomousEngine = require('../core/autonomous-engine');
 const agentLearning = require('../agents/learning');
 const selfImprovementAgent = require('../agents/self-improvement');
+const selfModify = require('../self-modify');
 const aiOS = require('../ai-os');
 const opsSystem = require('../ops');
 const { createStorageManager } = require('../storage');
@@ -11429,6 +11430,26 @@ await withUserActionLock(userId, async () => {
     u.voiceReplyEnabled = newVal;
     await persist();
     await safeSendMessage(chatId, `🔊 Balasan suara: ${newVal ? 'ON ✅' : 'OFF ❌'}\n${newVal ? 'Jawaban pendek akan dikirim sebagai voice note.' : 'Balasan teks biasa.'}`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  if (resolvedCmd === '/dev') {
+    if (!args) {
+      await safeSendMessage(chatId, '🔧 **Self-Dev Engine**\n\n`/dev buat <deskripsi>` — generate fitur baru\n`/dev ubah <deskripsi>` — patch existing\n`/dev cari <keyword>` — cari file\n`/dev list` — scan semua command\n`/dev test` — test kode terakhir', { reply_to_message_id: msg.message_id });
+      return;
+    }
+    try {
+      await safeSendMessage(chatId, '🧠 Memproses...', { reply_to_message_id: msg.message_id });
+      const result = await selfModify.selfDevEngine.selfDev(chatId, userId, resolvedCmd + ' ' + args, {
+        askAI,
+        safeSendMessage,
+        sendChunkedMessage
+      });
+      const lines = result.results.map(r => `${r.ok ? r.label : r.label} ${r.detail}`).join('\n\n');
+      await sendChunkedMessage(chatId, lines, { reply_to_message_id: msg.message_id });
+    } catch (err) {
+      await safeSendMessage(chatId, `❌ Self-dev error: ${err.message}`, { reply_to_message_id: msg.message_id });
+    }
     return;
   }
 
