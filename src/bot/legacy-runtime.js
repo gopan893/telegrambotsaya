@@ -5747,7 +5747,69 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
   const selfDevNeed = detectNaturalSelfDevIntent(userText);
   if (selfDevNeed.needed) {
     try {
-      await safeSendMessage(chatId, '🧠 Saya paham, saya akan buat itu...', { reply_to_message_id: msg.message_id });
+      const action = selfDevNeed.action || 'generate';
+
+      if (action === 'evolve') {
+        await safeSendMessage(chatId, '🧬 Menjalankan evolution cycle...', { reply_to_message_id: msg.message_id });
+        const report = await selfModify.evolutionEngine.runEvolutionCycle({ askAI });
+        const lines = [
+          '🧬 **Evolution Cycle Selesai**',
+          '',
+          ...report.phases.map(p => `- ${p}`),
+          ...report.fixes.map(f => `  ✅ ${f.file} (${f.issues} issue fixed)`),
+          ...(report.errors.length ? ['', '⚠️ Errors:', ...report.errors.map(e => `  - ${e}`)] : [])
+        ];
+        await sendChunkedMessage(chatId, lines.join('\n'), { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'health') {
+        const checks = selfModify.godModeEngine.healthCheck();
+        const lines = ['🩺 **Health Check**', '', ...checks.map(c => `${c.ok ? '✅' : '❌'} ${c.name}: ${c.detail}`)];
+        await sendChunkedMessage(chatId, lines.join('\n'), { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'backup') {
+        const result = selfModify.godModeEngine.selfPreserve();
+        await safeSendMessage(chatId, `💾 Backup: ${result.backedUp} file critical tersimpan.`, { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'deps') {
+        const deps = selfModify.recursiveEngine.analyzeDependencies();
+        const lines = [
+          '📦 **Dependency Analysis**',
+          `Total: ${deps.total} · Used: ${deps.used}`,
+          ...(deps.unused.length ? ['', 'Tidak terpakai:', ...deps.unused.map(d => `  - ${d}`)] : ['', '✅ Semua terpakai.'])
+        ];
+        await sendChunkedMessage(chatId, lines.join('\n'), { reply_to_message_id: msg.message_id });
+        return { handled: true };
+      }
+
+      if (action === 'agent') {
+        await safeSendMessage(chatId, '🤖 Mode create agent. Sebut role dan deskripsi agent yang diinginkan.', { reply_to_message_id: msg.message_id });
+        // Tunggu prompt detail dari user via percakapan biasa
+        return { handled: true };
+      }
+
+      if (action === 'test') {
+        // Generate test untuk file pertama yang relevan
+        const files = selfModify.sourceExplorer.scanSourceFiles();
+        if (files.length > 0) {
+          const target = files.find(f => !f.path.includes('self-modify') && !f.path.includes('node_modules')) || files[0];
+          const test = await selfModify.recursiveEngine.generateTestSuite(target.path, { askAI });
+          if (test.ok) {
+            await safeSendMessage(chatId, `🧪 Test suite dibuat: \`${test.testFile}\``, { reply_to_message_id: msg.message_id });
+          } else {
+            await safeSendMessage(chatId, `❌ ${test.error}`, { reply_to_message_id: msg.message_id });
+          }
+        }
+        return { handled: true };
+      }
+
+      // Default: generate / refactor via self-dev engine
+      await safeSendMessage(chatId, '🧠 Saya akan proses...', { reply_to_message_id: msg.message_id });
       const result = await selfModify.selfDevEngine.selfDev(chatId, userId, selfDevNeed.prompt, {
         askAI,
         safeSendMessage,
@@ -5758,7 +5820,7 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
       return { handled: true };
     } catch (err) {
       log.warn('Natural self-dev failed:', err.message);
-      // fall through — jangan blokir proses normal
+      // fall through
     }
   }
 
@@ -5931,11 +5993,23 @@ async function handleNaturalAgentRoute(chatId, userId, userText, msg) {
 
 function detectNaturalSelfDevIntent(text = '') {
   const raw = String(text || '').trim().toLowerCase();
-  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n).*fitur|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode))/i.test(raw);
+  const isSelfDev = /(^|\b)(bot.*(buat|tambah|bikin|bikinin|bikinkan|create|add|generate|kembangin|kembangk(a|e)n|evolusi|upgrade|restruktur|pindah|optimize|performa|profil|health|cek.*kesehatan|backup|self.*heal|auto.*fix|bikin.*agent|agent.*baru).*|fitur.*baru|tambahin.*(command|fitur|perintah)|buat.*(command|fitur|perintah)|generate.*(command|fitur|code|kode)|(refactor|optimize|perbaiki|analisa|analisis)\s|bot.*(lambat|error|lemot|bug)|cek.*dependency|update.*dependency|test.*suite|bikin.*test)/i.test(raw);
   if (!isSelfDev) return { needed: false };
+
+  // Cari level intent
+  let action = 'generate';
+  if (/refactor|restruktur|pindah|optimize|performa|profil|bottleneck|lambat|lemot/i.test(raw)) action = 'refactor';
+  else if (/evolusi|evolusi|auto.*improve|evolution|cycle/i.test(raw)) action = 'evolve';
+  else if (/health|cek.*kesehatan|diagnostic|diagnosa/i.test(raw)) action = 'health';
+  else if (/test.*suite|bikin.*test|generate.*test/i.test(raw)) action = 'test';
+  else if (/agent.*baru|bikin.*agent|create.*agent/i.test(raw)) action = 'agent';
+  else if (/dependency|update.*deps/i.test(raw)) action = 'deps';
+  else if (/backup|self.*preserve/i.test(raw)) action = 'backup';
+
   return {
     needed: true,
-    prompt: raw
+    prompt: raw,
+    action
   };
 }
 

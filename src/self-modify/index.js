@@ -7,6 +7,11 @@ const gitCommit = require('./git-commit');
 const refactorEngine = require('./refactor-engine');
 const learningLoop = require('./learning-loop');
 const autoDetect = require('./auto-detect');
+const evolutionEngine = require('./evolution-engine');
+const architectureEngine = require('./architecture-engine');
+const recursiveEngine = require('./recursive-engine');
+const optimizeEngine = require('./optimize-engine');
+const godModeEngine = require('./godmode-engine');
 
 module.exports = {
   selfDevEngine,
@@ -16,8 +21,9 @@ module.exports = {
   refactorEngine,
   learningLoop,
   autoDetect,
-
-  registerHandlers(services) {
-    // Intentionally light
-  }
+  evolutionEngine,
+  architectureEngine,
+  recursiveEngine,
+  optimizeEngine,
+  godModeEngine,
 };
