@@ -2,17 +2,14 @@
 
 const { createEventBus } = require('../event-bus');
 
-(async () => {
+test('emits, stores, filters, and unsubscribes events', () => {
   const bus = createEventBus();
   const events = [];
-  const unsub = bus.on('health', e => events.push(e));
-  const ev = bus.emit({ topic: 'health', severity: 'info', title: 'Test', summary: 'test event' });
-  console.assert(ev.id, 'Event should have id');
-  console.assert(events.length === 1, 'Listener should fire');
-  const history = bus.getHistory({ topic: 'health' });
-  console.assert(history.length >= 1, 'History should contain event');
-  unsub();
-  bus.emit({ topic: 'health', title: 'After unsub' });
-  console.assert(events.length === 1, 'Unsubscribed listener should not fire');
-  console.log('event-bus tests passed');
-})();
+  const unsubscribe = bus.on('health', event => events.push(event));
+  expect(bus.emit({ topic: 'health', severity: 'info', title: 'Test', summary: 'test event' }).id).toBeTruthy();
+  expect(events).toHaveLength(1);
+  expect(bus.getHistory({ topic: 'health' })).not.toHaveLength(0);
+  unsubscribe();
+  bus.emit({ topic: 'health', title: 'After unsubscribe' });
+  expect(events).toHaveLength(1);
+});

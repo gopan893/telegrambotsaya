@@ -4,17 +4,12 @@ const { createStore } = require('../cicd-store');
 
 const mockStorage = { data: {}, async get(k) { return this.data[k] || null; }, async set(k, v) { this.data[k] = v; } };
 
-(async () => {
+test('stores releases, proposals, and pipelines', async () => {
   const store = createStore(mockStorage);
   await store.addRelease({ version: 'v2.0.1', status: 'proposed' });
-  const releases = await store.getReleases();
-  console.assert(releases.length === 1, 'Should have 1 release');
-  console.assert(releases[0].version === 'v2.0.1', 'Version should match');
+  expect(await store.getReleases()).toEqual([expect.objectContaining({ version: 'v2.0.1' })]);
   await store.saveProposal({ version: 'v2.0.1', status: 'proposed' });
-  const proposals = await store.getProposals();
-  console.assert(proposals.length === 1, 'Should have 1 proposal');
+  expect(await store.getProposals()).toHaveLength(1);
   await store.savePipeline({ status: 'running' });
-  const pipelines = await store.getPipelines();
-  console.assert(pipelines.length === 1, 'Should have 1 pipeline');
-  console.log('cicd-store tests passed');
-})();
+  expect(await store.getPipelines()).toHaveLength(1);
+});

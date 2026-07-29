@@ -2,12 +2,10 @@
 
 const { createQualityGate } = require('../cicd-quality-gate');
 
-(async () => {
-  const qg = createQualityGate();
-  const pass = await qg.runQualityChecks({ evaluationScore: 100 });
-  console.assert(pass.ok === true, 'Quality gate should pass with 100 score');
-  const fail = await qg.runQualityChecks({ evaluationScore: 50 });
-  console.assert(fail.ok === false, 'Quality gate should fail with 50 score');
-  console.assert(Array.isArray(fail.checks), 'Should return checks array');
-  console.log('cicd-quality-gate tests passed');
-})();
+test('passes score 100 and rejects score 50', async () => {
+  const gate = createQualityGate();
+  await expect(gate.runQualityChecks({ evaluationScore: 100 })).resolves.toMatchObject({ ok: true });
+  const failed = await gate.runQualityChecks({ evaluationScore: 50 });
+  expect(failed).toMatchObject({ ok: false });
+  expect(Array.isArray(failed.checks)).toBe(true);
+});
