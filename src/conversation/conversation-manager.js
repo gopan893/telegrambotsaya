@@ -8,6 +8,7 @@ const continuationHandler = require('./continuation-handler');
 const clarificationHandler = require('./clarification-handler');
 const guards = require('./conversation-guards');
 const dialogueState = require('./dialogue-state');
+const curhatMode = require('./curhat-mode');
 
 function makeNormalDecision(contextWindow, userId, chatId, reason = 'normal_chat') {
   return {
@@ -44,6 +45,22 @@ class ConversationManager {
       context: previousContext,
       followup
     });
+
+    if (curhatMode.detectCurhatIntent(text)) {
+      const crisis = curhatMode.detectCrisisSignal(text);
+      this.contextWindow.recordUserMessage(userId, chatId, text, {
+        topic: 'curhat',
+        intent: crisis ? 'curhat_crisis_support' : 'curhat_support'
+      });
+      dialogueState.addDialogueMessage(userId, chatId, 'user', text, {
+        topic: 'curhat',
+        intent: crisis ? 'curhat_crisis_support' : 'curhat_support'
+      });
+      return {
+        ...makeNormalDecision(this.contextWindow, userId, chatId, crisis ? 'curhat_crisis_support' : 'curhat_support'),
+        instruction: curhatMode.buildCurhatInstruction({ crisis })
+      };
+    }
 
     if (pending) {
       if (shift.shifted) {
