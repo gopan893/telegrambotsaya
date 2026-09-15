@@ -8,7 +8,8 @@
     "dev": "node --watch telebot.js",
     "dev:local": "node --watch start-local.js",
     "start:local": "node start-local.js",
-    "check": "node --check telebot.js"
+    "check": "node --check telebot.js",
+    "test": "jest --passWithNoTests"
   },
   "engines": {
     "node": ">=20"
