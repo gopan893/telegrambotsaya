@@ -88,6 +88,7 @@ const {
   TELEGRAM_TOKEN,
   MISTRAL_API_KEY,
   GROQ_API_KEY,
+  GROQ_MODEL,
   GACOR_API_KEY,
   GACOR_BASE_URL = 'https://rbeafse.abc-tunnel.us/v1',
   GACOR_MODEL = 'gacor',
@@ -1870,36 +1871,50 @@ async function askMistral(systemPrompt, userPrompt, temperature = 0.7, maxTokens
   }
 }
 
-async function askGroq(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800, model = 'llama-3.3-70b-versatile') {
+async function askGroq(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800, model = GROQ_MODEL || 'llama-3.1-8b-instant') {
   if (!GROQ_API_KEY) {
     throw new Error('GROQ tidak diset');
   }
 
-  const res = await withRetry(
-    () => axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature,
-        max_tokens: maxTokens
-      },
-      {
-        headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
-        timeout: 20000
-      }
-    ),
-    {
-      retries: 1,
-      baseDelayMs: 500,
-      onRetry: (err, attempt) => log.warn(`Groq retry #${attempt}:`, err.message)
-    }
-  );
+  const models = [...new Set([model, 'llama-3.1-8b-instant', 'llama-3.3-70b-versatile'].filter(Boolean))];
+  let lastErr = null;
 
-  return res.data.choices?.[0]?.message?.content || '';
+  for (const groqModel of models) {
+    try {
+      const res = await withRetry(
+        () => axios.post(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            model: groqModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature,
+            max_tokens: maxTokens
+          },
+          {
+            headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+            timeout: 20000
+          }
+        ),
+        {
+          retries: 1,
+          baseDelayMs: 500,
+          onRetry: (err, attempt) => log.warn(`Groq retry #${attempt}:`, err.message)
+        }
+      );
+
+      return res.data.choices?.[0]?.message?.content || '';
+    } catch (err) {
+      lastErr = err;
+      const status = err?.status || err?.response?.status;
+      if (status !== 404) throw err;
+      log.warn(`Groq model ${groqModel} unavailable, trying fallback:`, err.message);
+    }
+  }
+
+  throw lastErr;
 }
 
 async function askGacor(systemPrompt, userPrompt, temperature = 0.7, maxTokens = 800) {
@@ -1966,7 +1981,7 @@ function chooseAIModel(question, intent = null) {
     q.includes('analisis')
   ) return 'mistral';
 
-  return 'gacor';
+  return 'groq';
 }
 
 async function askAI(systemPrompt, userPrompt, opts = {}) {

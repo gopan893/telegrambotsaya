@@ -10,12 +10,11 @@ function normalizeProvider(provider) {
 function chooseProviderOrder(options = {}) {
   const preferred = normalizeProvider(options.preferred);
   const available = options.available || {};
-  const gacorPreferred = preferred === 'gacor';
-  const preferredOrder = gacorPreferred
-    ? ['gacor', 'mistral', 'groq']
+  const preferredOrder = preferred === 'gacor'
+    ? ['gacor', 'groq', 'mistral']
     : preferred === 'mistral'
-      ? ['mistral', 'gacor', 'groq']
-      : ['gacor', 'groq', 'mistral'];
+      ? ['mistral', 'groq', 'gacor']
+      : ['groq', 'mistral', 'gacor'];
 
   const configured = KNOWN_PROVIDERS.filter((provider) => Boolean(available[provider]));
   if (!configured.length) return preferredOrder;
