@@ -12,6 +12,7 @@ const { readJsonFile, writeJsonFileAtomic } = require('../../storage/json-store'
 const { installProcessGuards } = require('../../middleware/process-guards');
 const { cleanupRuntimeState } = require('../../scheduler/cleanup');
 const { chooseProviderOrder, shouldUseSearchFallback } = require('../../services/ai-router');
+const { callLocalOllamaCompatible } = require('../../model-router/local-model-adapter');
 const { buildLearningGuide } = require('../../handlers/learning');
 const autonomousEngine = require('../core/autonomous-engine');
 const agentLearning = require('../agents/learning');
@@ -88,6 +89,9 @@ const {
   TELEGRAM_TOKEN,
   MISTRAL_API_KEY,
   GROQ_API_KEY,
+  OLLAMA_ENABLED,
+  OLLAMA_BASE_URL,
+  OLLAMA_DEFAULT_MODEL,
   GROQ_MODEL,
   GACOR_API_KEY,
   GACOR_BASE_URL = 'https://rbeafse.abc-tunnel.us/v1',
@@ -2023,7 +2027,8 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
     available: {
       gacor: Boolean(GACOR_API_KEY),
       groq: Boolean(GROQ_API_KEY),
-      mistral: Boolean(MISTRAL_API_KEY)
+      mistral: Boolean(MISTRAL_API_KEY),
+      ollama: Boolean(OLLAMA_ENABLED && OLLAMA_BASE_URL)
     }
   });
 
@@ -2050,7 +2055,12 @@ async function askAI(systemPrompt, userPrompt, opts = {}) {
         ? await askMistral(systemPrompt, userPrompt, temperature, maxTokens)
         : m === 'gacor'
           ? await askGacor(systemPrompt, userPrompt, temperature, maxTokens)
-          : await askGroq(systemPrompt, userPrompt, temperature, maxTokens);
+          : m === 'ollama'
+            ? await callLocalOllamaCompatible(
+                { messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], temperature, maxTokens },
+                { env: { OLLAMA_BASE_URL, OLLAMA_DEFAULT_MODEL } }
+              )
+            : await askGroq(systemPrompt, userPrompt, temperature, maxTokens);
 
       const answer = allowRawJson
         ? String(raw || '').trim()
